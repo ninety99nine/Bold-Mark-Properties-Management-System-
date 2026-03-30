@@ -1,8 +1,12 @@
 <script setup>
 import { ref } from 'vue'
+import { useTenantStore } from '@/stores/tenant'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import AuthBrandPanel from '@/components/auth/AuthBrandPanel.vue'
 import api from '@/composables/useApi'
+
+const tenant = useTenantStore()
 
 const email = ref('')
 const sent = ref(false)
@@ -26,24 +30,12 @@ async function handleSubmit() {
 <template>
   <div class="min-h-screen flex">
 
-    <!-- Left panel — Brand (same as login) -->
-    <div
-      class="hidden lg:flex lg:w-[58%] flex-col justify-between p-12 relative overflow-hidden"
-      style="background: radial-gradient(ellipse at 15% 85%, #1A3254 0%, transparent 55%), radial-gradient(ellipse at 85% 15%, rgba(216,155,75,0.06) 0%, transparent 45%), #0B1F38;"
-    >
-      <div class="absolute inset-0 opacity-[0.04]" style="background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 48px 48px;" />
-      <div class="relative z-10">
-        <div class="flex items-center gap-4">
-          <img src="/assets/logo2-CB_yk5b_.png" alt="Bold Mark" class="h-8" />
-          <div class="w-px h-8 bg-white/20" />
-          <div class="text-white/50 text-xs uppercase tracking-widest">Property Management</div>
-        </div>
-      </div>
-
-      <div class="relative z-10">
+    <!-- Left panel — Brand -->
+    <AuthBrandPanel>
+      <template #default="{ accentColor }">
         <div class="flex items-center gap-3 mb-6">
-          <div class="w-8 h-px" style="background-color: #D89B4B;" />
-          <span class="text-xs font-bold uppercase tracking-widest" style="color: #D89B4B;">Account Security</span>
+          <div class="w-8 h-px" :style="{ backgroundColor: accentColor }" />
+          <span class="text-xs font-bold uppercase tracking-widest" :style="{ color: accentColor }">Account Security</span>
         </div>
         <h1 class="text-white text-4xl xl:text-5xl leading-tight mb-5" style="font-family: 'DM Serif Display', serif;">
           Secure &amp;<br /><em>Trusted.</em>
@@ -51,21 +43,13 @@ async function handleSubmit() {
         <p class="text-white/60 text-base leading-relaxed max-w-sm">
           We take the security of your property management data seriously. Password resets are sent securely to your registered email.
         </p>
-      </div>
-
-      <div class="relative z-10 flex items-center gap-6 text-white/30 text-xs">
-        <span>NAMA-9141</span>
-        <span class="w-px h-3 bg-white/20" />
-        <span>PPRA Registered</span>
-        <span class="w-px h-3 bg-white/20" />
-        <span>Johannesburg · Botswana</span>
-      </div>
-    </div>
+      </template>
+    </AuthBrandPanel>
 
     <!-- Right panel — Form -->
     <div class="flex-1 flex flex-col justify-center items-center px-6 py-12 bg-bg">
       <div class="lg:hidden mb-10">
-        <img src="/logo.png" alt="Bold Mark" class="h-8" />
+        <img :src="tenant.logoUrl" :alt="tenant.name" class="h-8" />
       </div>
 
       <div class="w-full max-w-sm">
@@ -142,7 +126,7 @@ async function handleSubmit() {
         </div>
 
         <p class="mt-8 text-center text-xs text-muted-fg">
-          © {{ new Date().getFullYear() }} Bold Mark Properties · All rights reserved
+          © {{ new Date().getFullYear() }} {{ tenant.copyrightName }} · All rights reserved
         </p>
       </div>
     </div>

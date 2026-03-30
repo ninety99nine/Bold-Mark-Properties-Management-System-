@@ -17,6 +17,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     // Health check
     Route::get('/health', fn () => response()->json(['status' => 'ok', 'version' => '1.0']))->name('health');
 
+    // Public — tenant branding (resolved by subdomain, no auth required)
+    Route::get('/branding', [\App\Http\Controllers\Api\V1\BrandingController::class, 'show'])->name('branding');
+
     // Auth routes (unauthenticated)
     Route::prefix('auth')->name('auth.')->group(function () {
         Route::post('/login', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'login'])->name('login');
