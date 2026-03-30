@@ -1,0 +1,46 @@
+# ===========================
+# BoldMark PMS — .gitignore
+# ===========================
+
+# ----- Laravel (api/) -----
+api/.env
+api/.env.*
+!api/.env.example
+api/vendor/
+api/node_modules/
+api/public/hot
+api/public/storage
+api/storage/*.key
+api/storage/app/public/*
+api/storage/framework/cache/*
+api/storage/framework/sessions/*
+api/storage/framework/testing/*
+api/storage/framework/views/*
+api/storage/logs/*
+api/bootstrap/cache/*
+api/database/database.sqlite
+api/.phpunit.cache/
+api/coverage/
+api/.php-cs-fixer.cache
+
+# ----- Vue (web/) -----
+web/.env
+web/.env.*
+!web/.env.example
+web/node_modules/
+web/dist/
+web/.vite/
+
+# ----- OS / IDE -----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ----- Secrets -----
+*.pem
+*.key
+*.p12
+*.pfx

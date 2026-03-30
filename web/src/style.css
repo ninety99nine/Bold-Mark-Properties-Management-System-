@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/*
+|--------------------------------------------------------------------------
+| BoldMark PMS — Brand Design Tokens
+|--------------------------------------------------------------------------
+| Navy Blue (Primary):  #1a2744
+| Gold/Orange (Accent): #e8a040
+| White:                #ffffff
+| Light Gray (BG):      #f5f6f8
+| Success Green:        #22c55e
+| Warning Red:          #ef4444
+*/
+
+@theme {
+  --color-navy: #1a2744;
+  --color-gold: #e8a040;
+  --color-bg: #f5f6f8;
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+}
+
+body {
+  margin: 0;
+  background-color: #f5f6f8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+}
