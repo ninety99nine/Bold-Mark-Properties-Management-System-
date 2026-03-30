@@ -18,6 +18,6 @@ class SuperAdminSeeder extends Seeder
             ]
         );
 
-        $superAdmin->assignRole('super-admin');
+        $superAdmin->assignRole(\Spatie\Permission\Models\Role::findByName('super-admin', 'api'));
     }
 }

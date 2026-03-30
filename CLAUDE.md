@@ -961,14 +961,52 @@ Structured workflow for unit transfers (ownership changes):
 
 ### Bold Mark Properties Brand Colors
 
+Extracted directly from boldmarkprop.co.za — use these exact values everywhere.
+
 | Color | Hex | Usage |
 |---|---|---|
-| Navy Blue (Primary) | `#1a2744` | Backgrounds, headers, primary UI elements |
-| Gold/Orange (Accent) | `#e8a040` | CTAs, highlights, active states, accent lines |
-| White | `#ffffff` | Card backgrounds, content areas |
-| Light Gray | `#f5f6f8` | Page backgrounds, table alternating rows |
+| Navy (Primary) | `#1F3A5C` | Backgrounds, headers, sidebar, primary UI elements |
+| Navy Light | `#2D4A70` | Hover states, gradient layers |
+| Navy Dark | `#152B47` | Active states, deep backgrounds |
+| Amber (Accent) | `#D89B4B` | CTAs, highlights, active nav, accent lines, focus rings |
+| Amber Light | `#E8B86B` | Hover tints on amber elements |
+| Amber Dark | `#C87B33` | Hover state for amber buttons |
+| Background | `#F8FBFF` | Page backgrounds |
+| Foreground | `#1E2740` | Body text, headings |
+| Muted | `#EDEFF5` | Table alternating rows, disabled backgrounds |
+| Muted Text | `#717B99` | Secondary text, placeholders, hints |
+| Border | `#DCDEE8` | Input borders, dividers, card borders |
 | Success Green | `#22c55e` | Compliant status, positive amounts |
-| Warning Red | `#ef4444` | Non-compliant status, arrears, deficits |
+| Danger Red | `#F75A68` | Non-compliant, arrears, errors, deficits |
+
+### Typography
+
+| Role | Font | Notes |
+|---|---|---|
+| Headings (h1–h4, section titles) | `DM Serif Display` | Serif, elegant — loaded via Google Fonts |
+| Body, labels, buttons, UI | `DM Sans` | Clean sans-serif — variable weight |
+
+Both fonts are imported in `web/index.html`. Always use `font-family: 'DM Serif Display', serif` inline or via `style="font-family: var(--font-serif)"` for headings.
+
+---
+
+### Reusable Component Library
+
+**RULE: All generic UI components live in `web/src/components/common/` and must always be reused — never rebuild inline.**
+
+| Component | File | Use For |
+|---|---|---|
+| `AppButton` | `common/AppButton.vue` | All buttons — variants: `primary` (amber), `secondary` (navy), `outline`, `ghost`, `danger` |
+| `AppInput` | `common/AppInput.vue` | All text/email/password inputs — includes label, error, hint |
+| `AppCard` | `common/AppCard.vue` | White content cards with shadow |
+| `AppModal` | `common/AppModal.vue` | All dialogs and overlays — handles Escape, backdrop click |
+| `AppBadge` | `common/AppBadge.vue` | Status pills — variants: `default`, `success`, `warning`, `danger`, `info` |
+| `AppTooltip` | `common/AppTooltip.vue` | Hover tooltips — wraps any element |
+| `AppAlert` | `common/AppAlert.vue` | Inline alerts/banners — variants: `info`, `success`, `warning`, `danger` |
+
+When adding new generic UI needs (selects, date pickers, tables, pagination, etc.), **create a new `App*.vue` component in `common/`** rather than building it inline. This ensures consistent styling across the entire app.
+
+---
 
 ### Design Principles
 
@@ -983,11 +1021,13 @@ Structured workflow for unit transfers (ownership changes):
 ### UI Component Guidelines
 
 - Use Tailwind 4 utility classes — no custom CSS unless absolutely necessary
-- Build a consistent component library (buttons, cards, badges, modals, tables, forms)
+- **Always import from `@/components/common/`** — never rebuild buttons, inputs, modals, badges inline
 - Tables for financial data must have sortable columns and be exportable
 - All monetary amounts displayed in ZAR with `R` prefix, formatted with commas: `R 141,666.64`
-- Negative amounts in red
+- Negative amounts in red (`#F75A68`)
 - Dates displayed in South African format: `21 January 2021` or `21/01/2021`
+- Auth page layout: two-column (navy brand panel left, white form right) — matches boldmarkprop.co.za aesthetic
+- Border radius: `rounded` (minimal/sharp) — matches Bold Mark's website style
 
 ---
 

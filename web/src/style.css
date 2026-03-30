@@ -4,27 +4,55 @@
 |--------------------------------------------------------------------------
 | BoldMark PMS — Brand Design Tokens
 |--------------------------------------------------------------------------
-| Navy Blue (Primary):  #1a2744
-| Gold/Orange (Accent): #e8a040
-| White:                #ffffff
-| Light Gray (BG):      #f5f6f8
-| Success Green:        #22c55e
-| Warning Red:          #ef4444
+| Source: boldmarkprop.co.za
+|
+| Navy (Primary):       #1F3A5C
+| Amber (Accent):       #D89B4B
+| Background:           #F8FBFF
+| Foreground:           #1E2740
+| Muted:                #EDEFF5
+| Muted Text:           #717B99
+| Border:               #DCDEE8
+| Success:              #22c55e
+| Danger:               #F75A68
+|
+| Heading Font:  DM Serif Display (serif)
+| Body Font:     DM Sans (sans-serif)
 */
 
 @theme {
-  --color-navy: #1a2744;
-  --color-gold: #e8a040;
-  --color-bg: #f5f6f8;
-  --color-success: #22c55e;
-  --color-danger: #ef4444;
+  --color-navy:          #1F3A5C;
+  --color-navy-light:    #2D4A70;
+  --color-navy-dark:     #152B47;
+  --color-amber:         #D89B4B;
+  --color-amber-light:   #E8B86B;
+  --color-amber-dark:    #C87B33;
+  --color-bg:            #F8FBFF;
+  --color-fg:            #1E2740;
+  --color-muted:         #EDEFF5;
+  --color-muted-fg:      #717B99;
+  --color-border:        #DCDEE8;
+  --color-success:       #22c55e;
+  --color-danger:        #F75A68;
+
+  --font-sans:    "DM Sans", system-ui, sans-serif;
+  --font-serif:   "DM Serif Display", Georgia, serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   margin: 0;
-  background-color: #f5f6f8;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background-color: #F8FBFF;
+  color: #1E2740;
 }
 
 #app {
