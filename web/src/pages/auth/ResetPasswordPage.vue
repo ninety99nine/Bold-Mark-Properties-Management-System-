@@ -1,11 +1,19 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import api from '@/composables/useApi'
 
-const email = ref('')
-const sent = ref(false)
+const route = useRoute()
+const router = useRouter()
+
+const token = ref(route.query.token || '')
+const email = ref(route.query.email || '')
+const password = ref('')
+const passwordConfirmation = ref('')
+const showPassword = ref(false)
+const done = ref(false)
 const error = ref('')
 const loading = ref(false)
 
@@ -13,8 +21,13 @@ async function handleSubmit() {
   error.value = ''
   loading.value = true
   try {
-    await api.post('/auth/forgot-password', { email: email.value })
-    sent.value = true
+    await api.post('/auth/reset-password', {
+      token: token.value,
+      email: email.value,
+      password: password.value,
+      password_confirmation: passwordConfirmation.value,
+    })
+    done.value = true
   } catch (e) {
     error.value = e.response?.data?.message || 'Something went wrong. Please try again.'
   } finally {
@@ -26,7 +39,7 @@ async function handleSubmit() {
 <template>
   <div class="min-h-screen flex">
 
-    <!-- Left panel — Brand (same as login) -->
+    <!-- Left panel — Brand -->
     <div
       class="hidden lg:flex lg:w-[58%] flex-col justify-between p-12 relative overflow-hidden"
       style="background: radial-gradient(ellipse at 15% 85%, #1A3254 0%, transparent 55%), radial-gradient(ellipse at 85% 15%, rgba(216,155,75,0.06) 0%, transparent 45%), #0B1F38;"
@@ -46,10 +59,10 @@ async function handleSubmit() {
           <span class="text-xs font-bold uppercase tracking-widest" style="color: #D89B4B;">Account Security</span>
         </div>
         <h1 class="text-white text-4xl xl:text-5xl leading-tight mb-5" style="font-family: 'DM Serif Display', serif;">
-          Secure &amp;<br /><em>Trusted.</em>
+          Create your<br /><em>New Password.</em>
         </h1>
         <p class="text-white/60 text-base leading-relaxed max-w-sm">
-          We take the security of your property management data seriously. Password resets are sent securely to your registered email.
+          Choose a strong password to keep your property management account secure.
         </p>
       </div>
 
@@ -86,29 +99,28 @@ async function handleSubmit() {
           enter-from-class="opacity-0 translate-y-2"
           enter-to-class="opacity-100 translate-y-0"
         >
-          <div v-if="sent">
-            <div class="w-14 h-14 rounded-full flex items-center justify-center mb-6" style="background-color: #D89B4B20;">
-              <svg class="w-7 h-7" style="color: #D89B4B;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          <div v-if="done">
+            <div class="w-14 h-14 rounded-full flex items-center justify-center mb-6" style="background-color: #22c55e20;">
+              <svg class="w-7 h-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 class="text-3xl text-fg mb-2" style="font-family: 'DM Serif Display', serif;">Check your inbox</h2>
+            <h2 class="text-3xl text-fg mb-2" style="font-family: 'DM Serif Display', serif;">Password updated</h2>
             <p class="text-muted-fg text-sm leading-relaxed mb-8">
-              We've sent a password reset link to <strong class="text-fg">{{ email }}</strong>.
-              The link expires in 60 minutes.
+              Your password has been reset successfully. You can now sign in with your new password.
             </p>
-            <AppButton variant="secondary" size="lg" full @click="sent = false; email = ''">
-              Send another link
+            <AppButton variant="primary" size="lg" full @click="$router.push('/login')">
+              Sign in
             </AppButton>
           </div>
         </Transition>
 
         <!-- Form state -->
-        <div v-if="!sent">
+        <div v-if="!done">
           <div class="mb-8">
             <h2 class="text-3xl text-fg mb-2" style="font-family: 'DM Serif Display', serif;">Reset password</h2>
             <p class="text-muted-fg text-sm leading-relaxed">
-              Enter your email and we'll send you a secure link to reset your password.
+              Enter your new password below.
             </p>
           </div>
 
@@ -119,6 +131,39 @@ async function handleSubmit() {
               label="Email address"
               type="email"
               placeholder="you@company.com"
+              required
+            />
+
+            <div class="relative">
+              <AppInput
+                id="password"
+                v-model="password"
+                label="New password"
+                :type="showPassword ? 'text' : 'password'"
+                placeholder="Min. 8 characters"
+                required
+              />
+              <button
+                type="button"
+                class="absolute right-3 top-8 text-muted-fg hover:text-fg transition-colors"
+                @click="showPassword = !showPassword"
+              >
+                <svg v-if="!showPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+              </button>
+            </div>
+
+            <AppInput
+              id="password_confirmation"
+              v-model="passwordConfirmation"
+              label="Confirm new password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="Repeat your password"
               required
             />
 
@@ -136,7 +181,7 @@ async function handleSubmit() {
             </Transition>
 
             <AppButton type="submit" variant="primary" size="lg" :loading="loading" full>
-              {{ loading ? 'Sending…' : 'Send reset link' }}
+              {{ loading ? 'Updating…' : 'Set new password' }}
             </AppButton>
           </form>
         </div>

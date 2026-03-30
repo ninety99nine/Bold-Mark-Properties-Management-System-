@@ -35,19 +35,15 @@ async function handleLogin() {
     <!-- Left panel — Brand -->
     <div
       class="hidden lg:flex lg:w-[58%] flex-col justify-between p-12 relative overflow-hidden"
-      style="background: radial-gradient(ellipse at 15% 85%, #2D4A70 0%, transparent 55%), radial-gradient(ellipse at 85% 15%, rgba(216,155,75,0.08) 0%, transparent 45%), #1F3A5C;"
+      style="background: radial-gradient(ellipse at 15% 85%, #1A3254 0%, transparent 55%), radial-gradient(ellipse at 85% 15%, rgba(216,155,75,0.06) 0%, transparent 45%), #0B1F38;"
     >
       <!-- Decorative grid pattern -->
       <div class="absolute inset-0 opacity-[0.04]" style="background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 48px 48px;" />
 
-      <!-- Decorative amber circle -->
-      <div class="absolute -bottom-32 -right-32 w-96 h-96 rounded-full opacity-10" style="background: radial-gradient(circle, #D89B4B, transparent);" />
-      <div class="absolute top-1/3 -left-16 w-64 h-64 rounded-full opacity-5" style="background: radial-gradient(circle, #D89B4B, transparent);" />
-
       <!-- Logo -->
       <div class="relative z-10">
         <div class="flex items-center gap-4">
-          <img src="/logo.png" alt="Bold Mark" class="h-8 brightness-0 invert" />
+          <img src="/assets/logo2-CB_yk5b_.png" alt="Bold Mark" class="h-8" />
           <div class="w-px h-8 bg-white/20" />
           <div class="text-white/50 text-xs uppercase tracking-widest">Property Management</div>
         </div>
