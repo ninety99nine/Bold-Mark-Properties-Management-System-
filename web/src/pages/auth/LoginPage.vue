@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
@@ -17,6 +17,13 @@ const password = ref('')
 const showPassword = ref(false)
 const error = ref('')
 const loading = ref(false)
+const mounted = ref(false)
+
+onMounted(() => {
+  requestAnimationFrame(() => {
+    mounted.value = true
+  })
+})
 
 async function handleLogin() {
   error.value = ''
@@ -37,20 +44,48 @@ async function handleLogin() {
 
     <!-- Left panel — Brand -->
     <AuthBrandPanel>
-      <template #default="{ accentColor }">
-        <div class="flex items-center gap-3 mb-6">
-          <div class="w-8 h-px" :style="{ backgroundColor: accentColor }" />
-          <span class="text-xs font-bold uppercase tracking-widest" :style="{ color: accentColor }">Management Platform</span>
+      <template #default="{ accentColor, visible }">
+        <!-- Accent label -->
+        <div class="flex items-center gap-3 mb-6 overflow-hidden">
+          <div
+            class="h-px transition-all duration-700 ease-out"
+            :class="visible ? 'w-8 opacity-100' : 'w-0 opacity-0'"
+            :style="{ backgroundColor: accentColor }"
+          />
+          <span
+            class="text-xs font-bold uppercase tracking-widest transition-all duration-500 ease-out"
+            :style="{ color: accentColor, transitionDelay: '150ms' }"
+            :class="visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3'"
+          >Management Platform</span>
         </div>
-        <h1 class="text-white text-4xl xl:text-5xl leading-tight mb-5" style="font-family: 'DM Serif Display', serif;">
-          {{ tenant.name }}<br /><em>Portal.</em>
+
+        <!-- Heading -->
+        <h1
+          class="text-white text-4xl xl:text-5xl leading-tight mb-5 transition-all duration-700 ease-out"
+          :class="visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'"
+          :style="{ fontFamily: '\'DM Serif Display\', serif', transitionDelay: '250ms' }"
+        >
+          Moving People<br /><em>Forward.</em>
         </h1>
-        <p class="text-white/60 text-base leading-relaxed max-w-sm">
+
+        <!-- Subtitle -->
+        <p
+          class="text-white/60 text-base leading-relaxed max-w-sm transition-all duration-700 ease-out"
+          :class="visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'"
+          :style="{ transitionDelay: '350ms' }"
+        >
           The complete property management platform for Body Corporate and HOA managing agents.
         </p>
+
+        <!-- Feature tags — staggered -->
         <div class="mt-8 flex flex-wrap gap-2">
-          <span v-for="tag in ['Levy Billing', 'Debt Management', 'Compliance', 'Financials', 'Communications']" :key="tag"
-            class="px-3 py-1.5 rounded text-xs font-medium text-white/70 border border-white/10 bg-white/5">
+          <span
+            v-for="(tag, index) in ['Levy Billing', 'Debt Management', 'Compliance', 'Financials', 'Communications']"
+            :key="tag"
+            class="px-3 py-1.5 rounded text-xs font-medium text-white/70 border border-white/10 bg-white/5 transition-all duration-500 ease-out"
+            :class="visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'"
+            :style="{ transitionDelay: (480 + index * 75) + 'ms' }"
+          >
             {{ tag }}
           </span>
         </div>
@@ -64,7 +99,11 @@ async function handleLogin() {
         <img :src="tenant.logoUrl" :alt="tenant.name" class="h-8" />
       </div>
 
-      <div class="w-full max-w-sm">
+      <div
+        class="w-full max-w-sm transition-all duration-700 ease-out"
+        :class="mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
+        :style="{ transitionDelay: '150ms' }"
+      >
         <!-- Heading -->
         <div class="mb-8">
           <h2 class="text-3xl text-fg mb-2" style="font-family: 'DM Serif Display', serif;">Welcome back</h2>

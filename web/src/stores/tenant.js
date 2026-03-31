@@ -4,7 +4,7 @@ import api from '@/composables/useApi'
 
 export const useTenantStore = defineStore('tenant', () => {
   const name = ref('Property Management Platform')
-  const logoUrl = ref('/logo.png')
+  const logoUrl = ref('/assets/logo2-CB_yk5b_.png')
   const accentColor = ref('#D89B4B')
   const credentials = ref([])
   const copyrightName = ref('Property Management Platform')

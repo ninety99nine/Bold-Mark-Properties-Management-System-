@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useTenantStore } from '@/stores/tenant'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -12,6 +12,13 @@ const email = ref('')
 const sent = ref(false)
 const error = ref('')
 const loading = ref(false)
+const mounted = ref(false)
+
+onMounted(() => {
+  requestAnimationFrame(() => {
+    mounted.value = true
+  })
+})
 
 async function handleSubmit() {
   error.value = ''
@@ -32,15 +39,36 @@ async function handleSubmit() {
 
     <!-- Left panel — Brand -->
     <AuthBrandPanel>
-      <template #default="{ accentColor }">
-        <div class="flex items-center gap-3 mb-6">
-          <div class="w-8 h-px" :style="{ backgroundColor: accentColor }" />
-          <span class="text-xs font-bold uppercase tracking-widest" :style="{ color: accentColor }">Account Security</span>
+      <template #default="{ accentColor, visible }">
+        <!-- Accent label -->
+        <div class="flex items-center gap-3 mb-6 overflow-hidden">
+          <div
+            class="h-px transition-all duration-700 ease-out"
+            :class="visible ? 'w-8 opacity-100' : 'w-0 opacity-0'"
+            :style="{ backgroundColor: accentColor }"
+          />
+          <span
+            class="text-xs font-bold uppercase tracking-widest transition-all duration-500 ease-out"
+            :style="{ color: accentColor, transitionDelay: '150ms' }"
+            :class="visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3'"
+          >Account Security</span>
         </div>
-        <h1 class="text-white text-4xl xl:text-5xl leading-tight mb-5" style="font-family: 'DM Serif Display', serif;">
+
+        <!-- Heading -->
+        <h1
+          class="text-white text-4xl xl:text-5xl leading-tight mb-5 transition-all duration-700 ease-out"
+          :class="visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'"
+          :style="{ fontFamily: '\'DM Serif Display\', serif', transitionDelay: '250ms' }"
+        >
           Secure &amp;<br /><em>Trusted.</em>
         </h1>
-        <p class="text-white/60 text-base leading-relaxed max-w-sm">
+
+        <!-- Subtitle -->
+        <p
+          class="text-white/60 text-base leading-relaxed max-w-sm transition-all duration-700 ease-out"
+          :class="visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'"
+          :style="{ transitionDelay: '350ms' }"
+        >
           We take the security of your property management data seriously. Password resets are sent securely to your registered email.
         </p>
       </template>
@@ -52,7 +80,11 @@ async function handleSubmit() {
         <img :src="tenant.logoUrl" :alt="tenant.name" class="h-8" />
       </div>
 
-      <div class="w-full max-w-sm">
+      <div
+        class="w-full max-w-sm transition-all duration-700 ease-out"
+        :class="mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
+        :style="{ transitionDelay: '150ms' }"
+      >
         <!-- Back link -->
         <RouterLink
           to="/login"
