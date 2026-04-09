@@ -6,22 +6,45 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::create('tenants', function (Blueprint $table) {
-            $table->id();
+
+            $table->uuid('id')->primary();
             $table->string('name');
-            $table->string('slug')->unique(); // subdomain identifier, e.g. "boldmark"
+            $table->string('slug')->unique();
+            $table->string('company_name')->nullable();
+            $table->string('company_slogan')->nullable();
             $table->string('logo_url')->nullable();
-            $table->string('primary_color')->default('#0B1F38');
-            $table->string('accent_color')->default('#D89B4B');
-            $table->json('credentials')->nullable(); // e.g. ["NAMA-9141", "PPRA Registered", "Johannesburg · Botswana"]
-            $table->string('copyright_name')->nullable(); // defaults to name if null
+
             $table->boolean('is_active')->default(true);
+
+            $table->string('contact_email');
+            $table->string('contact_phone', 20)->nullable();
+            $table->text('address')->nullable();
+            $table->string('country', 3)->default('ZA');
+            $table->string('currency', 3)->default('ZAR');
+
+            $table->string('primary_color', 10)->default('#1F3A5C');
+            $table->string('secondary_color', 10)->default('#D89B4B');
+            $table->string('copyright_name')->nullable();
+
+            $table->json('credentials')->nullable();
+
             $table->timestamps();
+
+            $table->index('slug');
+            $table->index('is_active');
+            $table->index('country');
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::dropIfExists('tenants');

@@ -1,3 +1,6 @@
+/* Google Fonts must come before @import "tailwindcss" */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Serif+Display:ital@0;1&display=swap');
+
 @import "tailwindcss";
 
 /*
@@ -14,47 +17,108 @@
 | Muted Text:           #717B99
 | Border:               #DCDEE8
 | Success:              #22c55e
-| Danger:               #F75A68
+| Danger:               #dc2828
 |
 | Heading Font:  DM Serif Display (serif)
 | Body Font:     DM Sans (sans-serif)
 */
 
 @theme {
-  --color-navy:          #1F3A5C;
-  --color-navy-light:    #2D4A70;
-  --color-navy-dark:     #152B47;
-  --color-amber:         #D89B4B;
-  --color-amber-light:   #E8B86B;
-  --color-amber-dark:    #C87B33;
-  --color-bg:            #F8FBFF;
-  --color-fg:            #1E2740;
-  --color-muted:         #EDEFF5;
-  --color-muted-fg:      #717B99;
-  --color-border:        #DCDEE8;
-  --color-success:       #22c55e;
-  --color-danger:        #F75A68;
+  /* ── Brand Colours ──────────────────────────────────────────── */
+  --color-navy:               #1F3A5C;
+  --color-navy-light:         #2D4A70;
+  --color-navy-dark:          #152B47;
+  --color-amber:              #D89B4B;
+  --color-amber-light:        #E8B86B;
+  --color-amber-dark:         #C87B33;
 
+  /* ── Semantic Aliases (matches Lovable / Tailwind conventions) ─ */
+  --color-primary:            #1F3A5C;   /* navy */
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary:          #2D4A70;   /* navy-light */
+  --color-secondary-foreground: #FFFFFF;
+  --color-accent:             #D89B4B;   /* amber */
+  --color-accent-foreground:  #FFFFFF;
+  --color-card:               #FFFFFF;
+  --color-card-foreground:    #1E2740;
+  --color-background:         #f7fafd;
+  --color-foreground:         #1E2740;
+  --color-muted:              #EDEFF5;
+  --color-muted-foreground:   #717B99;
+  --color-border:             #DCDEE8;
+  --color-input:              #DCDEE8;
+  --color-ring:               #D89B4B;
+  --color-destructive:        #dc2828;
+  --color-destructive-foreground: #FFFFFF;
+  --color-success:            #2c9b67;
+  --color-success-foreground: #FFFFFF;
+
+  /* ── Legacy aliases kept for backwards compat ──────────────── */
+  --color-bg:                 #f7fafd;
+  --color-fg:                 #1E2740;
+  --color-muted-fg:           #717B99;
+  --color-danger:             #dc2828;
+
+  /* ── Shadows — match Tailwind v3 scale used in Lovable prototype ─ */
+  /* v4 shifted shadow-sm up; override to restore the subtle v3 value  */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+
+  /* ── Fonts ──────────────────────────────────────────────────── */
+  --font-body:    "DM Sans", system-ui, sans-serif;
+  --font-heading: "DM Serif Display", Georgia, serif;
   --font-sans:    "DM Sans", system-ui, sans-serif;
   --font-serif:   "DM Serif Display", Georgia, serif;
 }
 
+/* ── Base Styles ──────────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
+@layer base {
+  /* Default border colour for bare `border` utility */
+  *, *::before, *::after {
+    border-color: var(--color-border);
+  }
+}
+
 html {
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   margin: 0;
-  background-color: #F8FBFF;
-  color: #1E2740;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
 }
 
 #app {
   min-height: 100vh;
+}
+
+/* ── Interactive Cursor ───────────────────────────────────────────── */
+button,
+[role="button"],
+a,
+label[for],
+select,
+summary {
+  cursor: pointer;
+}
+
+/* ── Page Transition ──────────────────────────────────────────────── */
+.page-enter-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.page-leave-active {
+  transition: none;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
 }

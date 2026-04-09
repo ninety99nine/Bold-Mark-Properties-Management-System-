@@ -3,33 +3,81 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use App\Models\Owner;
+use App\Services\OwnerService;
+use App\Http\Resources\OwnerResource;
+use App\Http\Resources\OwnerResources;
+use App\Http\Requests\Owner\ShowOwnersRequest;
+use App\Http\Requests\Owner\ShowOwnerRequest;
+use App\Http\Requests\Owner\UpdateOwnerRequest;
+use App\Http\Requests\Owner\DeleteOwnerRequest;
+use App\Http\Requests\Owner\DeleteOwnersRequest;
 
 class OwnerController extends Controller
 {
-    public function index(): JsonResponse
+    protected OwnerService $service;
+
+    public function __construct(OwnerService $service)
     {
-        return response()->json(['data' => [], 'message' => 'Not yet implemented']);
+        $this->service = $service;
     }
 
-    public function store(Request $request): JsonResponse
+    /**
+     * Return a paginated list of owners for the authenticated tenant.
+     * Owners are created via unit creation — no store endpoint.
+     *
+     * @param ShowOwnersRequest $request
+     * @return OwnerResources
+     */
+    public function showOwners(ShowOwnersRequest $request): OwnerResources
     {
-        return response()->json(['data' => [], 'message' => 'Not yet implemented'], 501);
+        return $this->service->showOwners($request->validated());
     }
 
-    public function show(string $id): JsonResponse
+    /**
+     * Bulk delete owners.
+     *
+     * @param DeleteOwnersRequest $request
+     * @return array
+     */
+    public function deleteOwners(DeleteOwnersRequest $request): array
     {
-        return response()->json(['data' => [], 'message' => 'Not yet implemented'], 501);
+        return $this->service->deleteOwners($request->input('owner_ids', []));
     }
 
-    public function update(Request $request, string $id): JsonResponse
+    /**
+     * Return a single owner.
+     *
+     * @param ShowOwnerRequest $request
+     * @param Owner            $owner
+     * @return OwnerResource
+     */
+    public function showOwner(ShowOwnerRequest $request, Owner $owner): OwnerResource
     {
-        return response()->json(['data' => [], 'message' => 'Not yet implemented'], 501);
+        return $this->service->showOwner($owner);
     }
 
-    public function destroy(string $id): JsonResponse
+    /**
+     * Update an owner's details.
+     *
+     * @param UpdateOwnerRequest $request
+     * @param Owner              $owner
+     * @return array
+     */
+    public function updateOwner(UpdateOwnerRequest $request, Owner $owner): array
     {
-        return response()->json(['data' => [], 'message' => 'Not yet implemented'], 501);
+        return $this->service->updateOwner($owner, $request->validated());
+    }
+
+    /**
+     * Delete a single owner.
+     *
+     * @param DeleteOwnerRequest $request
+     * @param Owner              $owner
+     * @return array
+     */
+    public function deleteOwner(DeleteOwnerRequest $request, Owner $owner): array
+    {
+        return $this->service->deleteOwner($owner);
     }
 }

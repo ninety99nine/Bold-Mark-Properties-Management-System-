@@ -1,0 +1,40 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('estate_charge_types', function (Blueprint $table) {
+
+            $table->uuid('id')->primary();
+
+            $table->boolean('is_active')->default(true);
+
+            $table->foreignUuid('estate_id')->constrained('estates')->cascadeOnDelete();
+            $table->foreignUuid('charge_type_id')->constrained('charge_types')->cascadeOnDelete();
+
+            $table->timestamps();
+
+            $table->unique(['estate_id', 'charge_type_id']);
+            $table->index('estate_id');
+            $table->index('charge_type_id');
+            $table->index('is_active');
+            $table->index(['estate_id', 'is_active']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('estate_charge_types');
+    }
+};

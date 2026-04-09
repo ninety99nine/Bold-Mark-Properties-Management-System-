@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const routes = [
-  // Auth
+  // ── Auth (public) ─────────────────────────────────────────────────
   {
     path: '/login',
     name: 'login',
@@ -22,80 +22,90 @@ const routes = [
     meta: { guest: true },
   },
 
-  // App shell
+  // ── App shell (authenticated) ─────────────────────────────────────
   {
     path: '/',
     component: () => import('@/components/layout/AppLayout.vue'),
     meta: { requiresAuth: true },
     children: [
-      {
-        path: '',
-        redirect: '/dashboard',
-      },
+      // Root redirect
+      { path: '', redirect: '/dashboard' },
+
+      // ── Phase 1 routes ────────────────────────────────────────────
       {
         path: 'dashboard',
         name: 'dashboard',
-        component: () => import('@/pages/dashboard/PortfolioDashboard.vue'),
+        component: () => import('@/pages/dashboard/DashboardPage.vue'),
       },
       {
-        path: 'communities',
-        name: 'communities',
-        component: () => import('@/pages/communities/CommunitiesIndex.vue'),
+        path: 'estates',
+        name: 'estates',
+        component: () => import('@/pages/estates/EstatesPage.vue'),
       },
       {
-        path: 'communities/:id',
-        name: 'community-detail',
-        component: () => import('@/pages/communities/CommunityDetail.vue'),
+        path: 'estates/:id',
+        name: 'estate-detail',
+        component: () => import('@/pages/estates/EstateDetailPage.vue'),
       },
       {
-        path: 'communities/:communityId/units',
-        name: 'units',
-        component: () => import('@/pages/units/UnitsIndex.vue'),
+        path: 'estates/:estateId/units/:unitId',
+        name: 'unit-detail',
+        component: () => import('@/pages/estates/UnitDetailPage.vue'),
       },
       {
-        path: 'owners',
-        name: 'owners',
-        component: () => import('@/pages/owners/OwnersIndex.vue'),
+        path: 'estates/:estateId/units/:unitId/tenants/:tenantId',
+        name: 'tenant-detail',
+        component: () => import('@/pages/estates/TenantDetailPage.vue'),
       },
       {
-        path: 'levies',
-        name: 'levies',
-        component: () => import('@/pages/levies/LeviesIndex.vue'),
+        path: 'billing',
+        name: 'billing',
+        component: () => import('@/pages/billing/BillingPage.vue'),
       },
       {
-        path: 'debt',
-        name: 'debt',
-        component: () => import('@/pages/debt/DebtDashboard.vue'),
+        path: 'billing/invoices/:invoiceId',
+        name: 'invoice-detail',
+        component: () => import('@/pages/billing/InvoiceDetailPage.vue'),
       },
       {
-        path: 'finances',
-        name: 'finances',
-        component: () => import('@/pages/finances/FinancesIndex.vue'),
+        path: 'cashbook',
+        name: 'cashbook',
+        component: () => import('@/pages/cashbook/CashbookPage.vue'),
       },
       {
-        path: 'compliance',
-        name: 'compliance',
-        component: () => import('@/pages/compliance/CompliancePlanner.vue'),
+        path: 'cashbook/:entryId',
+        name: 'cashbook-entry',
+        component: () => import('@/pages/cashbook/CashbookEntryDetailPage.vue'),
       },
       {
-        path: 'tasks',
-        name: 'tasks',
-        component: () => import('@/pages/tasks/TasksIndex.vue'),
+        path: 'age-analysis',
+        name: 'age-analysis',
+        component: () => import('@/pages/age-analysis/AgeAnalysisPage.vue'),
       },
       {
-        path: 'communications',
-        name: 'communications',
-        component: () => import('@/pages/communications/CommunicationsIndex.vue'),
+        path: 'owners/:ownerId',
+        name: 'owner-detail',
+        component: () => import('@/pages/owners/OwnerDetailPage.vue'),
       },
       {
-        path: 'documents',
-        name: 'documents',
-        component: () => import('@/pages/documents/DocumentsIndex.vue'),
+        path: 'users',
+        name: 'users',
+        component: () => import('@/pages/users/UsersPage.vue'),
+      },
+      {
+        path: 'users/:userId',
+        name: 'user-detail',
+        component: () => import('@/pages/users/UserDetailPage.vue'),
+      },
+      {
+        path: 'settings',
+        name: 'settings',
+        component: () => import('@/pages/settings/SettingsPage.vue'),
       },
     ],
   },
 
-  // 404
+  // ── 404 ──────────────────────────────────────────────────────────
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',

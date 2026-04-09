@@ -66,7 +66,11 @@ class AuthController extends Controller
             'password' => ['required', 'min:8', 'confirmed'],
         ]);
 
-        $status = Password::reset(
+        $brokerName = in_array($request->input('broker'), ['users', 'invitations'])
+            ? $request->input('broker')
+            : 'users';
+
+        $status = Password::broker($brokerName)->reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
                 $user->forceFill(['password' => $password])->save();

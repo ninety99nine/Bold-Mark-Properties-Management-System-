@@ -101,7 +101,13 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
+            'expire' => 1440,   // 24 hours for password resets
+            'throttle' => 60,
+        ],
+        'invitations' => [
+            'provider' => 'users',
+            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => 0,      // 0 = never expires — owners/tenants may take a long time to set up
             'throttle' => 60,
         ],
     ],

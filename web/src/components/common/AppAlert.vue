@@ -1,4 +1,6 @@
 <script setup>
+import AppButton from '@/components/common/AppButton.vue'
+
 defineProps({
   variant: {
     type: String,
@@ -26,14 +28,17 @@ const emit = defineEmits(['dismiss'])
       <p v-if="title" class="font-semibold mb-0.5">{{ title }}</p>
       <slot />
     </div>
-    <button
+    <AppButton
       v-if="dismissible"
-      class="opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
+      variant="ghost"
+      square
+      size="sm"
+      class="opacity-60 hover:opacity-100 hover:bg-transparent flex-shrink-0"
       @click="$emit('dismiss')"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
       </svg>
-    </button>
+    </AppButton>
   </div>
 </template>
