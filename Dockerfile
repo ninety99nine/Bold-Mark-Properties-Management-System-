@@ -44,7 +44,7 @@ RUN composer dump-autoload --optimize --no-dev
 # ═══════════════════════════════════════════════════════════
 # Stage 3: Production PHP-FPM Image
 # ═══════════════════════════════════════════════════════════
-FROM php:8.3-fpm-alpine AS production
+FROM php:8.4-fpm-alpine AS production
 
 # System dependencies
 RUN apk add --no-cache \
