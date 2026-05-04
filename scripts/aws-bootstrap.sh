@@ -26,7 +26,8 @@
 # ── Usage ──────────────────────────────────────────────────────────────
 #   export AWS_ACCESS_KEY_ID=AKIA...
 #   export AWS_SECRET_ACCESS_KEY=...
-#   bash scripts/aws-bootstrap.sh
+#   bash scripts/aws-bootstrap.sh             # normal run (idempotent)
+#   bash scripts/aws-bootstrap.sh --rotate-key # delete+recreate deployer IAM key
 #
 # ── Cost estimate (eu-west-2, on-demand) ──────────────────────────────
 #   t3.small EC2          ~ $15/mo  (or $9/mo with a 1-year reserved instance)
@@ -40,6 +41,14 @@
 #                         ~ $13-16/mo with 1-year reserved instance
 # ═══════════════════════════════════════════════════════════════════════
 set -euo pipefail
+
+# ── Flags ─────────────────────────────────────────────────────────────
+ROTATE_KEY=false
+for arg in "$@"; do
+  case "$arg" in
+    --rotate-key) ROTATE_KEY=true ;;
+  esac
+done
 
 # ── Configuration ─────────────────────────────────────────────────────
 REGION="${AWS_REGION:-eu-west-2}"
@@ -184,17 +193,25 @@ docker run --rm \
     --policy-document file:///tmp/deployer-policy.json
 echo "  ✓ Inline policy attached"
 
-# Create access key for the deployer (only if it has none)
-EXISTING_KEYS=$(aws iam list-access-keys --user-name "$DEPLOYER_USER" --query 'AccessKeyMetadata | length(@)' --output text)
-if [ "$EXISTING_KEYS" = "0" ]; then
+# Create / rotate access key for the deployer
+EXISTING_KEYS=$(aws iam list-access-keys --user-name "$DEPLOYER_USER" --query 'AccessKeyMetadata[*].AccessKeyId' --output text)
+EXISTING_KEY_COUNT=$(echo "${EXISTING_KEYS}" | wc -w | tr -d ' ')
+if [ "$ROTATE_KEY" = "true" ] && [ "$EXISTING_KEY_COUNT" -gt 0 ]; then
+  for old_key_id in $EXISTING_KEYS; do
+    aws iam delete-access-key --user-name "$DEPLOYER_USER" --access-key-id "$old_key_id" >/dev/null
+    echo "  ✓ Deleted old access key $old_key_id"
+  done
+  EXISTING_KEY_COUNT=0
+fi
+if [ "$EXISTING_KEY_COUNT" = "0" ]; then
   KEY_OUTPUT=$(aws iam create-access-key --user-name "$DEPLOYER_USER")
   DEPLOYER_ACCESS_KEY_ID=$(echo "$KEY_OUTPUT" | jq -r '.AccessKey.AccessKeyId')
   DEPLOYER_SECRET_ACCESS_KEY=$(echo "$KEY_OUTPUT" | jq -r '.AccessKey.SecretAccessKey')
   echo "  ✓ Access key created (will be shown at end)"
 else
-  DEPLOYER_ACCESS_KEY_ID="<EXISTING — see IAM console>"
-  DEPLOYER_SECRET_ACCESS_KEY="<EXISTING — see IAM console (or rotate via 'aws iam delete-access-key + create-access-key')>"
-  echo "  ⚠ User already has access key(s). Will not create another."
+  DEPLOYER_ACCESS_KEY_ID="<EXISTING — run with --rotate-key to replace>"
+  DEPLOYER_SECRET_ACCESS_KEY="<EXISTING — run with --rotate-key to replace>"
+  echo "  ⚠ User already has access key(s). Re-run with --rotate-key to get fresh credentials."
 fi
 
 # ── 2. ECR repositories ───────────────────────────────────────────────
