@@ -51,13 +51,13 @@ class EstateChargeTypeService
 
         // For mixed estates, enable ALL active charge types for the tenant
         if ($estateTypeValue === EstateType::MIXED->value) {
-            $chargeTypeIds = ChargeType::where('tenant_id', $estate->tenant_id)
+            $chargeTypeIds = ChargeType::where('organization_id', $estate->organization_id)
                 ->where('is_active', true)
                 ->pluck('id');
         } else {
             $codes = $this->presetsByType[$estateTypeValue] ?? [];
 
-            $chargeTypeIds = ChargeType::where('tenant_id', $estate->tenant_id)
+            $chargeTypeIds = ChargeType::where('organization_id', $estate->organization_id)
                 ->where('is_active', true)
                 ->whereIn('code', $codes)
                 ->pluck('id');

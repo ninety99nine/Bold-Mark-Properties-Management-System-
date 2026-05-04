@@ -9,10 +9,12 @@ import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import api from '@/composables/useApi.js'
 import { useBack } from '@/composables/useBack.js'
 import AllocationModal from '@/components/common/AllocationModal.vue'
+import { useCountryStore } from '@/stores/country'
 
 const route  = useRoute()
 const router = useRouter()
 const { goBack } = useBack('/cashbook')
+const countryStore = useCountryStore()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const entry   = ref(null)
@@ -42,8 +44,7 @@ const isAllocated = computed(() => entry.value?.is_allocated ?? false)
 const formattedAmount = computed(() => {
   if (!entry.value) return '—'
   const prefix    = isCredit.value ? '+' : '-'
-  const formatted = Number(entry.value.amount).toLocaleString('en-ZA')
-  return `${prefix}R ${formatted}`
+  return `${prefix}${countryStore.formatCurrency(entry.value.amount)}`
 })
 
 const amountClass = computed(() =>
@@ -351,12 +352,6 @@ async function saveEdit() {
                       <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Description</p>
                       <p class="text-sm font-medium text-foreground">{{ entry.description }}</p>
                     </div>
-                    <div>
-                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Type</p>
-                      <AppBadge :variant="isCredit ? 'success' : 'danger'" bordered size="sm">
-                        {{ isCredit ? 'Credit (Received)' : 'Debit (Paid Out)' }}
-                      </AppBadge>
-                    </div>
                     <div v-if="entry.notes">
                       <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Notes</p>
                       <p class="text-sm text-foreground">{{ entry.notes }}</p>
@@ -369,9 +364,9 @@ async function saveEdit() {
                       <p :class="['text-xl font-bold font-body', amountClass]">{{ formattedAmount }}</p>
                     </div>
                     <div>
-                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Allocation Status</p>
-                      <AppBadge :variant="isAllocated ? 'success' : 'warning'" bordered size="sm">
-                        {{ isAllocated ? 'Allocated' : 'Unallocated' }}
+                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Type</p>
+                      <AppBadge :variant="isCredit ? 'success' : 'danger'" bordered size="sm">
+                        {{ isCredit ? 'Credit (Received)' : 'Debit (Paid Out)' }}
                       </AppBadge>
                     </div>
                     <div v-if="entry.charge_type">
@@ -395,7 +390,7 @@ async function saveEdit() {
                     label="Amount"
                     type="number"
                     placeholder="0.00"
-                    prefix="R"
+                    :prefix="countryStore.currencySymbol"
                   />
                   <div class="col-span-2">
                     <AppInput

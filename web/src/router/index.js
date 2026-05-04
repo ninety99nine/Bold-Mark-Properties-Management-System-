@@ -43,6 +43,11 @@ const routes = [
         component: () => import('@/pages/estates/EstatesPage.vue'),
       },
       {
+        path: 'vacancies',
+        name: 'vacancies',
+        component: () => import('@/pages/vacancies/VacanciesPage.vue'),
+      },
+      {
         path: 'estates/:id',
         name: 'estate-detail',
         component: () => import('@/pages/estates/EstateDetailPage.vue'),
@@ -76,6 +81,28 @@ const routes = [
         path: 'cashbook/:entryId',
         name: 'cashbook-entry',
         component: () => import('@/pages/cashbook/CashbookEntryDetailPage.vue'),
+      },
+      // ── Compliance routes ──────────────────────────────────────────
+      {
+        path: 'compliance',
+        name: 'compliance',
+        component: () => import('@/pages/compliance/ComplianceDashboardPage.vue'),
+      },
+      {
+        path: 'compliance/checklists/:checklistId',
+        name: 'compliance-checklist',
+        component: () => import('@/pages/compliance/ComplianceChecklistPage.vue'),
+      },
+      {
+        path: 'compliance/templates',
+        name: 'compliance-templates',
+        component: () => import('@/pages/compliance/ComplianceTemplatesPage.vue'),
+      },
+
+      {
+        path: 'arrears',
+        name: 'arrears',
+        component: () => import('@/pages/arrears/ArrearsPage.vue'),
       },
       {
         path: 'age-analysis',

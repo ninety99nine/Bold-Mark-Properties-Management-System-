@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Tenant>
@@ -15,24 +14,16 @@ class TenantFactory extends Factory
 
     public function definition(): array
     {
-        $companyName = fake()->company();
-
         return [
-            'name'            => $companyName,
-            'slug'            => Str::slug($companyName) . '-' . fake()->unique()->numerify('###'),
-            'company_name'    => $companyName,
-            'company_slogan'  => fake()->catchPhrase(),
-            'logo_url'        => null,
-            'contact_email'   => fake()->companyEmail(),
-            'contact_phone'   => '+267 7' . fake()->numerify('#######'),
-            'address'         => fake()->address(),
-            'country'         => 'BW',
-            'currency'        => 'BWP',
-            'primary_color'   => '#1F3A5C',
-            'secondary_color' => '#D89B4B',
-            'copyright_name'  => $companyName,
-            'credentials'     => null,
-            'is_active'       => true,
+            'unit_id'     => null,
+            'organization_id'   => null,
+            'full_name'   => fake()->name(),
+            'email'       => fake()->unique()->safeEmail(),
+            'phone'       => '+267 7' . fake()->numerify('#######'),
+            'id_number'   => fake()->numerify('#########'),
+            'is_active'   => true,
+            'lease_start' => fake()->dateTimeBetween('-2 years', '-1 month')->format('Y-m-d'),
+            'lease_end'   => fake()->dateTimeBetween('+1 month', '+2 years')->format('Y-m-d'),
         ];
     }
 
@@ -40,6 +31,24 @@ class TenantFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_active' => false,
+        ]);
+    }
+
+    public function withExpiredLease(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'lease_start' => fake()->dateTimeBetween('-3 years', '-2 years')->format('Y-m-d'),
+            'lease_end'   => fake()->dateTimeBetween('-2 years', '-1 month')->format('Y-m-d'),
+            'is_active'   => false,
+        ]);
+    }
+
+    public function withCurrentLease(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'lease_start' => fake()->dateTimeBetween('-1 year', '-1 month')->format('Y-m-d'),
+            'lease_end'   => fake()->dateTimeBetween('+1 month', '+1 year')->format('Y-m-d'),
+            'is_active'   => true,
         ]);
     }
 }

@@ -21,7 +21,7 @@ class AgeAnalysisController extends Controller
      * Query parameters (all optional):
      *   - estate_id:       Filter to a specific estate
      *   - charge_type_id:  Filter to a specific charge type
-     *   - billed_to_type:  Filter to 'owner' or 'tenant'
+     *   - billed_to_type:  Filter to 'owner' or 'organization'
      *
      * @param Request $request
      * @return array

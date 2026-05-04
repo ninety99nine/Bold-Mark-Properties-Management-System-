@@ -8,4 +8,5 @@ Route::prefix('dashboard')
     ->middleware(['auth:api'])
     ->group(function () {
         Route::get('/', 'getDashboardSummary')->name('show.dashboard');
+        Route::get('/countries', 'getCountries')->name('show.countries');
     });

@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useTenantStore } from '@/stores/tenant'
+import { useOrganizationStore } from '@/stores/organization'
 
-const tenant = useTenantStore()
+const tenant = useOrganizationStore()
 const visible = ref(false)
 onMounted(() => {
   requestAnimationFrame(() => {

@@ -1,10 +1,13 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppModal from '@/components/common/AppModal.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 const activeTab = ref('account')
 
@@ -30,30 +33,25 @@ const company = ref({
   email: 'info@boldmarkprop.co.za',
   country: 'ZA',
   phone: '+27 10 442 0012',
-  currency: 'ZAR',
   primaryColor: '#1F3A5C',
   secondaryColor: '#D89B4B',
+})
+
+const companyCurrencyLabel = computed(() => {
+  const info = countryStore.COUNTRY_MAP[company.value.country]
+  return info ? `${info.symbol} — ${info.currencyCode}` : '—'
 })
 
 const DEFAULT_PRIMARY   = '#1F3A5C'
 const DEFAULT_SECONDARY = '#D89B4B'
 
 // Select options
-const COUNTRY_OPTS = [
-  { value: 'ZA', label: 'South Africa (ZA)' },
-  { value: 'BW', label: 'Botswana (BW)'     },
-  { value: 'NA', label: 'Namibia (NA)'      },
-  { value: 'MZ', label: 'Mozambique (MZ)'   },
-  { value: 'KE', label: 'Kenya (KE)'        },
-]
-const CURRENCY_OPTS = [
-  { value: 'ZAR', label: 'R — South African Rand (ZAR)'  },
-  { value: 'BWP', label: 'P — Botswana Pula (BWP)'       },
-  { value: 'USD', label: '$ — US Dollar (USD)'           },
-  { value: 'EUR', label: '€ — Euro (EUR)'                },
-  { value: 'GBP', label: '£ — British Pound (GBP)'      },
-  { value: 'NAD', label: 'N$ — Namibian Dollar (NAD)'   },
-]
+const COUNTRY_OPTS = countryStore.COUNTRY_MAP
+  ? Object.entries(countryStore.COUNTRY_MAP).map(([code, info]) => ({
+      value: code,
+      label: `${info.flag} ${info.name} (${code})`,
+    }))
+  : []
 const APPLIES_TO_OPTS = [
   { value: 'Owner',  label: 'Owner'  },
   { value: 'Tenant', label: 'Tenant' },
@@ -329,9 +327,10 @@ function appliesToVariant(v) {
               <div class="flex flex-col gap-1.5">
                 <label class="text-sm font-medium text-fg">Country</label>
                 <AppSelect v-model="company.country" :options="COUNTRY_OPTS" />
+                <p class="text-xs text-muted-foreground">Default country for new estates. Estates can override this individually.</p>
               </div>
 
-              <!-- Currency select -->
+              <!-- Currency (auto-derived from country) -->
               <div class="flex flex-col gap-1.5">
                 <label class="text-sm font-medium text-fg flex items-center gap-1.5">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -341,7 +340,10 @@ function appliesToVariant(v) {
                   </svg>
                   Currency
                 </label>
-                <AppSelect v-model="company.currency" :options="CURRENCY_OPTS" />
+                <div class="flex items-center h-9 px-3 rounded-md border border-border bg-muted/50 text-sm text-foreground">
+                  {{ companyCurrencyLabel }}
+                </div>
+                <p class="text-xs text-muted-foreground">Automatically determined by the selected country.</p>
               </div>
             </div>
 

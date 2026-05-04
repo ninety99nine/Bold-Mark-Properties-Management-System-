@@ -44,7 +44,7 @@ class Unit extends Model
         'rent_amount',
         'balance',
         'estate_id',
-        'tenant_id',
+        'organization_id',
     ];
 
     /**
@@ -60,9 +60,9 @@ class Unit extends Model
         $term = '%' . $searchTerm . '%';
 
         $query->where(function (Builder $q) use ($term) {
-            $q->where('units.unit_number', 'like', $term)
-              ->orWhere('units.address', 'like', $term)
-              ->orWhereHas('owner', fn (Builder $o) => $o->where('full_name', 'like', $term)->orWhere('email', 'like', $term));
+            $q->where('units.unit_number', 'ilike', $term)
+              ->orWhere('units.address', 'ilike', $term)
+              ->orWhereHas('owner', fn (Builder $o) => $o->where('full_name', 'ilike', $term)->orWhere('email', 'ilike', $term));
         });
     }
 
@@ -129,9 +129,9 @@ class Unit extends Model
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**
@@ -157,7 +157,7 @@ class Unit extends Model
      */
     public function currentTenant(): HasOne
     {
-        return $this->hasOne(UnitTenant::class)->where('is_active', true);
+        return $this->hasOne(Tenant::class)->where('is_active', true);
     }
 
     /**
@@ -165,9 +165,9 @@ class Unit extends Model
      *
      * @return HasMany
      */
-    public function unitTenants(): HasMany
+    public function tenants(): HasMany
     {
-        return $this->hasMany(UnitTenant::class);
+        return $this->hasMany(Tenant::class);
     }
 
     /**

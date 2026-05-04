@@ -19,9 +19,15 @@ use Illuminate\Support\Facades\DB;
 use Resend\Laravel\Facades\Resend;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\InvoiceResources;
+use App\Notifications\BillingRunCompleted;
+use Illuminate\Support\Facades\Notification;
 
 class InvoiceService extends BaseService
 {
+    protected array $allowedRelationships = ['unit', 'chargeType', 'billedToOwner', 'billedToUnitTenant', 'cashbookEntries'];
+
+    protected array $allowedCountableRelationships = ['cashbookEntries'];
+
     public function __construct(private readonly UnitBalanceService $unitBalance)
     {
         parent::__construct();
@@ -37,8 +43,12 @@ class InvoiceService extends BaseService
     public function showInvoices(array $data): InvoiceResources
     {
         $user  = Auth::user();
-        $query = Invoice::where('tenant_id', $user->tenant_id)
+        $query = Invoice::where('organization_id', $user->organization_id)
             ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant', 'emailEvents']);
+
+        if (!empty($data['country'])) {
+            $query->whereHas('unit.estate', fn($q) => $q->where('country', $data['country']));
+        }
 
         if (!empty($data['status'])) {
             $query->where('status', $data['status']);
@@ -79,7 +89,7 @@ class InvoiceService extends BaseService
                           ->whereHas('billedToOwner', fn($o) => $o->where('full_name', 'ilike', $term));
                   })
                   ->orWhere(function ($sub) use ($term) {
-                      $sub->where('billed_to_type', 'tenant')
+                      $sub->where('billed_to_type', 'organization')
                           ->whereHas('billedToUnitTenant', fn($t) => $t->where('full_name', 'ilike', $term));
                   });
             });
@@ -116,8 +126,12 @@ class InvoiceService extends BaseService
     public function exportInvoices(array $data): \Symfony\Component\HttpFoundation\Response
     {
         $user  = Auth::user();
-        $query = Invoice::where('tenant_id', $user->tenant_id)
+        $query = Invoice::where('organization_id', $user->organization_id)
             ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant']);
+
+        if (!empty($data['country'])) {
+            $query->whereHas('unit.estate', fn($q) => $q->where('country', $data['country']));
+        }
 
         if (!empty($data['status'])) {
             $query->where('status', $data['status']);
@@ -151,7 +165,7 @@ class InvoiceService extends BaseService
                           ->whereHas('billedToOwner', fn($o) => $o->where('full_name', 'ilike', $term));
                   })
                   ->orWhere(function ($sub) use ($term) {
-                      $sub->where('billed_to_type', 'tenant')
+                      $sub->where('billed_to_type', 'organization')
                           ->whereHas('billedToUnitTenant', fn($t) => $t->where('full_name', 'ilike', $term));
                   });
             });
@@ -226,7 +240,11 @@ class InvoiceService extends BaseService
     public function showInvoicesSummary(array $data): array
     {
         $user  = Auth::user();
-        $query = Invoice::where('tenant_id', $user->tenant_id);
+        $query = Invoice::where('organization_id', $user->organization_id);
+
+        if (!empty($data['country'])) {
+            $query->whereHas('unit.estate', fn($q) => $q->where('country', $data['country']));
+        }
 
         if (!empty($data['estate_id'])) {
             $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
@@ -257,7 +275,12 @@ class InvoiceService extends BaseService
 
         $revenueByChargeType = DB::table('invoices')
             ->join('charge_types', 'invoices.charge_type_id', '=', 'charge_types.id')
-            ->where('invoices.tenant_id', $user->tenant_id)
+            ->where('invoices.organization_id', $user->organization_id)
+            ->when(!empty($data['country']), function ($q) use ($data) {
+                $q->join('units as rev_units', 'rev_units.id', '=', 'invoices.unit_id')
+                  ->join('estates as rev_estates', 'rev_estates.id', '=', 'rev_units.estate_id')
+                  ->where('rev_estates.country', $data['country']);
+            })
             ->when(!empty($data['estate_id']), function ($q) use ($data) {
                 $unitIds = Unit::where('estate_id', $data['estate_id'])->pluck('id');
                 $q->whereIn('invoices.unit_id', $unitIds);
@@ -316,8 +339,8 @@ class InvoiceService extends BaseService
         }
 
         $invoice = Invoice::create(array_merge($invoiceData, [
-            'tenant_id'          => $user->tenant_id,
-            'invoice_number'     => $this->generateInvoiceNumber($user->tenant_id),
+            'organization_id'          => $user->organization_id,
+            'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
             'status'             => InvoiceStatus::UNPAID->value,
             'issued_by_type'     => 'user',
             'issued_by_user_id'  => $user->id,
@@ -344,7 +367,7 @@ class InvoiceService extends BaseService
         $isDryRun = (bool) ($data['dry_run'] ?? false);
 
         $estate = Estate::where('id', $data['estate_id'])
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
         $billingPeriod = Carbon::parse($data['billing_period'] . '-01');
@@ -432,7 +455,7 @@ class InvoiceService extends BaseService
                         $billedToType = BilledToType::OWNER->value;
                         $billedToId   = $unit->owner->id;
                     }
-                } elseif ($appliesTo === 'tenant') {
+                } elseif ($appliesTo === 'organization') {
                     if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value && $unit->currentTenant) {
                         $billedToType = BilledToType::TENANT->value;
                         $billedToId   = $unit->currentTenant->id;
@@ -494,8 +517,8 @@ class InvoiceService extends BaseService
                             'billing_period'     => $billingPeriodDate,
                             'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
                             'status'             => InvoiceStatus::UNPAID->value,
-                            'invoice_number'     => $this->generateInvoiceNumber($user->tenant_id),
-                            'tenant_id'          => $user->tenant_id,
+                            'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
+                            'organization_id'          => $user->organization_id,
                             'issued_by_type'     => 'user',
                             'issued_by_user_id'  => $user->id,
                         ]);
@@ -511,6 +534,16 @@ class InvoiceService extends BaseService
         // Recalculate stored balance for every unit that got new invoices.
         foreach ($affectedUnits ?? [] as $affectedUnit) {
             $this->unitBalance->recalculate($affectedUnit);
+        }
+
+        // Notify all users assigned to this estate about the completed billing run.
+        if (!$isDryRun && $created > 0) {
+            $usersToNotify = $estate->assignedUsers()->get();
+            Notification::send($usersToNotify, new BillingRunCompleted(
+                $estate,
+                $created,
+                $billingPeriod->format('F Y'),
+            ));
         }
 
         return [
@@ -536,11 +569,11 @@ class InvoiceService extends BaseService
         $user = Auth::user();
 
         $estate = Estate::where('id', $data['estate_id'])
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
         $chargeType = ChargeType::where('id', $data['charge_type_id'])
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
         if ($chargeType->is_recurring) {
@@ -577,7 +610,7 @@ class InvoiceService extends BaseService
             if ($appliesTo === 'owner' && $unit->owner) {
                 $billedToType = BilledToType::OWNER->value;
                 $billedToId   = $unit->owner->id;
-            } elseif ($appliesTo === 'tenant') {
+            } elseif ($appliesTo === 'organization') {
                 if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value && $unit->currentTenant) {
                     $billedToType = BilledToType::TENANT->value;
                     $billedToId   = $unit->currentTenant->id;
@@ -605,8 +638,8 @@ class InvoiceService extends BaseService
                 'billing_period'     => $billingPeriodDate,
                 'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
                 'status'             => InvoiceStatus::UNPAID->value,
-                'invoice_number'     => $this->generateInvoiceNumber($user->tenant_id),
-                'tenant_id'          => $user->tenant_id,
+                'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
+                'organization_id'          => $user->organization_id,
                 'issued_by_type'     => 'user',
                 'issued_by_user_id'  => $user->id,
             ]);
@@ -709,7 +742,7 @@ class InvoiceService extends BaseService
 
         InvoiceEmailEvent::create([
             'invoice_id'      => $invoice->id,
-            'tenant_id'       => $invoice->tenant_id,
+            'organization_id'       => $invoice->organization_id,
             'event_type'      => 'sent',
             'email'           => $billedTo->email,
             'resend_email_id' => $resendEmailId,
@@ -753,7 +786,7 @@ class InvoiceService extends BaseService
     {
         $user  = Auth::user();
         $query = Invoice::onlyTrashed()
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant'])
             ->latest('deleted_at');
 
@@ -810,7 +843,7 @@ class InvoiceService extends BaseService
     {
         $user     = Auth::user();
         $invoices = Invoice::whereIn('id', $ids)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->with('unit')
             ->get();
 
@@ -868,7 +901,7 @@ class InvoiceService extends BaseService
         $year   = date('Y');
         $prefix = 'INV-' . $year . '-';
 
-        $max = Invoice::where('tenant_id', $tenantId)
+        $max = Invoice::where('organization_id', $tenantId)
             ->where('invoice_number', 'like', $prefix . '%')
             ->withTrashed()
             ->max('invoice_number');

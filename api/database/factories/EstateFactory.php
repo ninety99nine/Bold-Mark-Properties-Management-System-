@@ -16,7 +16,7 @@ class EstateFactory extends Factory
     public function definition(): array
     {
         return [
-            'tenant_id'            => null,
+            'organization_id'            => null,
             'name'                 => fake()->company() . ' Estate',
             'address'              => fake()->streetAddress(),
             'type'                 => fake()->randomElement(EstateType::values()),

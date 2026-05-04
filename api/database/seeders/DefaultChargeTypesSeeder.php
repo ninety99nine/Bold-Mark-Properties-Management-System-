@@ -4,7 +4,7 @@ namespace Database\Seeders;
 
 use App\Enums\ChargeTypeAppliesTo;
 use App\Models\ChargeType;
-use App\Models\Tenant;
+use App\Models\Organization;
 use Illuminate\Database\Seeder;
 
 class DefaultChargeTypesSeeder extends Seeder
@@ -261,9 +261,9 @@ class DefaultChargeTypesSeeder extends Seeder
 
     public function run(): void
     {
-        $tenants = Tenant::all();
+        $organizations = Organization::all();
 
-        foreach ($tenants as $tenant) {
+        foreach ($organizations as $tenant) {
             $this->seedForTenant($tenant->id);
         }
     }
@@ -272,8 +272,8 @@ class DefaultChargeTypesSeeder extends Seeder
     {
         foreach ($this->defaults as $chargeType) {
             ChargeType::updateOrCreate(
-                ['tenant_id' => $tenantId, 'code' => $chargeType['code']],
-                array_merge($chargeType, ['tenant_id' => $tenantId])
+                ['organization_id' => $tenantId, 'code' => $chargeType['code']],
+                array_merge($chargeType, ['organization_id' => $tenantId])
             );
         }
     }

@@ -43,7 +43,7 @@ class ChargeType extends Model
         'is_recurring',
         'sort_order',
         'applies_to',
-        'tenant_id',
+        'organization_id',
     ];
 
     /**
@@ -101,9 +101,9 @@ class ChargeType extends Model
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**

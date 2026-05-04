@@ -32,6 +32,9 @@ class ChargeTypePolicy extends BasePolicy
      */
     public function view(User $user, ChargeType $chargeType): bool
     {
+        if ($chargeType->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -48,22 +51,17 @@ class ChargeTypePolicy extends BasePolicy
      */
     public function update(User $user, ChargeType $chargeType): bool
     {
+        if ($chargeType->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'charge.type.update');
     }
 
     /**
      * Determine whether the user can bulk-delete charge types.
-     * Iterates the incoming `charge_type_ids` array and checks permission.
-     * System defaults (is_system = true) cannot be deleted.
      */
     public function deleteAny(User $user): bool
     {
-        $chargeTypeIds = request()->input('charge_type_ids', []);
-
-        if (empty($chargeTypeIds)) {
-            return false;
-        }
-
         return $this->authService->hasPermission($user, 'charge.type.delete');
     }
 
@@ -73,10 +71,12 @@ class ChargeTypePolicy extends BasePolicy
      */
     public function delete(User $user, ChargeType $chargeType): bool
     {
+        if ($chargeType->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         if ($chargeType->is_system) {
             return false;
         }
-
         return $this->authService->hasPermission($user, 'charge.type.delete');
     }
 }

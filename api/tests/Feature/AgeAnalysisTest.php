@@ -27,9 +27,9 @@ it('returns age analysis data for authenticated user', function () {
 
 it('age analysis data is scoped to the authenticated user tenant', function () {
     $userA   = adminUser();
-    $estateA = Estate::factory()->create(['tenant_id' => $userA->tenant_id]);
-    $unitA   = Unit::factory()->create(['estate_id' => $estateA->id, 'tenant_id' => $userA->tenant_id]);
-    Invoice::factory()->overdue()->count(3)->create(['tenant_id' => $userA->tenant_id, 'unit_id' => $unitA->id]);
+    $estateA = Estate::factory()->create(['organization_id' => $userA->organization_id]);
+    $unitA   = Unit::factory()->create(['estate_id' => $estateA->id, 'organization_id' => $userA->organization_id]);
+    Invoice::factory()->overdue()->count(3)->create(['organization_id' => $userA->organization_id, 'unit_id' => $unitA->id]);
 
     $userB = adminUser(); // different tenant — no overdue invoices
 
@@ -46,14 +46,14 @@ it('age analysis data is scoped to the authenticated user tenant', function () {
 
 it('filters age analysis by estate when estate_id is provided', function () {
     $user    = adminUser();
-    $estateA = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $estateB = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estateA = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $estateB = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
-    $unitA = Unit::factory()->create(['estate_id' => $estateA->id, 'tenant_id' => $user->tenant_id]);
-    Invoice::factory()->overdue()->count(2)->create(['tenant_id' => $user->tenant_id, 'unit_id' => $unitA->id]);
+    $unitA = Unit::factory()->create(['estate_id' => $estateA->id, 'organization_id' => $user->organization_id]);
+    Invoice::factory()->overdue()->count(2)->create(['organization_id' => $user->organization_id, 'unit_id' => $unitA->id]);
 
-    $unitB = Unit::factory()->create(['estate_id' => $estateB->id, 'tenant_id' => $user->tenant_id]);
-    Invoice::factory()->overdue()->count(4)->create(['tenant_id' => $user->tenant_id, 'unit_id' => $unitB->id]);
+    $unitB = Unit::factory()->create(['estate_id' => $estateB->id, 'organization_id' => $user->organization_id]);
+    Invoice::factory()->overdue()->count(4)->create(['organization_id' => $user->organization_id, 'unit_id' => $unitB->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.age.analysis') . '?estate_id=' . $estateA->id)

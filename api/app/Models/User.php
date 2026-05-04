@@ -31,7 +31,7 @@ class User extends Authenticatable
         'phone',
         'status',
         'last_login_at',
-        'tenant_id',
+        'organization_id',
     ];
 
     /**
@@ -66,8 +66,8 @@ class User extends Authenticatable
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'like', '%' . $searchTerm . '%')
-              ->orWhere('email', 'like', '%' . $searchTerm . '%');
+        $query->where('name', 'ilike', '%' . $searchTerm . '%')
+              ->orWhere('email', 'ilike', '%' . $searchTerm . '%');
     }
 
     /**
@@ -75,9 +75,9 @@ class User extends Authenticatable
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**
@@ -87,6 +87,8 @@ class User extends Authenticatable
      */
     public function estates(): BelongsToMany
     {
-        return $this->belongsToMany(Estate::class, 'user_estates')->withTimestamps();
+        return $this->belongsToMany(Estate::class, 'user_estates')
+                    ->using(UserEstate::class)
+                    ->withTimestamps();
     }
 }

@@ -27,12 +27,12 @@ return new class extends Migration
 
             $table->enum('applies_to', ChargeTypeAppliesTo::values())->default(ChargeTypeAppliesTo::EITHER->value);
 
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
-            $table->unique(['tenant_id', 'code']);
-            $table->index('tenant_id');
+            $table->unique(['organization_id', 'code']);
+            $table->index('organization_id');
             $table->index('is_active');
             $table->index('is_recurring');
             $table->index('applies_to');

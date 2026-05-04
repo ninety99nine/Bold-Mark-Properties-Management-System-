@@ -7,7 +7,7 @@ use App\Models\Estate;
 use App\Models\Owner;
 use App\Models\Unit;
 use App\Models\UnitActivity;
-use App\Models\UnitTenant;
+use App\Models\Tenant;
 use App\Enums\OccupancyType;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -45,7 +45,7 @@ class UnitService extends BaseService
     {
         $query = Unit::where('units.estate_id', $estate->id)
             ->with(['owner', 'currentTenant'])
-            ->withCount(['unitTenants as total_tenants_count']);
+            ->withCount(['tenants as total_tenants_count']);
 
         // --- Filters ---
 
@@ -231,7 +231,7 @@ class UnitService extends BaseService
             return [
                 'occupancy'           => ['owner_occupied' => 0, 'tenant_occupied' => 0, 'vacant' => 0],
                 'invoice_status'      => ['paid' => 0, 'overdue' => 0, 'partial' => 0],
-                'top_arrears'         => [],
+                'top_owner_arrears'   => [],
                 'tenant_lease_expiry' => ['expired' => 0, 'this_month' => 0, 'next_month' => 0, 'in_3_months' => 0, 'beyond' => 0],
                 'top_tenant_arrears'  => [],
             ];
@@ -253,34 +253,32 @@ class UnitService extends BaseService
             ")
             ->first();
 
+        // Use the stored balance column (kept in sync by UnitBalanceService).
+        // balance < 0  → unit is in arrears; the arrears amount = ABS(balance).
+        // This correctly accounts for partial payments and unallocated credits,
+        // unlike summing raw invoice amounts.
         $topArrears = Unit::whereIn('id', $unitIds)
             ->with('owner:id,unit_id,full_name')
-            ->addSelect([
-                'units.*',
-                'outstanding_amount' => Invoice::selectRaw('COALESCE(SUM(amount), 0)')
-                    ->whereColumn('unit_id', 'units.id')
-                    ->whereIn('status', ['unpaid', 'overdue', 'partially_paid']),
-            ])
-            ->orderByDesc('outstanding_amount')
-            ->limit(5)
+            ->where('balance', '<', 0)
+            ->orderBy('balance')          // most negative first = highest arrears
+            ->limit(10)
             ->get()
-            ->filter(fn ($u) => ($u->outstanding_amount ?? 0) > 0)
             ->map(fn ($u) => [
                 'unit_id'     => $u->id,
                 'unit_number' => $u->unit_number,
                 'owner_name'  => $u->owner?->full_name ?? '—',
-                'outstanding' => (float) ($u->outstanding_amount ?? 0),
+                'outstanding' => (float) abs($u->balance ?? 0),
             ])
             ->values()
             ->toArray();
 
-        // ── Tenant lease expiry buckets ──────────────────────────────────
+        // ── Organization lease expiry buckets ──────────────────────────────────
         $today     = now()->startOfDay();
         $endOfMonth     = now()->endOfMonth();
         $endOfNextMonth = now()->addMonthNoOverflow()->endOfMonth();
         $in3Months      = now()->addMonths(3)->endOfDay();
 
-        $leaseRows = UnitTenant::whereIn('unit_id', $unitIds)
+        $leaseRows = Tenant::whereIn('unit_id', $unitIds)
             ->where('is_active', true)
             ->whereNotNull('lease_end')
             ->pluck('lease_end');
@@ -301,23 +299,23 @@ class UnitService extends BaseService
             }
         }
 
-        // ── Top tenant arrears (top 5 tenants by outstanding invoices) ───
-        $topTenantArrears = UnitTenant::whereIn('unit_id', $unitIds)
+        // ── Top tenant arrears (top 10 organizations by outstanding invoices) ───
+        $topTenantArrears = Tenant::whereIn('unit_id', $unitIds)
             ->where('is_active', true)
             ->with('unit:id,unit_number')
             ->addSelect([
-                'unit_tenants.*',
+                'tenants.*',
                 'outstanding_amount' => Invoice::selectRaw('COALESCE(SUM(amount), 0)')
-                    ->whereColumn('unit_id', 'unit_tenants.unit_id')
-                    ->where('billed_to_type', 'tenant')
+                    ->whereColumn('unit_id', 'tenants.unit_id')
+                    ->where('billed_to_type', 'organization')
                     ->whereIn('status', ['unpaid', 'overdue', 'partially_paid']),
             ])
             ->orderByDesc('outstanding_amount')
-            ->limit(5)
+            ->limit(10)
             ->get()
             ->filter(fn ($t) => ($t->outstanding_amount ?? 0) > 0)
             ->map(fn ($t) => [
-                'tenant_id'   => $t->id,
+                'organization_id'   => $t->id,
                 'tenant_name' => $t->full_name ?? '—',
                 'unit_number' => $t->unit?->unit_number ?? '—',
                 'outstanding' => (float) ($t->outstanding_amount ?? 0),
@@ -336,7 +334,7 @@ class UnitService extends BaseService
                 'overdue' => (int) ($inv?->overdue_count ?? 0),
                 'partial' => (int) ($inv?->partial_count ?? 0),
             ],
-            'top_arrears'         => $topArrears,
+            'top_owner_arrears'   => $topArrears,
             'tenant_lease_expiry' => $leaseExpiry,
             'top_tenant_arrears'  => $topTenantArrears,
         ];
@@ -410,7 +408,7 @@ class UnitService extends BaseService
 
         $unit = Unit::create(array_merge($unitData, [
             'estate_id' => $estate->id,
-            'tenant_id' => $user->tenant_id,
+            'organization_id' => $user->organization_id,
             'status'    => $unitData['status'] ?? 'active',
         ]));
 
@@ -422,7 +420,7 @@ class UnitService extends BaseService
 
             Owner::create(array_merge($ownerData, [
                 'unit_id'   => $unit->id,
-                'tenant_id' => $user->tenant_id,
+                'organization_id' => $user->organization_id,
             ]));
         }
 
@@ -434,9 +432,9 @@ class UnitService extends BaseService
                 ->only(['full_name', 'email', 'phone', 'id_number', 'lease_start', 'lease_end', 'rent_amount'])
                 ->toArray();
 
-            UnitTenant::create(array_merge($tenantData, [
+            Tenant::create(array_merge($tenantData, [
                 'unit_id'   => $unit->id,
-                'tenant_id' => $user->tenant_id,
+                'organization_id' => $user->organization_id,
                 'is_active' => true,
             ]));
         }
@@ -580,9 +578,9 @@ class UnitService extends BaseService
             if ($unit->currentTenant) {
                 $unit->currentTenant->update($tenantData);
             } else {
-                UnitTenant::create(array_merge($tenantData, [
+                Tenant::create(array_merge($tenantData, [
                     'unit_id'   => $unit->id,
-                    'tenant_id' => $user->tenant_id,
+                    'organization_id' => $user->organization_id,
                     'is_active' => true,
                 ]));
 
@@ -700,7 +698,7 @@ class UnitService extends BaseService
 
         $commonAttrs = [
             'unit_id'          => $unit->id,
-            'tenant_id'        => $unit->tenant_id,
+            'organization_id'        => $unit->organization_id,
             'batch_id'         => $batchId,
             'user_id'          => $user?->id,
             'changed_by_name'  => $user?->name ?? $user?->full_name ?? 'System',
@@ -751,7 +749,7 @@ class UnitService extends BaseService
             }
         }
 
-        // ── Tenant fields diff ───────────────────────────────────────────
+        // ── Organization fields diff ───────────────────────────────────────────
         if ($submittedTenant) {
             if ($newTenantCreated) {
                 // Brand-new tenant moved in — log as a dedicated "Moved in tenant" event
@@ -1018,7 +1016,7 @@ class UnitService extends BaseService
     public function bulkImportUnits(Estate $estate, array $rows): array
     {
         $user      = Auth::user();
-        $tenantId  = $user->tenant_id;
+        $tenantId  = $user->organization_id;
         $imported  = 0;
         $duplicates = 0;
         $errors    = [];
@@ -1082,7 +1080,7 @@ class UnitService extends BaseService
             // --- Create records ---
             $unit = Unit::create([
                 'estate_id'      => $estate->id,
-                'tenant_id'      => $tenantId,
+                'organization_id'      => $tenantId,
                 'unit_number'    => $unitNumber,
                 'address'        => trim($row['address'] ?? ''),
                 'occupancy_type' => $occupancyType,
@@ -1096,7 +1094,7 @@ class UnitService extends BaseService
 
             Owner::create([
                 'unit_id'    => $unit->id,
-                'tenant_id'  => $tenantId,
+                'organization_id'  => $tenantId,
                 'full_name'  => $ownerName,
                 'email'      => $ownerEmail,
                 'phone'      => trim($row['owner_phone'] ?? '') ?: null,
@@ -1107,10 +1105,10 @@ class UnitService extends BaseService
             if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value) {
                 $tenantName = trim($row['tenant_full_name'] ?? '');
                 if ($tenantName || $tenantEmail) {
-                    UnitTenant::create([
+                    Tenant::create([
                         'unit_id'     => $unit->id,
-                        'tenant_id'   => $tenantId,
-                        'full_name'   => $tenantName ?: 'Unknown Tenant',
+                        'organization_id'   => $tenantId,
+                        'full_name'   => $tenantName ?: 'Unknown Organization',
                         'email'       => $tenantEmail ?: null,
                         'phone'       => trim($row['tenant_phone'] ?? '') ?: null,
                         'lease_start' => $this->parseDate($row['tenant_lease_start'] ?? ''),

@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('unit_tenants', function (Blueprint $table) {
+        Schema::table('tenants', function (Blueprint $table) {
             $table->string('lease_document_url')->nullable()->after('lease_end');
             $table->string('lease_document_name')->nullable()->after('lease_document_url');
         });
@@ -22,7 +22,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('unit_tenants', function (Blueprint $table) {
+        Schema::table('tenants', function (Blueprint $table) {
             $table->dropColumn(['lease_document_url', 'lease_document_name']);
         });
     }

@@ -14,7 +14,7 @@ class RecalculateUnitBalances extends Command
 
     public function handle(UnitBalanceService $service): int
     {
-        $tenantId = $this->option('tenant') ?: null;
+        $tenantId = $this->option('organization') ?: null;
 
         $this->info($tenantId
             ? "Recalculating balances for tenant {$tenantId}…"

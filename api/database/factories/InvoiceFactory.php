@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\BilledToType;
 use App\Enums\InvoiceStatus;
+use App\Models\ChargeType;
 use App\Models\Invoice;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -18,9 +19,9 @@ class InvoiceFactory extends Factory
     public function definition(): array
     {
         return [
-            'tenant_id'       => null,
+            'organization_id'       => null,
             'unit_id'         => null,
-            'charge_type_id'  => null,
+            'charge_type_id'  => ChargeType::factory(),
             'billed_to_type'  => fake()->randomElement(BilledToType::values()),
             'billed_to_id'    => Str::uuid(),
             'invoice_number'  => 'INV-' . date('Y') . '-' . fake()->unique()->numerify('####'),

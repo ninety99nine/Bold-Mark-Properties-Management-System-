@@ -30,32 +30,38 @@ it('returns 401 on all invoice routes when unauthenticated', function (string $m
 
 it('returns a paginated list of invoices scoped to tenant', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
-    Invoice::factory()->count(3)->create([
-        'tenant_id'      => $user->tenant_id,
-        'unit_id'        => $unit->id,
-        'charge_type_id' => $chargeType->id,
-        'billed_to_type' => 'owner',
-        'billed_to_id'   => $owner->id,
-    ]);
+    foreach (['2026-01-01', '2026-02-01', '2026-03-01'] as $period) {
+        Invoice::factory()->create([
+            'organization_id' => $user->organization_id,
+            'unit_id'         => $unit->id,
+            'charge_type_id'  => $chargeType->id,
+            'billed_to_type'  => 'owner',
+            'billed_to_id'    => $owner->id,
+            'billing_period'  => $period,
+        ]);
+    }
 
     // Another tenant's invoices — must NOT appear
-    $otherTenant    = createTenant();
-    $otherEstate    = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherUnit      = Unit::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
-    $otherChargeType = ChargeType::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherOwner     = Owner::where('unit_id', $otherUnit->id)->firstOrFail();
-    Invoice::factory()->count(2)->create([
-        'tenant_id'      => $otherTenant->id,
-        'unit_id'        => $otherUnit->id,
-        'charge_type_id' => $otherChargeType->id,
-        'billed_to_type' => 'owner',
-        'billed_to_id'   => $otherOwner->id,
-    ]);
+    $otherTenant     = createTenant();
+    $otherEstate     = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherUnit       = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
+    $otherChargeType = ChargeType::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherOwner      = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $otherTenant->id]);
+    foreach (['2026-01-01', '2026-02-01'] as $period) {
+        Invoice::factory()->create([
+            'organization_id' => $otherTenant->id,
+            'unit_id'         => $otherUnit->id,
+            'charge_type_id'  => $otherChargeType->id,
+            'billed_to_type'  => 'owner',
+            'billed_to_id'    => $otherOwner->id,
+            'billing_period'  => $period,
+        ]);
+    }
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.invoices'))
@@ -71,12 +77,12 @@ it('returns a paginated list of invoices scoped to tenant', function () {
 
 it('returns unit relationship on invoices index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -89,12 +95,12 @@ it('returns unit relationship on invoices index when requested', function () {
 
 it('returns chargeType relationship on invoices index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -107,12 +113,12 @@ it('returns chargeType relationship on invoices index when requested', function 
 
 it('returns multiple relationships on invoices index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -130,12 +136,12 @@ it('returns multiple relationships on invoices index when requested', function (
 
 it('returns cashbook_entries_count on invoices index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -164,12 +170,12 @@ it('returns invoice summary statistics', function () {
 
 it('returns a single invoice belonging to the user tenant', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -182,12 +188,12 @@ it('returns a single invoice belonging to the user tenant', function () {
 it('returns 404 when showing an invoice from another tenant', function () {
     $user         = adminUser();
     $otherTenant  = createTenant();
-    $otherEstate  = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherUnit    = Unit::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
-    $otherCharge  = ChargeType::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherOwner   = Owner::where('unit_id', $otherUnit->id)->firstOrFail();
+    $otherEstate  = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherUnit    = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
+    $otherCharge  = ChargeType::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherOwner   = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $otherTenant->id]);
     $otherInvoice = Invoice::factory()->create([
-        'tenant_id' => $otherTenant->id, 'unit_id' => $otherUnit->id,
+        'organization_id' => $otherTenant->id, 'unit_id' => $otherUnit->id,
         'charge_type_id' => $otherCharge->id, 'billed_to_type' => 'owner', 'billed_to_id' => $otherOwner->id,
     ]);
 
@@ -202,12 +208,12 @@ it('returns 404 when showing an invoice from another tenant', function () {
 
 it('returns unit relationship on invoice show when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -220,12 +226,12 @@ it('returns unit relationship on invoice show when requested', function () {
 
 it('returns cashbook_entries_count on invoice show when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -242,10 +248,10 @@ it('returns cashbook_entries_count on invoice show when requested', function () 
 
 it('creates an invoice with valid data', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -258,12 +264,12 @@ it('creates an invoice with valid data', function () {
             'due_date'       => '2026-04-07',
         ])
         ->assertCreated()
-        ->assertJsonPath('data.amount', 2850.0);
+        ->assertJsonPath('data.amount', 2850);
 });
 
 it('returns 422 when unit_id is missing', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -280,7 +286,7 @@ it('returns 422 when unit_id is missing', function () {
 
 it('returns 422 when unit_id is not a valid uuid', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -298,9 +304,9 @@ it('returns 422 when unit_id is not a valid uuid', function () {
 
 it('returns 422 when charge_type_id is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $owner  = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -317,10 +323,10 @@ it('returns 422 when charge_type_id is missing', function () {
 
 it('returns 422 when billed_to_type is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -337,10 +343,10 @@ it('returns 422 when billed_to_type is missing', function () {
 
 it('returns 422 when billed_to_type is invalid', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -358,10 +364,10 @@ it('returns 422 when billed_to_type is invalid', function () {
 
 it('returns 422 when amount is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -378,10 +384,10 @@ it('returns 422 when amount is missing', function () {
 
 it('returns 422 when amount is negative', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -399,10 +405,10 @@ it('returns 422 when amount is negative', function () {
 
 it('returns 422 when billing_period is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -419,10 +425,10 @@ it('returns 422 when billing_period is missing', function () {
 
 it('returns 422 when due_date is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
@@ -443,12 +449,12 @@ it('returns 422 when due_date is missing', function () {
 
 it('updates an invoice with valid data', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -461,12 +467,12 @@ it('updates an invoice with valid data', function () {
 
 it('returns 422 when update status is invalid', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -478,28 +484,28 @@ it('returns 422 when update status is invalid', function () {
 
 it('accepts all valid invoice status values on update', function (string $status) {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.invoice', $invoice), ['status' => $status])
         ->assertOk();
-})->with(['draft', 'sent', 'paid', 'partially_paid', 'overdue']);
+})->with(['unpaid', 'paid', 'partially_paid', 'overdue']);
 
 it('returns 422 when update amount is negative', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -512,12 +518,12 @@ it('returns 422 when update amount is negative', function () {
 it('returns 404 when updating an invoice from another tenant', function () {
     $user         = adminUser();
     $otherTenant  = createTenant();
-    $otherEstate  = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherUnit    = Unit::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
-    $otherCharge  = ChargeType::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherOwner   = Owner::where('unit_id', $otherUnit->id)->firstOrFail();
+    $otherEstate  = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherUnit    = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
+    $otherCharge  = ChargeType::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherOwner   = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $otherTenant->id]);
     $otherInvoice = Invoice::factory()->create([
-        'tenant_id' => $otherTenant->id, 'unit_id' => $otherUnit->id,
+        'organization_id' => $otherTenant->id, 'unit_id' => $otherUnit->id,
         'charge_type_id' => $otherCharge->id, 'billed_to_type' => 'owner', 'billed_to_id' => $otherOwner->id,
     ]);
 
@@ -555,7 +561,7 @@ it('returns 422 when run_billing estate_id is not a uuid', function () {
 
 it('returns 422 when run_billing billing_period is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.run.billing'), ['estate_id' => $estate->id])
@@ -565,7 +571,7 @@ it('returns 422 when run_billing billing_period is missing', function () {
 
 it('returns 422 when run_billing billing_period format is wrong', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.run.billing'), [
@@ -578,7 +584,7 @@ it('returns 422 when run_billing billing_period format is wrong', function () {
 
 it('accepts dry_run flag on run_billing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.run.billing'), [
@@ -595,8 +601,8 @@ it('accepts dry_run flag on run_billing', function () {
 
 it('creates adhoc billing with valid data', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->adHoc()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->adHoc()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.adhoc.billing'), [
@@ -610,7 +616,7 @@ it('creates adhoc billing with valid data', function () {
 
 it('returns 422 when adhoc_billing estate_id is missing', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.adhoc.billing'), [
@@ -624,7 +630,7 @@ it('returns 422 when adhoc_billing estate_id is missing', function () {
 
 it('returns 422 when adhoc_billing charge_type_id is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.adhoc.billing'), [
@@ -638,8 +644,8 @@ it('returns 422 when adhoc_billing charge_type_id is missing', function () {
 
 it('returns 422 when adhoc_billing amount is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.adhoc.billing'), [
@@ -653,8 +659,8 @@ it('returns 422 when adhoc_billing amount is missing', function () {
 
 it('returns 422 when adhoc_billing amount is negative', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.adhoc.billing'), [
@@ -669,8 +675,8 @@ it('returns 422 when adhoc_billing amount is negative', function () {
 
 it('returns 422 when adhoc_billing billing_period format is wrong', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.adhoc.billing'), [
@@ -689,12 +695,12 @@ it('returns 422 when adhoc_billing billing_period format is wrong', function () 
 
 it('deletes a single invoice', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
@@ -702,7 +708,7 @@ it('deletes a single invoice', function () {
         ->deleteJson(route('api.v1.delete.invoice', $invoice))
         ->assertOk();
 
-    $this->assertDatabaseMissing('invoices', ['id' => $invoice->id]);
+    $this->assertSoftDeleted('invoices', ['id' => $invoice->id]);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -711,14 +717,20 @@ it('deletes a single invoice', function () {
 
 it('bulk deletes own-tenant invoices', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
-    $invoices   = Invoice::factory()->count(3)->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
-    ]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
+    $invoices = collect(['2026-01-01', '2026-02-01', '2026-03-01'])->map(fn ($period) =>
+        Invoice::factory()->create([
+            'organization_id' => $user->organization_id,
+            'unit_id'         => $unit->id,
+            'charge_type_id'  => $chargeType->id,
+            'billed_to_type'  => 'owner',
+            'billed_to_id'    => $owner->id,
+            'billing_period'  => $period,
+        ])
+    );
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.invoices'), [
@@ -726,7 +738,7 @@ it('bulk deletes own-tenant invoices', function () {
         ])
         ->assertOk();
 
-    $invoices->each(fn ($i) => $this->assertDatabaseMissing('invoices', ['id' => $i->id]));
+    $invoices->each(fn ($i) => $this->assertSoftDeleted('invoices', ['id' => $i->id]));
 });
 
 it('returns 422 when bulk delete invoice_ids is missing', function () {

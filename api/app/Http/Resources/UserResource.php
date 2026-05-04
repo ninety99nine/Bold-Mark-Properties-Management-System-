@@ -21,13 +21,13 @@ class UserResource extends JsonResource
             'phone'               => $this->phone,
             'status'              => $this->status instanceof \BackedEnum ? $this->status->value : $this->status,
             'last_login_at'       => $this->last_login_at?->toDateTimeString(),
-            'tenant_id'           => $this->tenant_id,
+            'organization_id'           => $this->organization_id,
             'created_at'          => $this->created_at?->toDateTimeString(),
             'updated_at'          => $this->updated_at?->toDateTimeString(),
 
             'email_verified'      => !is_null($this->email_verified_at),
 
-            'tenant'  => TenantResource::make($this->whenLoaded('tenant')),
+            'organization'  => OrganizationResource::make($this->whenLoaded('organization')),
             'roles'   => $this->whenLoaded('roles', fn () => $this->roles->map(fn ($r) => [
                 'id'   => $r->id,
                 'name' => $r->name,

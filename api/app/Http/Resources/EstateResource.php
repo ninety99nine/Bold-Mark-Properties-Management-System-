@@ -32,13 +32,15 @@ class EstateResource extends JsonResource
     {
         return [
             'id'                   => $this->id,
-            'tenant_id'            => $this->tenant_id,
+            'organization_id'            => $this->organization_id,
             'name'                 => $this->name,
             'address'              => $this->address,
             'type'                 => $this->type instanceof \BackedEnum ? $this->type->value : $this->type,
             'default_levy_amount'  => $this->default_levy_amount,
             'default_rent_amount'  => $this->default_rent_amount,
             'billing_day'          => $this->billing_day,
+            'country'              => $this->country,
+            'currency'             => $this->currency,
             'is_active'            => (bool) $this->is_active,
             'created_at'           => $this->created_at?->toDateTimeString(),
             'updated_at'           => $this->updated_at?->toDateTimeString(),
@@ -48,13 +50,13 @@ class EstateResource extends JsonResource
             'vacant_units_count'    => (int) ($this->vacant_units_count ?? 0),
             'monthly_revenue'       => $this->computeMonthlyRevenue(),
             'owners_count'          => $this->whenCounted('owners'),
-            'unit_tenants_count'    => $this->whenCounted('unitTenants'),
+            'tenants_count'    => $this->whenCounted('tenants'),
             'invoices_count'        => $this->whenCounted('invoices'),
             'cashbook_entries_count' => $this->whenCounted('cashbookEntries'),
 
             'units'        => UnitResource::collection($this->whenLoaded('units')),
             'charge_types' => ChargeTypeResource::collection($this->whenLoaded('chargeTypes')),
-            'tenant'       => TenantResource::make($this->whenLoaded('tenant')),
+            'organization'       => OrganizationResource::make($this->whenLoaded('organization')),
         ];
     }
 }

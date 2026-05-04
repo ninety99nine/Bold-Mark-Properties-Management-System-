@@ -25,16 +25,14 @@ it('returns 401 on all charge config routes when unauthenticated', function (str
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('returns a list of charge configs for a unit', function () {
-    $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $user        = adminUser();
+    $estate      = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit        = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType1 = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType2 = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
-    UnitChargeConfig::factory()->count(2)->create([
-        'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
-        'charge_type_id' => $chargeType->id,
-    ]);
+    UnitChargeConfig::factory()->create(['unit_id' => $unit->id, 'charge_type_id' => $chargeType1->id]);
+    UnitChargeConfig::factory()->create(['unit_id' => $unit->id, 'charge_type_id' => $chargeType2->id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.unit.charge.configs', [$estate, $unit]))
@@ -47,8 +45,8 @@ it('returns a list of charge configs for a unit', function () {
 it('returns 404 when listing charge configs for another tenant unit', function () {
     $user        = adminUser();
     $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
+    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.unit.charge.configs', [$otherEstate, $otherUnit]))
@@ -61,13 +59,12 @@ it('returns 404 when listing charge configs for another tenant unit', function (
 
 it('returns unit relationship on charge configs index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -80,13 +77,12 @@ it('returns unit relationship on charge configs index when requested', function 
 
 it('returns chargeType relationship on charge configs index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -99,13 +95,12 @@ it('returns chargeType relationship on charge configs index when requested', fun
 
 it('returns unit and chargeType relationships together on charge configs index', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -123,9 +118,9 @@ it('returns unit and chargeType relationships together on charge configs index',
 
 it('creates a charge config for a unit', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->recurring()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->recurring()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -143,8 +138,8 @@ it('creates a charge config for a unit', function () {
 
 it('returns 422 when charge_type_id is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -156,8 +151,8 @@ it('returns 422 when charge_type_id is missing', function () {
 
 it('returns 422 when charge_type_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -170,8 +165,8 @@ it('returns 422 when charge_type_id is not a valid uuid', function () {
 
 it('returns 422 when charge_type_id does not exist', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -184,9 +179,9 @@ it('returns 422 when charge_type_id does not exist', function () {
 
 it('returns 422 when amount is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -198,9 +193,9 @@ it('returns 422 when amount is missing', function () {
 
 it('returns 422 when amount is negative', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -213,9 +208,9 @@ it('returns 422 when amount is negative', function () {
 
 it('allows amount of zero on charge config create', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -227,9 +222,9 @@ it('allows amount of zero on charge config create', function () {
 
 it('allows is_active to be omitted on charge config create', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]), [
@@ -245,9 +240,9 @@ it('allows is_active to be omitted on charge config create', function () {
 
 it('returns unit relationship in charge config create response when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]) . '?_relationships=unit', [
@@ -261,9 +256,9 @@ it('returns unit relationship in charge config create response when requested', 
 
 it('returns chargeType relationship in charge config create response when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.unit.charge.config', [$estate, $unit]) . '?_relationships=chargeType', [
@@ -281,12 +276,11 @@ it('returns chargeType relationship in charge config create response when reques
 
 it('returns a single charge config', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -299,12 +293,11 @@ it('returns a single charge config', function () {
 it('returns 404 when showing a charge config from another tenant', function () {
     $user        = adminUser();
     $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
-    $otherType   = ChargeType::factory()->create(['tenant_id' => $otherTenant->id]);
+    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
+    $otherType   = ChargeType::factory()->create(['organization_id' => $otherTenant->id]);
     $otherConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $otherUnit->id,
-        'tenant_id'      => $otherTenant->id,
         'charge_type_id' => $otherType->id,
     ]);
 
@@ -319,12 +312,11 @@ it('returns 404 when showing a charge config from another tenant', function () {
 
 it('returns unit relationship on charge config show when requested', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -338,12 +330,11 @@ it('returns unit relationship on charge config show when requested', function ()
 
 it('returns chargeType relationship on charge config show when requested', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -361,12 +352,11 @@ it('returns chargeType relationship on charge config show when requested', funct
 
 it('updates a charge config amount and active status', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
         'amount'         => 150.00,
         'is_active'      => true,
@@ -387,12 +377,11 @@ it('updates a charge config amount and active status', function () {
 
 it('returns 422 when update charge_type_id is not a valid uuid', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -406,12 +395,11 @@ it('returns 422 when update charge_type_id is not a valid uuid', function () {
 
 it('returns 422 when update amount is negative', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -426,12 +414,11 @@ it('returns 422 when update amount is negative', function () {
 it('returns 404 when updating a charge config from another tenant', function () {
     $user        = adminUser();
     $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
-    $otherType   = ChargeType::factory()->create(['tenant_id' => $otherTenant->id]);
+    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
+    $otherType   = ChargeType::factory()->create(['organization_id' => $otherTenant->id]);
     $otherConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $otherUnit->id,
-        'tenant_id'      => $otherTenant->id,
         'charge_type_id' => $otherType->id,
     ]);
 
@@ -448,12 +435,11 @@ it('returns 404 when updating a charge config from another tenant', function () 
 
 it('deletes a single charge config', function () {
     $user         = adminUser();
-    $estate       = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType   = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate       = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit         = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType   = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $chargeConfig = UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -469,16 +455,15 @@ it('deletes a single charge config', function () {
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('bulk deletes own-tenant charge configs', function () {
-    $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $user   = adminUser();
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
-    $configs = UnitChargeConfig::factory()->count(3)->create([
-        'unit_id'        => $unit->id,
-        'tenant_id'      => $user->tenant_id,
-        'charge_type_id' => $chargeType->id,
-    ]);
+    $configs = collect([
+        ChargeType::factory()->create(['organization_id' => $user->organization_id]),
+        ChargeType::factory()->create(['organization_id' => $user->organization_id]),
+        ChargeType::factory()->create(['organization_id' => $user->organization_id]),
+    ])->map(fn($ct) => UnitChargeConfig::factory()->create(['unit_id' => $unit->id, 'charge_type_id' => $ct->id]));
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.unit.charge.configs', [$estate, $unit]), [
@@ -491,8 +476,8 @@ it('bulk deletes own-tenant charge configs', function () {
 
 it('returns 422 when bulk delete charge_config_ids is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.unit.charge.configs', [$estate, $unit]), [])
@@ -502,8 +487,8 @@ it('returns 422 when bulk delete charge_config_ids is missing', function () {
 
 it('returns 422 when bulk delete charge_config_ids is an empty array', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.unit.charge.configs', [$estate, $unit]), ['charge_config_ids' => []])
@@ -513,8 +498,8 @@ it('returns 422 when bulk delete charge_config_ids is an empty array', function 
 
 it('returns 422 when bulk delete charge_config_ids contains a non-uuid value', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.unit.charge.configs', [$estate, $unit]), ['charge_config_ids' => ['not-a-uuid']])

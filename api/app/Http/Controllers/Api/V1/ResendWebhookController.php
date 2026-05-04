@@ -56,7 +56,7 @@ class ResendWebhookController extends Controller
         if (!$exists) {
             InvoiceEmailEvent::create([
                 'invoice_id'      => $sentEvent->invoice_id,
-                'tenant_id'       => $sentEvent->tenant_id,
+                'organization_id'       => $sentEvent->organization_id,
                 'event_type'      => $eventType,
                 'email'           => $sentEvent->email,
                 'resend_email_id' => $resendEmailId,

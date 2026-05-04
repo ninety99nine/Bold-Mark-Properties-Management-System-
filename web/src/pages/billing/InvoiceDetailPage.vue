@@ -10,10 +10,12 @@ import AppSelect     from '@/components/common/AppSelect.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import api from '@/composables/useApi'
 import { useBack } from '@/composables/useBack.js'
+import { useCountryStore } from '@/stores/country'
 
 const route  = useRoute()
 const router = useRouter()
 const { goBack } = useBack('/billing')
+const countryStore = useCountryStore()
 
 const invoice       = ref(null)
 const loading       = ref(true)
@@ -245,8 +247,7 @@ const timeToOpen = computed(() => {
 
 // ── Formatting ────────────────────────────────────────────────────────────
 function formatCurrency(amount) {
-  const parts = Math.abs(amount ?? 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
-  return `R\u00a0${parts}`
+  return countryStore.formatCurrency(amount)
 }
 
 function formatDate(dateStr) {

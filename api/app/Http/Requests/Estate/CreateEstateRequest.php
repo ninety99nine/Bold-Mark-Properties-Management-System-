@@ -23,6 +23,8 @@ class CreateEstateRequest extends FormRequest
             'default_levy_amount'  => ['nullable', 'numeric', 'min:0'],
             'default_rent_amount'  => ['nullable', 'numeric', 'min:0'],
             'billing_day'          => ['nullable', 'integer', 'min:1', 'max:28'],
+            'country'              => ['nullable', 'string', 'max:3'],
+            'currency'             => ['nullable', 'string', 'max:3'],
         ];
     }
 

@@ -24,6 +24,9 @@ import AppTooltip       from '@/components/common/AppTooltip.vue'
 import AppTableToolbar  from '@/components/common/AppTableToolbar.vue'
 import AppExportModal   from '@/components/common/AppExportModal.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend)
 
@@ -48,6 +51,7 @@ async function handleExportDownload({ format, records }) {
 
   const state  = toolbarState.value
   const params = {}
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
   if (state.filters?.allocation_status) params.allocation_status = state.filters.allocation_status
   if (state.filters?.type)              params.type              = state.filters.type
   if (state.search?.trim())             params._search           = state.search.trim()
@@ -77,7 +81,9 @@ const summary = ref({
 async function fetchSummary() {
   summaryLoading.value = true
   try {
-    const { data } = await api.get('/cashbook/summary')
+    const params = {}
+    if (countryStore.activeCountry) params.country = countryStore.activeCountry
+    const { data } = await api.get('/cashbook/summary', { params })
     summary.value = data
   } catch { /* silent */ } finally {
     summaryLoading.value = false
@@ -156,6 +162,7 @@ function buildApiParams() {
   const state  = toolbarState.value
   const params = { _per_page: 15, page: currentPage.value }
 
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
   if (state.filters?.allocation_status) params.allocation_status = state.filters.allocation_status
   if (state.search?.trim())             params._search = state.search.trim()
   if (state.dateRange && state.dateRange !== 'all_time') {
@@ -192,6 +199,18 @@ onMounted(() => {
     toolbarState.value.filters = { ...initialFilters.value }
     toolbarKey.value++ // remount toolbar with initialFilters
   }
+  // Auto-open Add Entry modal from dashboard quick action
+  if (route.query.action === 'add-entry') {
+    openAddEntry()
+    router.replace({ query: { ...route.query, action: undefined } })
+  }
+  fetchSummary()
+  fetchEntries()
+})
+
+// ── Re-fetch on country change ───────────────────────────────────────────
+watch(() => countryStore.activeCountry, () => {
+  currentPage.value = 1
   fetchSummary()
   fetchEntries()
 })
@@ -207,7 +226,7 @@ const unallocatedPct = computed(() => 100 - allocatedPct.value)
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function fmtCurrency(amount) {
-  return 'R\u00a0' + Math.abs(Number(amount) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(Math.abs(Number(amount) || 0))
 }
 
 function fmtSigned(amount, type) {
@@ -268,7 +287,9 @@ const newEntry = ref({
 async function fetchEstates() {
   estatesLoading.value = true
   try {
-    const { data } = await api.get('/estates', { params: { _per_page: 100 } })
+    const params = { _per_page: 100 }
+    if (countryStore.activeCountry) params.country = countryStore.activeCountry
+    const { data } = await api.get('/estates', { params })
     estateOptions.value = (data.data ?? []).map(e => ({ value: e.id, label: e.name }))
   } finally {
     estatesLoading.value = false
@@ -488,14 +509,14 @@ const cashFlowData = computed(() => ({
   }],
 }))
 
-const cashFlowOpts = {
+const cashFlowOpts = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
     tooltip: {
       callbacks: {
-        label: ctx => ' R\u00a0' + Math.abs(ctx.parsed.y).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0'),
+        label: ctx => ' ' + countryStore.formatCurrency(Math.abs(ctx.parsed.y)),
       },
     },
   },
@@ -510,11 +531,11 @@ const cashFlowOpts = {
       ticks: {
         font: { size: 11, family: "'DM Sans', sans-serif" },
         color: MUTED,
-        callback: v => 'R ' + (v >= 1000 ? Math.round(v / 1000) + 'k' : v),
+        callback: v => countryStore.formatCurrencyCompact(v),
       },
     },
   },
-}
+}))
 
 // ── Chart: Allocation Status ──────────────────────────────────────────────
 const centerTextPlugin = {
@@ -1026,7 +1047,7 @@ const hasAllocationData = computed(() => allCount.value > 0)
             type="number"
             placeholder="0.00"
             required
-            prefix="R"
+            :prefix="countryStore.currencySymbol"
           />
           <div>
             <label class="block text-sm font-medium text-foreground mb-1.5">

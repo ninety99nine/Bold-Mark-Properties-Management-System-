@@ -75,7 +75,7 @@ class UnitBalanceService
         $query = Unit::query();
 
         if ($tenantId) {
-            $query->where('tenant_id', $tenantId);
+            $query->where('organization_id', $tenantId);
         }
 
         $count = 0;

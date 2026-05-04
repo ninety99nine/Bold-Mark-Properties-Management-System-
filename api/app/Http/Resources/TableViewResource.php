@@ -12,7 +12,7 @@ class TableViewResource extends JsonResource
         return [
             'id'               => $this->id,
             'user_id'          => $this->user_id,
-            'tenant_id'        => $this->tenant_id,
+            'organization_id'        => $this->organization_id,
             'context'          => $this->context,
             'name'             => $this->name,
             'date_range'       => $this->date_range,

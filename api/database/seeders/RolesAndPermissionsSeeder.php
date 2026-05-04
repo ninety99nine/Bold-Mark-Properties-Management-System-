@@ -42,7 +42,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Users & Communities
             'manage-users',
             'manage-communities',
-            'manage-tenants',
+            'manage-organizations',
 
             // Reports
             'view-reports',
@@ -129,5 +129,11 @@ class RolesAndPermissionsSeeder extends Seeder
         $owner->givePermissionTo([
             'view-financials',
         ]);
+
+        // Organization — unit occupant (external)
+        Role::firstOrCreate(['name' => 'tenant', 'guard_name' => 'api']);
+
+        // Contractor — maintenance provider (external)
+        Role::firstOrCreate(['name' => 'contractor', 'guard_name' => 'api']);
     }
 }

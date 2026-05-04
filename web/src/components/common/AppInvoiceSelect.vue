@@ -23,6 +23,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import api from '@/composables/useApi'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 const props = defineProps({
   modelValue:        { default: '' },
@@ -50,9 +53,7 @@ let debounceTimer = null
 // ── Display helpers ────────────────────────────────────────────────────
 function fmtCurrency(amount) {
   if (amount === null || amount === undefined) return '—'
-  const num = Math.round(Number(amount))
-  if (isNaN(num)) return '—'
-  return `R\u00a0${num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}`
+  return countryStore.formatCurrency(amount)
 }
 
 function fmtPeriod(dateStr) {

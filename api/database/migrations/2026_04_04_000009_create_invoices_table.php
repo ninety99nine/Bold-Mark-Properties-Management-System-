@@ -30,12 +30,12 @@ return new class extends Migration
 
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
             $table->foreignUuid('charge_type_id')->constrained('charge_types')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
             $table->unique(['unit_id', 'charge_type_id', 'billing_period']);
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index('unit_id');
             $table->index('charge_type_id');
             $table->index('status');
@@ -43,10 +43,10 @@ return new class extends Migration
             $table->index('due_date');
             $table->index('billed_to_type');
             $table->index('billed_to_id');
-            $table->index(['tenant_id', 'status']);
+            $table->index(['organization_id', 'status']);
             $table->index(['unit_id', 'billing_period']);
             $table->index(['billed_to_type', 'billed_to_id']);
-            $table->index(['tenant_id', 'billing_period', 'status']);
+            $table->index(['organization_id', 'billing_period', 'status']);
         });
     }
 

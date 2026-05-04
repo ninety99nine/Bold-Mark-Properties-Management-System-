@@ -15,7 +15,7 @@ class ChargeTypeResource extends JsonResource
     {
         return [
             'id'           => $this->id,
-            'tenant_id'    => $this->tenant_id,
+            'organization_id'    => $this->organization_id,
             'code'         => $this->code,
             'name'         => $this->name,
             'description'  => $this->description,

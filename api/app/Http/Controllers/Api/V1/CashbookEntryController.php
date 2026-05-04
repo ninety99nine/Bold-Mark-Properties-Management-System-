@@ -7,6 +7,7 @@ use App\Models\CashbookEntry;
 use App\Services\CashbookEntryService;
 use App\Http\Resources\CashbookEntryResource;
 use App\Http\Resources\CashbookEntryResources;
+use Illuminate\Http\JsonResponse;
 use App\Http\Requests\CashbookEntry\ShowCashbookEntriesRequest;
 use App\Http\Requests\CashbookEntry\ShowCashbookSummaryRequest;
 use App\Http\Requests\CashbookEntry\CreateCashbookEntryRequest;
@@ -64,11 +65,11 @@ class CashbookEntryController extends Controller
      * Create a new cashbook entry.
      *
      * @param CreateCashbookEntryRequest $request
-     * @return array
+     * @return JsonResponse
      */
-    public function createCashbookEntry(CreateCashbookEntryRequest $request): array
+    public function createCashbookEntry(CreateCashbookEntryRequest $request): JsonResponse
     {
-        return $this->service->createCashbookEntry($request->validated());
+        return response()->json($this->service->createCashbookEntry($request->validated()), 201);
     }
 
     /**
@@ -90,7 +91,7 @@ class CashbookEntryController extends Controller
      */
     public function deleteCashbookEntries(DeleteCashbookEntriesRequest $request): array
     {
-        return $this->service->deleteCashbookEntries($request->input('cashbook_entry_ids', []));
+        return $this->service->deleteCashbookEntries($request->input('entry_ids', []));
     }
 
     /**

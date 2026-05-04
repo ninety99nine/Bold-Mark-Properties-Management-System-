@@ -10,9 +10,11 @@ import AppInvoiceSelect from '@/components/common/AppInvoiceSelect.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
 import AppBadge        from '@/components/common/AppBadge.vue'
 import { useBack } from '@/composables/useBack.js'
+import { useCountryStore } from '@/stores/country'
 
 const router = useRouter()
 const route  = useRoute()
+const countryStore = useCountryStore()
 
 const estateId = computed(() => route.params.estateId)
 const unitId   = computed(() => route.params.unitId)
@@ -36,9 +38,7 @@ const paymentError      = ref(null)
 // ── Helpers ───────────────────────────────────────────────────────────
 function formatCurrency(amount) {
   if (amount === null || amount === undefined) return '—'
-  const num = Math.round(Number(amount))
-  if (isNaN(num)) return '—'
-  return `R\u00a0${num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}`
+  return countryStore.formatCurrency(amount)
 }
 
 function formatDate(dateStr) {
@@ -58,15 +58,13 @@ function formatBillingPeriod(dateStr) {
 // ── Helpers matching UnitDetailPage exactly ───────────────────────────
 function fmtAmount(n) {
   if (n == null) return '—'
-  const abs  = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  const sign = n < 0 ? '-' : ''
-  return `${sign}R\u00A0${abs}`
+  if (n < 0) return '-' + countryStore.formatCurrency(Math.abs(n))
+  return countryStore.formatCurrency(n)
 }
 
 function fmtPaymentAmount(n) {
   if (n == null) return '—'
-  const abs = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  return `+R\u00A0${abs}`
+  return '+' + countryStore.formatCurrency(Math.abs(n))
 }
 
 const fmtPeriod = formatBillingPeriod
@@ -1395,7 +1393,7 @@ async function saveEditTenant() {
         </div>
       </div>
 
-      <AppInput v-model="editTenantForm.rent_amount" label="Monthly Rent" type="number" placeholder="0.00" prefix="R" />
+      <AppInput v-model="editTenantForm.rent_amount" label="Monthly Rent" type="number" placeholder="0.00" :prefix="countryStore.currencySymbol" />
     </div>
 
     <template #footer>

@@ -18,11 +18,11 @@ class UnitFactory extends Factory
     {
         return [
             'estate_id'      => null,
-            'tenant_id'      => null,
+            'organization_id'      => null,
             'unit_number'    => strtoupper(fake()->lexify('?')) . fake()->numberBetween(1, 50),
             'address'        => fake()->streetAddress(),
             'occupancy_type' => fake()->randomElement(OccupancyType::values()),
-            'status'         => UnitStatus::Active->value,
+            'status'         => UnitStatus::ACTIVE->value,
             'levy_override'  => null,
             'rent_amount'    => fake()->randomFloat(2, 3000, 15000),
         ];

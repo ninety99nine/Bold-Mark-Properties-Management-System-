@@ -19,7 +19,7 @@ class OwnerService extends BaseService
     public function showOwners(array $data): OwnerResources
     {
         $user  = Auth::user();
-        $query = Owner::where('tenant_id', $user->tenant_id)
+        $query = Owner::where('organization_id', $user->organization_id)
             ->with(['unit.estate']);
 
         if (!empty($data['estate_id'])) {
@@ -44,7 +44,7 @@ class OwnerService extends BaseService
     {
         $user   = Auth::user();
         $owners = Owner::whereIn('id', $ownerIds)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->get();
 
         $total = $owners->count();

@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('unit_tenants', function (Blueprint $table) {
+        Schema::create('tenants', function (Blueprint $table) {
 
             $table->uuid('id')->primary();
             $table->string('full_name');
@@ -25,18 +25,18 @@ return new class extends Migration
             $table->date('lease_end')->nullable();
 
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
             $table->index('unit_id');
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index('email');
             $table->index('is_active');
             $table->index('lease_start');
             $table->index('lease_end');
             $table->index(['unit_id', 'is_active']);
-            $table->index(['tenant_id', 'is_active']);
+            $table->index(['organization_id', 'is_active']);
         });
     }
 
@@ -45,6 +45,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('unit_tenants');
+        Schema::dropIfExists('tenants');
     }
 };

@@ -6,7 +6,7 @@
     'portfolio-assistant'  => 'Portfolio Assistant',
     'trustee'              => 'Trustee / Director',
     'owner'                => 'Property Owner',
-    'tenant'               => 'Tenant',
+    'tenant'               => 'Organization',
     'contractor'           => 'Contractor',
   ];
 
@@ -39,7 +39,7 @@
     'owner' =>
       "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Property Owner</strong>. You can view your account balance, download levy statements, and stay up to date on everything related to your property. Use the button below to set up your account.",
     'tenant' =>
-      "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Tenant</strong>. You can access your account, view your invoices, and stay connected with your property manager. Use the button below to set up your account.",
+      "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Organization</strong>. You can access your account, view your invoices, and stay connected with your property manager. Use the button below to set up your account.",
     'contractor' =>
       "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Contractor</strong>. You'll be able to view and manage job cards assigned to you. Use the button below to set up your account and get started.",
   ];

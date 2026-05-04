@@ -10,9 +10,11 @@ import AppSelect     from '@/components/common/AppSelect.vue'
 import AppInput      from '@/components/common/AppInput.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import { useBack } from '@/composables/useBack.js'
+import { useCountryStore } from '@/stores/country'
 
 const router = useRouter()
 const route  = useRoute()
+const countryStore = useCountryStore()
 
 const estateId = computed(() => route.params.estateId)
 const unitId   = computed(() => route.params.unitId)
@@ -85,15 +87,13 @@ function copyText(text, key) {
 // ── Helpers ───────────────────────────────────────────────────────────
 function fmtAmount(n) {
   if (n == null) return '—'
-  const abs  = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  const sign = n < 0 ? '-' : ''
-  return `${sign}R\u00A0${abs}`
+  if (n < 0) return '-' + countryStore.formatCurrency(Math.abs(n))
+  return countryStore.formatCurrency(n)
 }
 
 function fmtPaymentAmount(n) {
   if (n == null) return '—'
-  const abs = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  return `+R\u00A0${abs}`
+  return '+' + countryStore.formatCurrency(Math.abs(n))
 }
 
 function fmtDate(s) {
@@ -181,7 +181,7 @@ function getLifecycleSummary(log) {
     const end   = log.changes.find(c => c.field === 'Lease End')?.new
     if (!name) return null
     const parts = [name]
-    if (rent)  parts.push(`R ${rent}`)
+    if (rent)  parts.push(`${countryStore.currencySymbol} ${rent}`)
     if (start && end) parts.push(`${start} → ${end}`)
     else if (start)   parts.push(`from ${start}`)
     return parts.join(' · ')

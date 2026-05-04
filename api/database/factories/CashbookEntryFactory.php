@@ -17,7 +17,7 @@ class CashbookEntryFactory extends Factory
     {
         return [
             'estate_id'       => null,
-            'tenant_id'       => null,
+            'organization_id'       => null,
             'description'     => fake()->sentence(4),
             'amount'          => fake()->randomFloat(2, 500, 15000),
             'type'            => fake()->randomElement(CashbookEntryType::values()),

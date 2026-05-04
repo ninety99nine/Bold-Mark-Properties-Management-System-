@@ -30,11 +30,11 @@ it('returns 401 on all cashbook routes when unauthenticated', function (string $
 
 it('returns a paginated list of cashbook entries scoped to tenant', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->count(3)->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->count(3)->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
     CashbookEntry::factory()->count(2)->create([
-        'estate_id' => Estate::factory()->create(['tenant_id' => createTenant()->id])->id,
-        'tenant_id' => createTenant()->id,
+        'estate_id' => Estate::factory()->create(['organization_id' => createTenant()->id])->id,
+        'organization_id' => createTenant()->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
@@ -51,8 +51,8 @@ it('returns a paginated list of cashbook entries scoped to tenant', function () 
 
 it('returns estate relationship on cashbook entries index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=estate')
@@ -64,9 +64,9 @@ it('returns estate relationship on cashbook entries index when requested', funct
 
 it('returns unit relationship on cashbook entries index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=unit')
@@ -77,11 +77,11 @@ it('returns unit relationship on cashbook entries index when requested', functio
 
 it('returns chargeType relationship on cashbook entries index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     CashbookEntry::factory()->create([
         'estate_id'      => $estate->id,
-        'tenant_id'      => $user->tenant_id,
+        'organization_id'      => $user->organization_id,
         'charge_type_id' => $chargeType->id,
     ]);
 
@@ -94,17 +94,17 @@ it('returns chargeType relationship on cashbook entries index when requested', f
 
 it('returns invoice relationship on cashbook entries index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
     CashbookEntry::factory()->create([
         'estate_id'  => $estate->id,
-        'tenant_id'  => $user->tenant_id,
+        'organization_id'  => $user->organization_id,
         'invoice_id' => $invoice->id,
     ]);
 
@@ -117,8 +117,8 @@ it('returns invoice relationship on cashbook entries index when requested', func
 
 it('returns multiple relationships on cashbook entries index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=estate,childEntries')
@@ -146,7 +146,7 @@ it('returns cashbook summary statistics', function () {
 
 it('creates a credit cashbook entry with valid data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -162,7 +162,7 @@ it('creates a credit cashbook entry with valid data', function () {
 
 it('creates a debit cashbook entry with valid data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -207,7 +207,7 @@ it('returns 422 when estate_id is not a valid uuid', function () {
 
 it('returns 422 when date is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -222,7 +222,7 @@ it('returns 422 when date is missing', function () {
 
 it('returns 422 when type is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -237,7 +237,7 @@ it('returns 422 when type is missing', function () {
 
 it('returns 422 when type is invalid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -253,7 +253,7 @@ it('returns 422 when type is invalid', function () {
 
 it('accepts all valid cashbook entry type values', function (string $type) {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -268,7 +268,7 @@ it('accepts all valid cashbook entry type values', function (string $type) {
 
 it('returns 422 when description is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -283,7 +283,7 @@ it('returns 422 when description is missing', function () {
 
 it('returns 422 when description exceeds 500 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -299,7 +299,7 @@ it('returns 422 when description exceeds 500 characters', function () {
 
 it('returns 422 when amount is zero', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -315,7 +315,7 @@ it('returns 422 when amount is zero', function () {
 
 it('returns 422 when amount is negative', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -331,7 +331,7 @@ it('returns 422 when amount is negative', function () {
 
 it('returns 422 when notes exceeds 1000 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -348,7 +348,7 @@ it('returns 422 when notes exceeds 1000 characters', function () {
 
 it('returns 422 when unit_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -365,7 +365,7 @@ it('returns 422 when unit_id is not a valid uuid', function () {
 
 it('returns 422 when invoice_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
@@ -386,7 +386,7 @@ it('returns 422 when invoice_id is not a valid uuid', function () {
 
 it('returns estate relationship in cashbook entry create response when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry') . '?_relationships=estate', [
@@ -407,8 +407,8 @@ it('returns estate relationship in cashbook entry create response when requested
 
 it('returns a single cashbook entry belonging to the user tenant', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $entry))
@@ -419,8 +419,8 @@ it('returns a single cashbook entry belonging to the user tenant', function () {
 it('returns 404 when showing a cashbook entry from another tenant', function () {
     $user        = adminUser();
     $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherEntry  = CashbookEntry::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
+    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherEntry  = CashbookEntry::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $otherEntry))
@@ -433,8 +433,8 @@ it('returns 404 when showing a cashbook entry from another tenant', function () 
 
 it('returns estate relationship on cashbook entry show when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $entry) . '?_relationships=estate')
@@ -445,8 +445,8 @@ it('returns estate relationship on cashbook entry show when requested', function
 
 it('returns childEntries relationship on cashbook entry show when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $entry) . '?_relationships=childEntries')
@@ -461,8 +461,8 @@ it('returns childEntries relationship on cashbook entry show when requested', fu
 
 it('updates a cashbook entry with valid data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), [
@@ -474,8 +474,8 @@ it('updates a cashbook entry with valid data', function () {
 
 it('returns 422 when update type is invalid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['type' => 'invalid_type'])
@@ -485,8 +485,8 @@ it('returns 422 when update type is invalid', function () {
 
 it('returns 422 when update description exceeds 500 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['description' => str_repeat('x', 501)])
@@ -496,8 +496,8 @@ it('returns 422 when update description exceeds 500 characters', function () {
 
 it('returns 422 when update amount is zero', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['amount' => 0])
@@ -507,8 +507,8 @@ it('returns 422 when update amount is zero', function () {
 
 it('returns 422 when update notes exceeds 1000 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['notes' => str_repeat('x', 1001)])
@@ -518,8 +518,8 @@ it('returns 422 when update notes exceeds 1000 characters', function () {
 
 it('returns 422 when update unit_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['unit_id' => 'not-uuid'])
@@ -530,8 +530,8 @@ it('returns 422 when update unit_id is not a valid uuid', function () {
 it('returns 404 when updating a cashbook entry from another tenant', function () {
     $user        = adminUser();
     $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherEntry  = CashbookEntry::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
+    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherEntry  = CashbookEntry::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherTenant->id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $otherEntry), ['description' => 'Hacked'])
@@ -544,18 +544,18 @@ it('returns 404 when updating a cashbook entry from another tenant', function ()
 
 it('allocates a cashbook entry to an invoice', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 100,
     ]);
     $entry = CashbookEntry::factory()->unallocated()->create([
         'estate_id' => $estate->id,
-        'tenant_id' => $user->tenant_id,
+        'organization_id' => $user->organization_id,
         'amount'    => 100,
     ]);
 
@@ -569,9 +569,9 @@ it('allocates a cashbook entry to an invoice', function () {
 
 it('returns 422 when allocate invoice_id is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -583,15 +583,15 @@ it('returns 422 when allocate invoice_id is missing', function () {
 
 it('returns 422 when allocate unit_id is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
-    $entry = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $entry = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -603,9 +603,9 @@ it('returns 422 when allocate unit_id is missing', function () {
 
 it('returns 422 when allocate invoice_id is not a uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -618,15 +618,15 @@ it('returns 422 when allocate invoice_id is not a uuid', function () {
 
 it('returns 422 when allocate unit_id is not a uuid', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
         'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
-    $entry = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $entry = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -643,8 +643,8 @@ it('returns 422 when allocate unit_id is not a uuid', function () {
 
 it('deletes a single cashbook entry', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entry', $entry))
@@ -659,8 +659,8 @@ it('deletes a single cashbook entry', function () {
 
 it('bulk deletes own-tenant cashbook entries', function () {
     $user    = adminUser();
-    $estate  = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entries = CashbookEntry::factory()->count(3)->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $estate  = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $entries = CashbookEntry::factory()->count(3)->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entries'), [

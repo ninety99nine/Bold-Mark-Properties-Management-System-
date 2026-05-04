@@ -49,7 +49,7 @@ class Invoice extends Model
         'issued_by_user_id',
         'unit_id',
         'charge_type_id',
-        'tenant_id',
+        'organization_id',
     ];
 
     /**
@@ -62,7 +62,14 @@ class Invoice extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('invoice_number', 'like', '%' . $searchTerm . '%');
+        $term = '%' . $searchTerm . '%';
+        // Also match when the user omits dashes/spaces (e.g. "inv 2025 0005" → "INV-2025-0005")
+        $normalized = '%' . str_replace([' ', '-'], '', $searchTerm) . '%';
+
+        $query->where(function (Builder $q) use ($term, $normalized) {
+            $q->where('invoice_number', 'ilike', $term)
+              ->orWhereRaw("REPLACE(REPLACE(invoice_number, '-', ''), ' ', '') ilike ?", [$normalized]);
+        });
     }
 
     /**
@@ -127,9 +134,9 @@ class Invoice extends Model
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**
@@ -163,7 +170,7 @@ class Invoice extends Model
     }
 
     /**
-     * Get the billed-to entity: either an Owner or a UnitTenant.
+     * Get the billed-to entity: either an Owner or a Tenant.
      * Uses manual resolution since the FK points to two different tables.
      *
      * @return BelongsTo
@@ -180,15 +187,15 @@ class Invoice extends Model
      */
     public function billedToUnitTenant(): BelongsTo
     {
-        return $this->belongsTo(UnitTenant::class, 'billed_to_id');
+        return $this->belongsTo(Tenant::class, 'billed_to_id');
     }
 
     /**
-     * Get the billed-to person (Owner or UnitTenant) resolved from billed_to_type.
+     * Get the billed-to person (Owner or Tenant) resolved from billed_to_type.
      *
-     * @return Owner|UnitTenant|null
+     * @return Owner|Tenant|null
      */
-    public function getBilledToAttribute(): Owner|UnitTenant|null
+    public function getBilledToAttribute(): Owner|Tenant|null
     {
         return match ($this->billed_to_type) {
             BilledToType::OWNER  => $this->billedToOwner,

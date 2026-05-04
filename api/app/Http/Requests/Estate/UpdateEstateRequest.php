@@ -22,6 +22,8 @@ class UpdateEstateRequest extends FormRequest
             'default_levy_amount'  => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'default_rent_amount'  => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'billing_day'          => ['sometimes', 'nullable', 'integer', 'min:1', 'max:28'],
+            'country'              => ['sometimes', 'nullable', 'string', 'max:3'],
+            'currency'             => ['sometimes', 'nullable', 'string', 'max:3'],
         ];
     }
 

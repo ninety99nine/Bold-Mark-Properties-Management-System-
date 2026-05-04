@@ -16,10 +16,10 @@ return new class extends Migration
             $table->string('phone', 20)->nullable()->after('name');
             $table->enum('status', UserStatus::values())->default(UserStatus::ACTIVE->value)->after('phone');
             $table->timestamp('last_login_at')->nullable()->after('status');
-            $table->foreignUuid('tenant_id')->nullable()->after('last_login_at')->constrained('tenants')->nullOnDelete();
+            $table->foreignUuid('organization_id')->nullable()->after('last_login_at')->constrained('organizations')->nullOnDelete();
 
             $table->index('status');
-            $table->index('tenant_id');
+            $table->index('organization_id');
         });
     }
 
@@ -29,10 +29,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropForeign(['tenant_id']);
+            $table->dropForeign(['organization_id']);
             $table->dropIndex(['status']);
-            $table->dropIndex(['tenant_id']);
-            $table->dropColumn(['phone', 'status', 'last_login_at', 'tenant_id']);
+            $table->dropIndex(['organization_id']);
+            $table->dropColumn(['phone', 'status', 'last_login_at', 'organization_id']);
         });
     }
 };

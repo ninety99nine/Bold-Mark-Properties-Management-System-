@@ -38,7 +38,7 @@ class Owner extends Model
         'id_number',
         'address',
         'unit_id',
-        'tenant_id',
+        'organization_id',
     ];
 
     /**
@@ -51,9 +51,9 @@ class Owner extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('full_name', 'like', '%' . $searchTerm . '%')
-              ->orWhere('email', 'like', '%' . $searchTerm . '%')
-              ->orWhere('phone', 'like', '%' . $searchTerm . '%');
+        $query->where('full_name', 'ilike', '%' . $searchTerm . '%')
+              ->orWhere('email', 'ilike', '%' . $searchTerm . '%')
+              ->orWhere('phone', 'ilike', '%' . $searchTerm . '%');
     }
 
     /**
@@ -71,9 +71,9 @@ class Owner extends Model
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**

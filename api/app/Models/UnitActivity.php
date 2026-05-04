@@ -14,7 +14,7 @@ class UnitActivity extends Model
 
     protected $fillable = [
         'unit_id',
-        'tenant_id',
+        'organization_id',
         'batch_id',
         'user_id',
         'changed_by_name',

@@ -56,6 +56,6 @@ class AuthService
      */
     public function hasTenantAccess(User $user, string $tenantId): bool
     {
-        return (string) $user->tenant_id === (string) $tenantId;
+        return (string) $user->organization_id === (string) $tenantId;
     }
 }

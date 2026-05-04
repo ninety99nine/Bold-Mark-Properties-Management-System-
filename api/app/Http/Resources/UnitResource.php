@@ -16,7 +16,7 @@ class UnitResource extends JsonResource
         return [
             'id'               => $this->id,
             'estate_id'        => $this->estate_id,
-            'tenant_id'        => $this->tenant_id,
+            'organization_id'        => $this->organization_id,
             'unit_number'      => $this->unit_number,
             'address'          => $this->address,
             'occupancy_type'   => $this->occupancy_type instanceof \BackedEnum ? $this->occupancy_type->value : $this->occupancy_type,
@@ -45,8 +45,8 @@ class UnitResource extends JsonResource
 
             'estate'          => EstateResource::make($this->whenLoaded('estate')),
             'owner'           => OwnerResource::make($this->whenLoaded('owner')),
-            'current_tenant'  => UnitTenantResource::make($this->whenLoaded('currentTenant')),
-            'unit_tenants'    => UnitTenantResource::collection($this->whenLoaded('unitTenants')),
+            'current_tenant'  => TenantResource::make($this->whenLoaded('currentTenant')),
+            'tenants'    => TenantResource::collection($this->whenLoaded('tenants')),
             'charge_configs'  => UnitChargeConfigResource::collection($this->whenLoaded('chargeConfigs')),
         ];
     }

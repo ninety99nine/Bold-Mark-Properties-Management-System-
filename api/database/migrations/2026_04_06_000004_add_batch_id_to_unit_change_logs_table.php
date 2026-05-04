@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('unit_activities', function (Blueprint $table) {
-            $table->uuid('batch_id')->nullable()->after('tenant_id');
+            $table->uuid('batch_id')->nullable()->after('organization_id');
 
             $table->index('batch_id');
         });

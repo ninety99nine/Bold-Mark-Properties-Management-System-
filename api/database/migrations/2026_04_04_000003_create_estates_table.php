@@ -25,15 +25,15 @@ return new class extends Migration
             $table->decimal('default_rent_amount', 12, 2)->nullable();
             $table->unsignedInteger('billing_day')->default(1);
 
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index('type');
             $table->index('is_active');
-            $table->index(['tenant_id', 'is_active']);
-            $table->index(['tenant_id', 'type']);
+            $table->index(['organization_id', 'is_active']);
+            $table->index(['organization_id', 'type']);
         });
     }
 

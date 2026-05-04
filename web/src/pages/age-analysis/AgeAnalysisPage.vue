@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Bar, Doughnut } from 'vue-chartjs'
 import {
@@ -15,8 +15,12 @@ import {
 import AppButton       from '@/components/common/AppButton.vue'
 import AppExportModal  from '@/components/common/AppExportModal.vue'
 import AppTableToolbar from '@/components/common/AppTableToolbar.vue'
+import AppStatCard     from '@/components/common/AppStatCard.vue'
 import api             from '@/composables/useApi.js'
 import { useExport }   from '@/composables/useExport.js'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend)
 
@@ -31,6 +35,7 @@ const BORDER = '#DCDEE8'
 
 // ─── UI state ─────────────────────────────────────────────────────────────
 const showExportModal = ref(false)
+const detailedView    = ref(false)
 
 // ─── Export ───────────────────────────────────────────────────────────────
 const { downloadExport } = useExport()
@@ -41,6 +46,7 @@ async function handleExportDownload({ format, records }) {
   const filename = `age-analysis-${new Date().toISOString().slice(0, 10)}.${ext}`
 
   const params = {}
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
   if (toolbarState.value.filters?.estate)       params.estate_id      = toolbarState.value.filters.estate
   if (toolbarState.value.filters?.charge_type)  params.charge_type_id = toolbarState.value.filters.charge_type
   if (toolbarState.value.filters?.billed_to)    params.billed_to_type = toolbarState.value.filters.billed_to
@@ -127,6 +133,7 @@ async function fetchAgeAnalysis() {
   error.value   = null
 
   const params = {}
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
   if (toolbarState.value.filters?.estate) {
     params.estate_id = toolbarState.value.filters.estate
   }
@@ -184,40 +191,79 @@ const activeRows = computed(() => {
     ]
   }
 
-  // Apply search
+  // Apply bucket filter (from summary card clicks)
+  if (activeBucket.value) {
+    base = base.filter(r => (r[activeBucket.value] ?? 0) > 0)
+  }
+
+  // Apply search (sort is applied later in displayRows, after grouping if needed)
   const search = (toolbarState.value.search ?? '').trim().toLowerCase()
-  let rows = base
-  if (search) {
-    rows = base.filter(r =>
-      (r.person_name ?? '').toLowerCase().includes(search) ||
-      (r.unit_number ?? '').toLowerCase().includes(search) ||
-      (r.charge_type ?? '').toLowerCase().includes(search)
-    )
-  }
+  if (!search) return base
+  return base.filter(r =>
+    (r.person_name ?? '').toLowerCase().includes(search) ||
+    (r.unit_number ?? '').toLowerCase().includes(search) ||
+    (r.charge_type ?? '').toLowerCase().includes(search)
+  )
+})
 
-  // Apply sort
-  const sort = toolbarState.value.sort
-  if (sort) {
-    rows = [...rows].sort((a, b) => {
-      if (sort === 'name_asc')   return (a.person_name ?? '').localeCompare(b.person_name ?? '')
-      if (sort === 'name_desc')  return (b.person_name ?? '').localeCompare(a.person_name ?? '')
-      if (sort === 'total_asc')  return (a.outstanding ?? 0) - (b.outstanding ?? 0)
-      if (sort === 'total_desc') return (b.outstanding ?? 0) - (a.outstanding ?? 0)
-      if (sort === 'unit_asc')   return (a.unit_number ?? '').localeCompare(b.unit_number ?? '')
-      if (sort === 'unit_desc')  return (b.unit_number ?? '').localeCompare(a.unit_number ?? '')
-      return 0
-    })
+// ─── Grouped rows (one row per person + unit, buckets summed) ─────────────
+const groupedActiveRows = computed(() => {
+  const map = new Map()
+  for (const row of activeRows.value) {
+    const key = `${row.person_id ?? row.person_name}__${row.unit_number}`
+    if (map.has(key)) {
+      const g = map.get(key)
+      g.current     += row.current     ?? 0
+      g['30_days']  += row['30_days']  ?? 0
+      g['60_days']  += row['60_days']  ?? 0
+      g['90_days']  += row['90_days']  ?? 0
+      g['120_plus'] += row['120_plus'] ?? 0
+      g.outstanding += row.outstanding ?? 0
+      g.invoice_count += 1
+      if (row.charge_type) {
+        const existing = g.charge_types.find(ct => ct.name === row.charge_type)
+        if (existing) existing.count += 1
+        else g.charge_types.push({ name: row.charge_type, count: 1 })
+      }
+    } else {
+      map.set(key, {
+        ...row,
+        charge_types:  row.charge_type ? [{ name: row.charge_type, count: 1 }] : [],
+        invoice_count: 1,
+        current:       row.current     ?? 0,
+        '30_days':     row['30_days']  ?? 0,
+        '60_days':     row['60_days']  ?? 0,
+        '90_days':     row['90_days']  ?? 0,
+        '120_plus':    row['120_plus'] ?? 0,
+        outstanding:   row.outstanding ?? 0,
+      })
+    }
   }
+  return [...map.values()]
+})
 
-  return rows
+// ─── Source for the table: pick grouped/detailed, then sort ──────────────
+const displayRows = computed(() => {
+  const source = detailedView.value ? activeRows.value : groupedActiveRows.value
+  const sort   = toolbarState.value.sort
+  if (!sort) return source
+  return [...source].sort((a, b) => {
+    if (sort === 'name_asc')   return (a.person_name ?? '').localeCompare(b.person_name ?? '')
+    if (sort === 'name_desc')  return (b.person_name ?? '').localeCompare(a.person_name ?? '')
+    if (sort === 'total_asc')  return (a.outstanding ?? 0) - (b.outstanding ?? 0)
+    if (sort === 'total_desc') return (b.outstanding ?? 0) - (a.outstanding ?? 0)
+    if (sort === 'unit_asc')   return (a.unit_number ?? '').localeCompare(b.unit_number ?? '')
+    if (sort === 'unit_desc')  return (b.unit_number ?? '').localeCompare(a.unit_number ?? '')
+    return 0
+  })
 })
 
 // ─── Pagination computed ──────────────────────────────────────────────────
-const totalPages       = computed(() => Math.max(1, Math.ceil(activeRows.value.length / PER_PAGE)))
-const totalRowsInQuery = computed(() => activeRows.value.length)
+const totalPages       = computed(() => Math.max(1, Math.ceil(displayRows.value.length / PER_PAGE)))
+const totalRowsInQuery = computed(() => displayRows.value.length)
 const paginatedRows    = computed(() => {
   const start = (currentPage.value - 1) * PER_PAGE
-  return activeRows.value.slice(start, start + PER_PAGE)
+  return displayRows.value.slice(start, start + PER_PAGE)
 })
 
 function setPage(page) {
@@ -226,13 +272,33 @@ function setPage(page) {
 
 // ─── Summary (from API) ───────────────────────────────────────────────────
 const summary = computed(() => ({
-  current: summaryData.value?.current           ?? 0,
-  d30:     summaryData.value?.['30_days']        ?? 0,
-  d60:     summaryData.value?.['60_days']        ?? 0,
-  d90:     summaryData.value?.['90_days']        ?? 0,
-  d120:    summaryData.value?.['120_plus']       ?? 0,
-  total:   summaryData.value?.total_outstanding  ?? 0,
+  current:      summaryData.value?.current           ?? 0,
+  d30:          summaryData.value?.['30_days']        ?? 0,
+  d60:          summaryData.value?.['60_days']        ?? 0,
+  d90:          summaryData.value?.['90_days']        ?? 0,
+  d120:         summaryData.value?.['120_plus']       ?? 0,
+  total:        summaryData.value?.total_outstanding  ?? 0,
+  currentCount: summaryData.value?.current_count      ?? 0,
+  d30Count:     summaryData.value?.d30_count          ?? 0,
+  d60Count:     summaryData.value?.d60_count          ?? 0,
+  d90Count:     summaryData.value?.d90_count          ?? 0,
+  d120Count:    summaryData.value?.d120_count         ?? 0,
+  totalCount:   summaryData.value?.total_count        ?? 0,
+  peopleCount:  summaryData.value?.people_count       ?? 0,
+  currentPeople: summaryData.value?.current_people_count ?? 0,
+  d30People:     summaryData.value?.d30_people_count    ?? 0,
+  d60People:     summaryData.value?.d60_people_count    ?? 0,
+  d90People:     summaryData.value?.d90_people_count    ?? 0,
+  d120People:    summaryData.value?.d120_people_count   ?? 0,
 }))
+
+// ─── Bucket filter (set by clicking summary cards) ─────────────────────────
+const activeBucket = ref(null) // null = all, 'current' | '30_days' | '60_days' | '90_days' | '120_plus'
+
+function toggleBucket(bucket) {
+  activeBucket.value = activeBucket.value === bucket ? null : bucket
+  currentPage.value = 1
+}
 
 // ─── Chart helpers ────────────────────────────────────────────────────────
 const ownersTotal  = computed(() => ownersData.value.reduce((s, r) => s + (r.outstanding ?? 0), 0))
@@ -250,15 +316,15 @@ const hasTenantsData = computed(() => tenantsData.value.length > 0)
 // ─── Format helpers ───────────────────────────────────────────────────────
 function fmt(val) {
   if (!val || val === 0) return '—'
-  return 'R\u00a0' + Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(val)
 }
 
 function fmtFull(val) {
-  return 'R\u00a0' + Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(val)
 }
 
 function fmtTip(val) {
-  return 'R ' + Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+  return countryStore.formatCurrency(val)
 }
 
 // ─── Selected estate label (for page subtitle) ────────────────────────────
@@ -275,6 +341,20 @@ function goToOwner(row) {
   }
 }
 
+function goToTenant(row) {
+  if (row.person_id && row.unit_id && row.estate_id) {
+    router.push({
+      name: 'tenant-detail',
+      params: { estateId: row.estate_id, unitId: row.unit_id, tenantId: row.person_id },
+    })
+  }
+}
+
+function navigateToPerson(row) {
+  if (row._role === 'owner') goToOwner(row)
+  else goToTenant(row)
+}
+
 // ─── Chart 1: Arrears by Ageing Bucket ───────────────────────────────────
 const ageBucketData = computed(() => ({
   labels: ['Current', '30 Days', '60 Days', '90 Days', '120+ Days'],
@@ -286,7 +366,7 @@ const ageBucketData = computed(() => ({
   }],
 }))
 
-const ageBucketOpts = {
+const ageBucketOpts = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -306,14 +386,14 @@ const ageBucketOpts = {
       ticks: {
         font: { size: 11 },
         color: MUTED,
-        callback: v => `R ${(v / 1000).toFixed(0)}k`,
+        callback: v => countryStore.formatCurrencyCompact(v),
       },
     },
   },
-}
+}))
 
 // ─── Shared horizontal bar options ────────────────────────────────────────
-const hBarOpts = {
+const hBarOpts = computed(() => ({
   indexAxis: 'y',
   responsive: true,
   maintainAspectRatio: false,
@@ -329,7 +409,7 @@ const hBarOpts = {
       ticks: {
         font: { size: 11 },
         color: MUTED,
-        callback: v => `R ${(v / 1000).toFixed(0)}k`,
+        callback: v => countryStore.formatCurrencyCompact(v),
       },
     },
     y: {
@@ -338,35 +418,79 @@ const hBarOpts = {
       ticks: { font: { size: 12 }, color: MUTED },
     },
   },
-}
+}))
 
 // ─── Chart 2: Owners Outstanding ─────────────────────────────────────────
+// Keep sorted IDs in a parallel ref so the click handler can navigate
+const ownersSortedIds = ref([])
+
 const ownersBarData = computed(() => {
-  const sorted = [...ownersData.value].sort((a, b) => (a.outstanding ?? 0) - (b.outstanding ?? 0))
+  // Aggregate per person (multiple rows when filtered by charge type)
+  const totals = new Map()   // name → { total, id }
+  for (const r of ownersData.value) {
+    const name = r.person_name ?? '—'
+    const prev = totals.get(name) ?? { total: 0, id: r.person_id }
+    totals.set(name, { total: prev.total + (r.outstanding ?? 0), id: prev.id })
+  }
+  // Top 10 by highest outstanding, then reverse for horizontal bar (lowest at top)
+  const top = [...totals.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10).reverse()
+  ownersSortedIds.value = top.map(([, v]) => v.id)
   return {
-    labels: sorted.map(r => (r.person_name ?? '—').split(' ').pop()),
+    labels: top.map(([name]) => name.split(' ').pop()),
     datasets: [{
       label: 'Outstanding',
-      data: sorted.map(r => r.outstanding ?? 0),
+      data: top.map(([, v]) => v.total),
       backgroundColor: RED,
       borderRadius: 4,
     }],
   }
 })
 
+const ownersBarOpts = computed(() => ({
+  ...hBarOpts.value,
+  onHover: (event) => { event.native.target.style.cursor = 'pointer' },
+  onClick: (_event, elements) => {
+    if (!elements.length) return
+    const id = ownersSortedIds.value[elements[0].index]
+    if (id) router.push({ name: 'owner-detail', params: { ownerId: id } })
+  },
+}))
+
 // ─── Chart 3: Tenants Outstanding ────────────────────────────────────────
+const tenantsSortedIds = ref([])
+
 const tenantsBarData = computed(() => {
-  const sorted = [...tenantsData.value].sort((a, b) => (a.outstanding ?? 0) - (b.outstanding ?? 0))
+  // Aggregate per person
+  const totals = new Map()
+  for (const r of tenantsData.value) {
+    const name = r.person_name ?? '—'
+    const prev = totals.get(name) ?? { total: 0, id: r.person_id }
+    totals.set(name, { total: prev.total + (r.outstanding ?? 0), id: prev.id })
+  }
+  // Top 10 by highest outstanding, then reverse for horizontal bar (lowest at top)
+  const top = [...totals.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10).reverse()
+  tenantsSortedIds.value = top.map(([, v]) => v.id)
   return {
-    labels: sorted.map(r => (r.person_name ?? '—').split(' ').pop()),
+    labels: top.map(([name]) => name.split(' ').pop()),
     datasets: [{
       label: 'Outstanding',
-      data: sorted.map(r => r.outstanding ?? 0),
+      data: top.map(([, v]) => v.total),
       backgroundColor: RED,
       borderRadius: 4,
     }],
   }
 })
+
+const tenantsBarOpts = computed(() => ({
+  ...hBarOpts.value,
+  onHover: (event) => { event.native.target.style.cursor = 'pointer' },
+  onClick: (_event, elements) => {
+    if (!elements.length) return
+    // Tenant detail is accessed via the unit page; use the first row's unit/estate for this person
+    const id = tenantsSortedIds.value[elements[0].index]
+    if (id) router.push({ name: 'tenant-detail', params: { tenantId: id } })
+  },
+}))
 
 // ─── Chart 4: Owner vs Tenant Split (donut) ───────────────────────────────
 const splitData = computed(() => ({
@@ -432,6 +556,11 @@ onMounted(() => {
   loadChargeTypes()
   fetchAgeAnalysis()
 })
+
+// Re-fetch when active country changes
+watch(() => countryStore.activeCountry, (newVal, oldVal) => {
+  if (oldVal !== null && newVal !== oldVal) fetchAgeAnalysis()
+})
 </script>
 
 <template>
@@ -460,8 +589,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- ── 6 Summary Cards ────────────────────────────────────────────────── -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    <!-- ── 6 Summary Cards (2 rows × 3) ──────────────────────────────────── -->
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
 
       <!-- Skeleton while loading -->
       <template v-if="loading && !summaryData">
@@ -473,50 +602,123 @@ onMounted(() => {
         </div>
       </template>
 
-      <!-- Real summary cards -->
+      <!-- Real summary cards — clickable to filter the table by bucket -->
       <template v-else>
 
-        <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-          <div class="p-4 text-center">
-            <p class="text-xs text-muted-foreground">Current</p>
-            <p class="text-xl font-bold font-body text-foreground">{{ fmtFull(summary.current) }}</p>
-          </div>
+        <div
+          @click="toggleBucket('current')"
+          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === 'current' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
+        >
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
+          <AppStatCard
+            label="Current"
+            :value="fmtFull(summary.current)"
+            :subtitle="`${summary.currentCount} invoice${summary.currentCount === 1 ? '' : 's'} · ${summary.currentPeople} ${summary.currentPeople === 1 ? 'person' : 'people'}`"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-foreground">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+            </template>
+          </AppStatCard>
         </div>
 
-        <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-          <div class="p-4 text-center">
-            <p class="text-xs text-muted-foreground">30 Days</p>
-            <p class="text-xl font-bold font-body text-foreground">{{ fmtFull(summary.d30) }}</p>
-          </div>
+        <div
+          @click="toggleBucket('30_days')"
+          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '30_days' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
+        >
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
+          <AppStatCard
+            label="30 Days"
+            :value="fmtFull(summary.d30)"
+            value-class="text-accent"
+            :subtitle="`${summary.d30Count} invoice${summary.d30Count === 1 ? '' : 's'} · ${summary.d30People} ${summary.d30People === 1 ? 'person' : 'people'}`"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-accent">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+            </template>
+          </AppStatCard>
         </div>
 
-        <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-          <div class="p-4 text-center">
-            <p class="text-xs text-muted-foreground">60 Days</p>
-            <p class="text-xl font-bold font-body text-foreground">{{ fmtFull(summary.d60) }}</p>
-          </div>
+        <div
+          @click="toggleBucket('60_days')"
+          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '60_days' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
+        >
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
+          <AppStatCard
+            label="60 Days"
+            :value="fmtFull(summary.d60)"
+            value-class="text-accent"
+            :subtitle="`${summary.d60Count} invoice${summary.d60Count === 1 ? '' : 's'} · ${summary.d60People} ${summary.d60People === 1 ? 'person' : 'people'}`"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-accent">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+            </template>
+          </AppStatCard>
         </div>
 
-        <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-          <div class="p-4 text-center">
-            <p class="text-xs text-muted-foreground">90 Days</p>
-            <p class="text-xl font-bold font-body text-destructive">{{ fmtFull(summary.d90) }}</p>
-          </div>
+        <div
+          @click="toggleBucket('90_days')"
+          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '90_days' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
+        >
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
+          <AppStatCard
+            label="90 Days"
+            :value="fmtFull(summary.d90)"
+            value-class="text-destructive"
+            :subtitle="`${summary.d90Count} invoice${summary.d90Count === 1 ? '' : 's'} · ${summary.d90People} ${summary.d90People === 1 ? 'person' : 'people'}`"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                <path d="M12 9v4"/><path d="M12 17h.01"/>
+              </svg>
+            </template>
+          </AppStatCard>
         </div>
 
-        <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-          <div class="p-4 text-center">
-            <p class="text-xs text-muted-foreground">120+ Days</p>
-            <p class="text-xl font-bold font-body text-destructive">{{ fmtFull(summary.d120) }}</p>
-          </div>
+        <div
+          @click="toggleBucket('120_plus')"
+          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '120_plus' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
+        >
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
+          <AppStatCard
+            label="120+ Days"
+            :value="fmtFull(summary.d120)"
+            value-class="text-destructive"
+            :subtitle="`${summary.d120Count} invoice${summary.d120Count === 1 ? '' : 's'} · ${summary.d120People} ${summary.d120People === 1 ? 'person' : 'people'}`"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                <path d="M12 9v4"/><path d="M12 17h.01"/>
+              </svg>
+            </template>
+          </AppStatCard>
         </div>
 
-        <!-- Total Outstanding -->
-        <div class="rounded-lg border border-accent/30 bg-accent/5 text-card-foreground shadow-sm">
-          <div class="p-4 text-center">
-            <p class="text-xs text-muted-foreground">Total Outstanding</p>
-            <p class="text-xl font-bold font-body text-destructive">{{ fmtFull(summary.total) }}</p>
-          </div>
+        <div
+          @click="toggleBucket(null)"
+          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === null ? 'ring-1 ring-destructive/40 ring-offset-1' : '']"
+        >
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
+          <AppStatCard
+            label="Total Outstanding"
+            :value="fmtFull(summary.total)"
+            value-class="text-destructive"
+            :subtitle="`${summary.totalCount} invoice${summary.totalCount === 1 ? '' : 's'} · ${summary.peopleCount} ${summary.peopleCount === 1 ? 'person' : 'people'}`"
+            class="border-destructive/20 bg-accent/5"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
+                <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </template>
+          </AppStatCard>
         </div>
 
       </template>
@@ -533,18 +735,42 @@ onMounted(() => {
           </svg>
           Arrears Report
         </h3>
-        <!-- Export button aligned to section header -->
-        <button
-          @click="showExportModal = true"
-          class="inline-flex items-center gap-1.5 h-8 px-3 rounded text-sm font-medium font-body text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-border"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" x2="12" y1="15" y2="3"/>
-          </svg>
-          Export
-        </button>
+        <div class="flex items-center gap-3">
+          <!-- Detailed view toggle -->
+          <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+            <span class="text-xs font-medium text-muted-foreground font-body">Detailed view</span>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="detailedView"
+              @click="detailedView = !detailedView; currentPage = 1"
+              :class="[
+                'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+                detailedView ? 'bg-primary' : 'bg-muted',
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform duration-200',
+                  detailedView ? 'translate-x-4' : 'translate-x-0',
+                ]"
+              />
+            </button>
+          </label>
+
+          <!-- Export button -->
+          <button
+            @click="showExportModal = true"
+            class="inline-flex items-center gap-1.5 h-8 px-3 rounded text-sm font-medium font-body text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-border"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" x2="12" y1="15" y2="3"/>
+            </svg>
+            Export
+          </button>
+        </div>
       </div>
 
       <!-- Toolbar row -->
@@ -566,7 +792,9 @@ onMounted(() => {
             <tr class="border-b border-border bg-muted/50">
               <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
               <th class="text-left py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
-              <th class="text-left py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
+              <th class="text-left py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {{ detailedView ? 'Type' : 'Charges' }}
+              </th>
               <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Current</th>
               <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">30 Days</th>
               <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">60 Days</th>
@@ -600,17 +828,13 @@ onMounted(() => {
               <tr
                 v-for="row in paginatedRows"
                 :key="row.invoice_id"
-                class="border-b border-border hover:bg-muted/30 transition-colors"
+                class="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer"
+                @click="navigateToPerson(row)"
               >
                 <!-- Name: clickable link -->
                 <td class="py-3 px-4 font-medium">
                   <div class="flex items-center gap-2">
-                    <button
-                      class="text-foreground hover:text-accent hover:underline transition-colors text-left"
-                      @click="row._role === 'owner' ? goToOwner(row) : undefined"
-                    >
-                      {{ row.person_name ?? '—' }}
-                    </button>
+                    <span class="font-medium text-foreground">{{ row.person_name ?? '—' }}</span>
                     <!-- Role badge — shown when viewing all (no billed_to filter) -->
                     <span
                       v-if="!toolbarState.filters?.billed_to"
@@ -629,13 +853,27 @@ onMounted(() => {
                   </p>
                 </td>
                 <td class="py-3 px-3 text-foreground font-medium">{{ row.unit_number ?? '—' }}</td>
-                <td class="py-3 px-3 text-muted-foreground">{{ row.charge_type ?? '—' }}</td>
+                <!-- Type cell: single type in detailed mode, badge list in grouped mode -->
+                <td class="py-3 px-3">
+                  <template v-if="detailedView">
+                    <span class="text-muted-foreground">{{ row.charge_type ?? '—' }}</span>
+                  </template>
+                  <template v-else>
+                    <div class="flex flex-wrap gap-1">
+                      <span
+                        v-for="ct in row.charge_types"
+                        :key="ct.name"
+                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border leading-none"
+                      >{{ ct.name }}<span v-if="ct.count > 1" class="text-[9px] font-bold text-accent">× {{ ct.count }}</span></span>
+                    </div>
+                  </template>
+                </td>
                 <!-- Current: neutral -->
                 <td class="py-3 px-3 text-right text-foreground">{{ fmt(row.current) }}</td>
-                <!-- 30 Days: neutral -->
-                <td class="py-3 px-3 text-right text-foreground">{{ fmt(row['30_days']) }}</td>
-                <!-- 60 Days: amber warning -->
-                <td class="py-3 px-3 text-right text-accent">{{ fmt(row['60_days']) }}</td>
+                <!-- 30 Days: amber -->
+                <td class="py-3 px-3 text-right text-accent">{{ fmt(row['30_days']) }}</td>
+                <!-- 60 Days: amber bold -->
+                <td class="py-3 px-3 text-right text-accent font-medium">{{ fmt(row['60_days']) }}</td>
                 <!-- 90 Days: red danger -->
                 <td class="py-3 px-3 text-right text-destructive">{{ fmt(row['90_days']) }}</td>
                 <!-- 120+ Days: red danger bold -->
@@ -807,7 +1045,7 @@ onMounted(() => {
           </div>
           <!-- Chart -->
           <div v-else class="h-[280px] relative">
-            <Bar :data="ownersBarData" :options="hBarOpts" />
+            <Bar :data="ownersBarData" :options="ownersBarOpts" />
           </div>
         </div>
       </div>
@@ -850,7 +1088,7 @@ onMounted(() => {
           </div>
           <!-- Chart -->
           <div v-else class="h-[280px] relative">
-            <Bar :data="tenantsBarData" :options="hBarOpts" />
+            <Bar :data="tenantsBarData" :options="tenantsBarOpts" />
           </div>
         </div>
       </div>

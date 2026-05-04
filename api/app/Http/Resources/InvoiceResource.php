@@ -15,7 +15,7 @@ class InvoiceResource extends JsonResource
     {
         return [
             'id'             => $this->id,
-            'tenant_id'      => $this->tenant_id,
+            'organization_id'      => $this->organization_id,
             'unit_id'        => $this->unit_id,
             'charge_type_id' => $this->charge_type_id,
             'billed_to_type' => $this->billed_to_type instanceof \BackedEnum ? $this->billed_to_type->value : $this->billed_to_type,
@@ -42,7 +42,7 @@ class InvoiceResource extends JsonResource
             'charge_type'           => ChargeTypeResource::make($this->whenLoaded('chargeType')),
             'cashbook_entries'      => CashbookEntryResource::collection($this->whenLoaded('cashbookEntries')),
             'billed_to_owner'       => OwnerResource::make($this->whenLoaded('billedToOwner')),
-            'billed_to_unit_tenant' => UnitTenantResource::make($this->whenLoaded('billedToUnitTenant')),
+            'billed_to_unit_tenant' => TenantResource::make($this->whenLoaded('billedToUnitTenant')),
             'email_events'          => InvoiceEmailEventResource::collection($this->whenLoaded('emailEvents')),
             'issued_by'             => $this->whenLoaded('issuedBy', fn() => [
                 'id'   => $this->issuedBy?->id,

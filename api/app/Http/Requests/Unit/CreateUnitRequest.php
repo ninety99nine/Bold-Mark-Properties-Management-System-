@@ -33,7 +33,7 @@ class CreateUnitRequest extends FormRequest
             'owner.id_number'       => ['nullable', 'string', 'max:50'],
             'owner.address'         => ['nullable', 'string', 'max:500'],
 
-            // Tenant details — required only when occupancy_type is tenant_occupied
+            // Organization details — required only when occupancy_type is tenant_occupied
             'tenant'                => ['nullable', 'array'],
             'tenant.full_name'      => ['nullable', 'required_if:occupancy_type,tenant_occupied', 'string', 'max:255'],
             'tenant.email'          => ['nullable', 'required_if:occupancy_type,tenant_occupied', 'email', 'max:255'],
@@ -53,7 +53,8 @@ class CreateUnitRequest extends FormRequest
                 return;
             }
 
-            if ($estate->type === 'sectional_title') {
+            $estateType = $estate->type instanceof \BackedEnum ? $estate->type->value : $estate->type;
+            if ($estateType === 'sectional_title') {
                 if ($this->input('occupancy_type') === 'tenant_occupied') {
                     $v->errors()->add(
                         'occupancy_type',

@@ -20,6 +20,7 @@ use App\Http\Requests\Invoice\DeleteInvoicesRequest;
 use App\Http\Requests\Invoice\ShowDeletedInvoicesRequest;
 use App\Http\Requests\Invoice\RestoreInvoiceRequest;
 use App\Http\Requests\Invoice\ForceDeleteInvoiceRequest;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 
 class InvoiceController extends Controller
@@ -70,9 +71,9 @@ class InvoiceController extends Controller
      * @param CreateInvoiceRequest $request
      * @return array
      */
-    public function createInvoice(CreateInvoiceRequest $request): array
+    public function createInvoice(CreateInvoiceRequest $request): JsonResponse
     {
-        return $this->service->createInvoice($request->validated());
+        return response()->json($this->service->createInvoice($request->validated()), 201);
     }
 
     /**

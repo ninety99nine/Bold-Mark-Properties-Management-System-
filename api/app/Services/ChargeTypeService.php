@@ -10,6 +10,7 @@ use App\Http\Resources\ChargeTypeResources;
 
 class ChargeTypeService extends BaseService
 {
+    protected array $allowedRelationships = ['estates'];
     /**
      * Return a paginated, filtered list of charge types for the authenticated tenant.
      *
@@ -19,7 +20,7 @@ class ChargeTypeService extends BaseService
     public function showChargeTypes(array $data): ChargeTypeResources
     {
         $user  = Auth::user();
-        $query = ChargeType::where('tenant_id', $user->tenant_id);
+        $query = ChargeType::where('organization_id', $user->organization_id);
 
         if (!empty($data['applies_to'])) {
             $query->where('applies_to', $data['applies_to']);
@@ -61,7 +62,7 @@ class ChargeTypeService extends BaseService
         $chargeType = ChargeType::create(array_merge(
             collect($data)->only(['code', 'name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])->toArray(),
             [
-                'tenant_id' => $user->tenant_id,
+                'organization_id' => $user->organization_id,
                 'is_system' => false,
                 'is_active' => $data['is_active'] ?? true,
             ]
@@ -81,7 +82,7 @@ class ChargeTypeService extends BaseService
     {
         $user        = Auth::user();
         $chargeTypes = ChargeType::whereIn('id', $ids)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->where('is_system', false)  // Never delete system types in bulk
             ->get();
 

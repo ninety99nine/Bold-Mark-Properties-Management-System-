@@ -43,7 +43,9 @@ class Estate extends Model
         'default_levy_amount',
         'default_rent_amount',
         'billing_day',
-        'tenant_id',
+        'country',
+        'currency',
+        'organization_id',
     ];
 
     /**
@@ -56,8 +58,8 @@ class Estate extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'like', '%' . $searchTerm . '%')
-              ->orWhere('address', 'like', '%' . $searchTerm . '%');
+        $query->where('name', 'ilike', '%' . $searchTerm . '%')
+              ->orWhere('address', 'ilike', '%' . $searchTerm . '%');
     }
 
     /**
@@ -77,9 +79,9 @@ class Estate extends Model
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**
@@ -152,12 +154,24 @@ class Estate extends Model
     }
 
     /**
+     * Get compliance checklists for this estate.
+     *
+     * @return HasMany
+     */
+    public function complianceChecklists(): HasMany
+    {
+        return $this->hasMany(ComplianceChecklist::class);
+    }
+
+    /**
      * Get staff users assigned to this estate.
      *
      * @return BelongsToMany
      */
     public function assignedUsers(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'user_estates')->withTimestamps();
+        return $this->belongsToMany(User::class, 'user_estates')
+                    ->using(UserEstate::class)
+                    ->withTimestamps();
     }
 }

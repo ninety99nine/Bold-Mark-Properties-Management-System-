@@ -24,13 +24,17 @@ class EstateService extends BaseService
     public function showEstates(array $data): EstateResources
     {
         $user  = Auth::user();
-        $query = Estate::where('tenant_id', $user->tenant_id)
+        $query = Estate::where('organization_id', $user->organization_id)
             ->withCount([
                 'units',
                 'units as occupied_units_count' => fn ($q) => $q->whereIn('occupancy_type', ['owner_occupied', 'tenant_occupied']),
                 'units as vacant_units_count'   => fn ($q) => $q->where('occupancy_type', 'vacant'),
             ])
             ->withSum('units', 'rent_amount');
+
+        if (!empty($data['country'])) {
+            $query->where('country', $data['country']);
+        }
 
         if (!empty($data['type'])) {
             $query->where('type', $data['type']);
@@ -57,26 +61,40 @@ class EstateService extends BaseService
     public function showEstatesSummary(array $data): array
     {
         $user     = Auth::user();
-        $tenantId = $user->tenant_id;
+        $tenantId = $user->organization_id;
+        $country  = $data['country'] ?? null;
 
-        $totalEstates = Estate::where('tenant_id', $tenantId)->count();
+        $estateQuery = Estate::where('organization_id', $tenantId);
+        if ($country) {
+            $estateQuery->where('country', $country);
+        }
+        $totalEstates = $estateQuery->count();
 
-        $totalUnits = Unit::where('tenant_id', $tenantId)->count();
+        $unitQuery = Unit::where('organization_id', $tenantId);
+        if ($country) {
+            $unitQuery->whereHas('estate', fn($q) => $q->where('country', $country));
+        }
+        $totalUnits = (clone $unitQuery)->count();
 
-        $occupied = Unit::where('tenant_id', $tenantId)
+        $occupied = (clone $unitQuery)
             ->whereIn('occupancy_type', ['owner_occupied', 'tenant_occupied'])
             ->count();
 
         // Monthly revenue: sum of levy_override (where set) + default levy amounts for levy estates,
         // and rent_amount for rental estates. Simplified as sum of rent_amount across all units.
-        $monthlyRevenue = Unit::where('tenant_id', $tenantId)
+        $monthlyRevenue = (clone $unitQuery)
             ->whereNotNull('rent_amount')
             ->sum('rent_amount');
+
+        $vacant = (clone $unitQuery)
+            ->where('occupancy_type', 'vacant')
+            ->count();
 
         return [
             'total_estates'   => $totalEstates,
             'total_units'     => $totalUnits,
             'occupied'        => $occupied,
+            'vacant'          => $vacant,
             'monthly_revenue' => (float) $monthlyRevenue,
         ];
     }
@@ -93,11 +111,11 @@ class EstateService extends BaseService
         $user = Auth::user();
 
         $estateData = collect($data)
-            ->only(['name', 'address', 'type', 'default_levy_amount', 'default_rent_amount', 'billing_day'])
+            ->only(['name', 'address', 'type', 'default_levy_amount', 'default_rent_amount', 'billing_day', 'country', 'currency'])
             ->toArray();
 
         $estate = Estate::create(array_merge($estateData, [
-            'tenant_id' => $user->tenant_id,
+            'organization_id' => $user->organization_id,
             'is_active' => true,
         ]));
 
@@ -118,7 +136,7 @@ class EstateService extends BaseService
     {
         $user   = Auth::user();
         $estates = Estate::whereIn('id', $estateIds)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->get();
 
         $total = $estates->count();
@@ -236,7 +254,7 @@ class EstateService extends BaseService
     public function updateEstate(Estate $estate, array $data): array
     {
         $fillable = collect($data)
-            ->only(['name', 'address', 'type', 'default_levy_amount', 'default_rent_amount', 'billing_day', 'is_active'])
+            ->only(['name', 'address', 'type', 'default_levy_amount', 'default_rent_amount', 'billing_day', 'is_active', 'country', 'currency'])
             ->filter(fn($v) => !is_null($v))
             ->toArray();
 

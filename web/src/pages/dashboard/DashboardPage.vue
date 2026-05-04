@@ -1,11 +1,13 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton from '@/components/common/AppButton.vue'
 import AppStatCard from '@/components/common/AppStatCard.vue'
 import api from '@/composables/useApi.js'
+import { useCountryStore } from '@/stores/country'
 
 const router = useRouter()
+const countryStore = useCountryStore()
 
 // ── State ─────────────────────────────────────────────────────────────
 const loading = ref(true)
@@ -18,7 +20,9 @@ const invoiceFilter = ref('all')
 async function fetchDashboard() {
   try {
     loading.value = true
-    const { data } = await api.get('/dashboard')
+    const params = {}
+    if (countryStore.activeCountry) params.country = countryStore.activeCountry
+    const { data } = await api.get('/dashboard', { params })
     summary.value = data.summary
     recentInvoices.value = data.recent_invoices ?? []
     estatesOverview.value = data.estates_overview ?? []
@@ -31,16 +35,36 @@ async function fetchDashboard() {
 
 onMounted(fetchDashboard)
 
-// ── Filtered invoices ─────────────────────────────────────────────────
+// Re-fetch when country changes
+watch(() => countryStore.activeCountry, (newVal, oldVal) => {
+  if (oldVal !== null && newVal !== oldVal) fetchDashboard()
+})
+
+// ── Filtered invoices with pagination (5 per page) ───────────────────
+const invoicePage = ref(1)
+const invoicesPerPage = 5
+
 const filteredInvoices = computed(() => {
   if (invoiceFilter.value === 'all') return recentInvoices.value
   return recentInvoices.value.filter(inv => inv.status === invoiceFilter.value)
 })
 
+const invoiceTotalPages = computed(() => Math.max(1, Math.ceil(filteredInvoices.value.length / invoicesPerPage)))
+
+const paginatedInvoices = computed(() => {
+  const start = (invoicePage.value - 1) * invoicesPerPage
+  return filteredInvoices.value.slice(start, start + invoicesPerPage)
+})
+
+// Reset to page 1 when filter changes
+watch(invoiceFilter, () => { invoicePage.value = 1 })
+
+// ── Estates limited to 4 ─────────────────────────────────────────────
+const displayedEstates = computed(() => estatesOverview.value.slice(0, 4))
+
 // ── Formatters ────────────────────────────────────────────────────────
 function formatCurrency(amount) {
-  if (amount == null) return 'R\u00a00'
-  return 'R\u00a0' + Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(amount)
 }
 
 function formatRate(rate) {
@@ -101,7 +125,7 @@ const steps = computed(() => [
     description: 'Log incoming bank payments and allocate them to the correct invoices to track what\'s been collected.',
     action: 'Open Cashbook',
     route: '/cashbook',
-    done: (summary.value?.collected_this_month ?? 0) > 0,
+    done: (summary.value?.total_cashbook_entries ?? 0) > 0,
   },
 ])
 
@@ -140,63 +164,79 @@ const currentStepIndex = computed(() => steps.value.findIndex(s => !s.done))
       <!-- Real stat cards -->
       <template v-else>
 
-        <AppStatCard
-          label="Total Estates"
-          :value="summary?.total_estates ?? '—'"
-          :subtitle="(summary?.total_units ?? 0) + ' units'"
-        >
-          <template #icon>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-primary">
-              <rect width="16" height="20" x="4" y="2" rx="2" ry="2"/>
-              <path d="M9 22v-4h6v4"/>
-              <path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/>
-              <path d="M12 10h.01"/><path d="M12 14h.01"/>
-              <path d="M16 10h.01"/><path d="M16 14h.01"/>
-              <path d="M8 10h.01"/><path d="M8 14h.01"/>
-            </svg>
-          </template>
-        </AppStatCard>
+        <div class="group relative">
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">View estates</span>
+          <AppStatCard
+            label="Total Estates"
+            :value="summary?.total_estates ?? '—'"
+            :subtitle="(summary?.total_units ?? 0) + ' units'"
+            to="/estates"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-primary">
+                <rect width="16" height="20" x="4" y="2" rx="2" ry="2"/>
+                <path d="M9 22v-4h6v4"/>
+                <path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/>
+                <path d="M12 10h.01"/><path d="M12 14h.01"/>
+                <path d="M16 10h.01"/><path d="M16 14h.01"/>
+                <path d="M8 10h.01"/><path d="M8 14h.01"/>
+              </svg>
+            </template>
+          </AppStatCard>
+        </div>
 
-        <AppStatCard
-          label="Total Outstanding"
-          :value="formatCurrency(summary?.total_outstanding)"
-          value-class="text-destructive"
-          :trend="{ text: 'Unpaid invoices', direction: 'up', colorClass: 'text-destructive' }"
-        >
-          <template #icon>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
-              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-              <polyline points="16 7 22 7 22 13"/>
-            </svg>
-          </template>
-        </AppStatCard>
+        <div class="group relative">
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">View arrears</span>
+          <AppStatCard
+            label="Total Outstanding"
+            :value="formatCurrency(summary?.total_outstanding)"
+            value-class="text-destructive"
+            :trend="{ text: (summary?.unpaid_invoices_count ?? 0) + ' unpaid invoices', direction: 'up', colorClass: 'text-destructive' }"
+            to="/arrears"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                <polyline points="16 7 22 7 22 13"/>
+              </svg>
+            </template>
+          </AppStatCard>
+        </div>
 
-        <AppStatCard
-          label="Collected This Month"
-          :value="formatCurrency(summary?.collected_this_month)"
-          :trend="{ text: 'Credits this month', direction: 'down', colorClass: 'text-success' }"
-        >
-          <template #icon>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-success">
-              <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/>
-              <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>
-            </svg>
-          </template>
-        </AppStatCard>
+        <div class="group relative">
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">View cashbook</span>
+          <AppStatCard
+            label="Collected This Month"
+            :value="formatCurrency(summary?.collected_this_month)"
+            :trend="{ text: (summary?.payments_this_month_count ?? 0) + ' payments this month', direction: 'down', colorClass: 'text-success' }"
+            to="/cashbook"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-success">
+                <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/>
+                <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>
+              </svg>
+            </template>
+          </AppStatCard>
+        </div>
 
-        <AppStatCard
-          label="Occupancy Rate"
-          :value="formatRate(summary?.occupancy_rate)"
-          :subtitle="(summary?.vacant_units ?? 0) + ' vacant units'"
-        >
-          <template #icon>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-muted-foreground">
-              <path d="M18 21a8 8 0 0 0-16 0"/>
-              <circle cx="10" cy="8" r="5"/>
-              <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>
-            </svg>
-          </template>
-        </AppStatCard>
+        <div class="group relative">
+          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">View vacancies</span>
+          <AppStatCard
+            label="Occupancy Rate"
+            :value="formatRate(summary?.occupancy_rate)"
+            :subtitle="(summary?.vacant_units ?? 0) + ' vacant units'"
+            to="/vacancies"
+          >
+            <template #icon>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-muted-foreground">
+                <path d="M18 21a8 8 0 0 0-16 0"/>
+                <circle cx="10" cy="8" r="5"/>
+                <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>
+              </svg>
+            </template>
+          </AppStatCard>
+        </div>
 
       </template>
     </div>
@@ -204,7 +244,7 @@ const currentStepIndex = computed(() => steps.value.findIndex(s => !s.done))
     <!-- ── Quick Actions ─────────────────────────────────────────────── -->
     <div class="flex flex-wrap gap-3">
 
-      <AppButton variant="primary" size="lg" @click="router.push('/billing')">
+      <AppButton variant="primary" size="lg" @click="router.push('/billing?action=run-billing')">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
           <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
@@ -213,7 +253,7 @@ const currentStepIndex = computed(() => steps.value.findIndex(s => !s.done))
         Run Billing
       </AppButton>
 
-      <AppButton variant="secondary" size="lg" @click="router.push('/cashbook')">
+      <AppButton variant="secondary" size="lg" @click="router.push('/cashbook?action=add-entry')">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/>
           <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>
@@ -287,36 +327,74 @@ const currentStepIndex = computed(() => steps.value.findIndex(s => !s.done))
           </div>
 
           <!-- Real invoice rows -->
-          <div v-else class="space-y-3">
-            <div
-              v-for="invoice in filteredInvoices"
-              :key="invoice.id"
-              class="flex items-center justify-between py-2 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 rounded px-2 -mx-2 transition-colors"
-              @click="router.push(`/billing/invoices/${invoice.id}`)"
-            >
-              <div>
-                <p class="text-sm font-medium text-foreground">{{ invoice.invoice_number }}</p>
-                <p class="text-xs text-muted-foreground">
-                  {{ invoice.billed_to_name ?? ('Unit ' + (invoice.unit_number ?? '—')) }}
-                  <template v-if="invoice.charge_type"> · {{ invoice.charge_type }}</template>
-                </p>
+          <div v-else>
+            <div class="space-y-3">
+              <div
+                v-for="invoice in paginatedInvoices"
+                :key="invoice.id"
+                class="flex items-center justify-between py-2 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 rounded px-2 -mx-2 transition-colors"
+                @click="router.push(`/billing/invoices/${invoice.id}`)"
+              >
+                <div>
+                  <p class="text-sm font-medium text-foreground">{{ invoice.invoice_number }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    {{ invoice.billed_to_name ?? ('Unit ' + (invoice.unit_number ?? '—')) }}
+                    <template v-if="invoice.charge_type"> · {{ invoice.charge_type }}</template>
+                  </p>
+                </div>
+                <div class="text-right flex items-center gap-3">
+                  <span class="text-sm font-medium text-foreground whitespace-nowrap">{{ formatCurrency(invoice.amount) }}</span>
+                  <span :class="['inline-flex items-center rounded-full px-2 py-px text-[10px] font-medium border gap-1 leading-tight', badgeClasses[invoice.status] || badgeClasses.draft]">
+                    {{ statusLabel(invoice.status) }}
+                  </span>
+                </div>
               </div>
-              <div class="text-right flex items-center gap-3">
-                <span class="text-sm font-medium text-foreground whitespace-nowrap">{{ formatCurrency(invoice.amount) }}</span>
-                <span :class="['inline-flex items-center rounded-full px-2 py-px text-[10px] font-medium border gap-1 leading-tight', badgeClasses[invoice.status] || badgeClasses.draft]">
-                  {{ statusLabel(invoice.status) }}
-                </span>
+
+              <div v-if="filteredInvoices.length === 0" class="flex flex-col items-center justify-center py-10 text-center">
+                <div class="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground">
+                    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
+                  </svg>
+                </div>
+                <p class="text-sm font-medium text-muted-foreground">No invoices found</p>
+                <p class="text-xs text-muted-foreground/70 mt-1">Try selecting a different filter above</p>
               </div>
             </div>
 
-            <div v-if="filteredInvoices.length === 0" class="flex flex-col items-center justify-center py-10 text-center">
-              <div class="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground">
-                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
-                </svg>
+            <!-- Pagination controls -->
+            <div v-if="invoiceTotalPages > 1" class="flex items-center justify-between pt-4 mt-1 border-t border-border">
+              <span class="text-xs text-muted-foreground">
+                Page {{ invoicePage }} of {{ invoiceTotalPages }}
+              </span>
+              <div class="flex items-center gap-1">
+                <button
+                  @click="invoicePage--"
+                  :disabled="invoicePage <= 1"
+                  class="inline-flex items-center justify-center h-7 w-7 rounded text-xs border border-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                </button>
+                <button
+                  v-for="page in invoiceTotalPages"
+                  :key="page"
+                  @click="invoicePage = page"
+                  :class="[
+                    'inline-flex items-center justify-center h-7 w-7 rounded text-xs font-medium transition-colors',
+                    page === invoicePage
+                      ? 'bg-primary text-primary-foreground'
+                      : 'border border-border hover:bg-muted text-foreground',
+                  ]"
+                >
+                  {{ page }}
+                </button>
+                <button
+                  @click="invoicePage++"
+                  :disabled="invoicePage >= invoiceTotalPages"
+                  class="inline-flex items-center justify-center h-7 w-7 rounded text-xs border border-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
               </div>
-              <p class="text-sm font-medium text-muted-foreground">No invoices found</p>
-              <p class="text-xs text-muted-foreground/70 mt-1">Try selecting a different filter above</p>
             </div>
           </div>
         </div>
@@ -327,12 +405,20 @@ const currentStepIndex = computed(() => steps.value.findIndex(s => !s.done))
         <div class="flex flex-col space-y-1.5 p-6 pb-3">
           <div class="flex items-center justify-between">
             <h3 class="tracking-tight font-body font-semibold text-lg">Estates Overview</h3>
-            <AppButton variant="ghost" size="sm" @click="router.push('/estates')">
-              View All{{ summary?.total_estates ? ` (${summary.total_estates})` : '' }}
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-              </svg>
-            </AppButton>
+            <div class="flex items-center gap-2">
+              <AppButton variant="primary" size="sm" @click="router.push('/estates?add=1')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"/><path d="M12 5v14"/>
+                </svg>
+                Add Estate
+              </AppButton>
+              <AppButton variant="ghost" size="sm" @click="router.push('/estates')">
+                View All{{ summary?.total_estates ? ` (${summary.total_estates})` : '' }}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+                </svg>
+              </AppButton>
+            </div>
           </div>
         </div>
 
@@ -352,10 +438,10 @@ const currentStepIndex = computed(() => steps.value.findIndex(s => !s.done))
             </div>
           </div>
 
-          <!-- Real estate rows -->
+          <!-- Real estate rows (max 5 shown) -->
           <div v-else class="space-y-3">
             <div
-              v-for="estate in estatesOverview"
+              v-for="estate in displayedEstates"
               :key="estate.id"
               @click="router.push(`/estates/${estate.id}`)"
               class="p-3.5 rounded-lg border border-border hover:border-accent/40 cursor-pointer transition-colors"

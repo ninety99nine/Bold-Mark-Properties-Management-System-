@@ -1,0 +1,48 @@
+# ── Version control ───────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── PHP dependencies (rebuilt inside Docker via composer stage) ──
+api/vendor/
+
+# ── Node dependencies (rebuilt inside Docker via node stage) ──
+web/node_modules/
+
+# ── Frontend build output (rebuilt inside Docker) ──────────
+web/dist/
+api/public/hot
+api/public/storage
+
+# ── Environment files (never bake secrets into an image) ───
+api/.env
+api/.env.*
+web/.env
+web/.env.*
+!api/.env.example
+!web/.env.example
+
+# ── Laravel runtime / generated files ──────────────────────
+api/storage/logs/*.log
+api/storage/framework/cache/
+api/storage/framework/sessions/
+api/storage/framework/views/
+api/bootstrap/cache/
+api/database/database.sqlite
+
+# ── IDE / OS ───────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Docker ─────────────────────────────────────────────────
+docker-compose.override.yml
+.deploy.env
+
+# ── Documentation / AI ─────────────────────────────────────
+.claude/
+CLAUDE.md
+*.md

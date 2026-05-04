@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Tenant;
+use App\Models\Organization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,7 +18,7 @@ class BrandingController extends Controller
         $host = $request->getHost();
         $subdomain = explode('.', $host)[0];
 
-        $tenant = Tenant::where('slug', $subdomain)
+        $tenant = Organization::where('slug', $subdomain)
             ->where('is_active', true)
             ->first();
 

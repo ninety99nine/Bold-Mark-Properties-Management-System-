@@ -1,0 +1,275 @@
+name: CI/CD Pipeline
+
+# Triggers:
+#   - PR to main: runs test job only
+#   - Push to any branch (except main): runs test job only
+#   - Push to main: runs test → build-images → deploy
+#   - Manual dispatch: same as push to main
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PHP_VERSION: '8.3'
+  NODE_VERSION: '20'
+  AWS_REGION: eu-west-2
+  ECR_APP_REPO: boldmark-app
+  ECR_NGINX_REPO: boldmark-nginx
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 1: Test
+  # Runs on every push & PR. Validates:
+  #   - PHP/Composer installs cleanly
+  #   - Vue/Vite frontend builds without errors
+  #   - Pest test suite passes (against in-memory SQLite)
+  # ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Pest + Vite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ env.PHP_VERSION }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo, pdo_sqlite, sqlite3, pdo_mysql, mbstring, xml, bcmath, zip, gd, intl, opcache, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: api/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        working-directory: api
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend (Vite)
+        working-directory: web
+        run: npm run build
+        env:
+          VITE_API_URL: /api
+          VITE_APP_NAME: 'BoldMark PMS'
+
+      - name: Prepare test environment
+        working-directory: api
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run Pest tests
+        working-directory: api
+        run: php artisan test --parallel --processes=4
+
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 2: Build & Push Docker Images
+  # Runs only on push to main (or manual dispatch).
+  # Builds two images: PHP-FPM app and Nginx + Vue static files.
+  # Uses GHA cache for fast incremental builds.
+  # ─────────────────────────────────────────────────────────────────────
+  build-images:
+    name: Build & Push to ECR
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      image_tag: ${{ steps.tags.outputs.tag }}
+      registry: ${{ steps.ecr.outputs.registry }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repositories exist (idempotent)
+        run: |
+          for repo in ${{ env.ECR_APP_REPO }} ${{ env.ECR_NGINX_REPO }}; do
+            aws ecr describe-repositories --repository-names "$repo" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1 \
+              || aws ecr create-repository \
+                   --repository-name "$repo" \
+                   --region "${{ env.AWS_REGION }}" \
+                   --image-scanning-configuration scanOnPush=true \
+                   --image-tag-mutability MUTABLE
+          done
+
+      - name: Compute image tag (commit SHA)
+        id: tags
+        run: echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push app image (PHP-FPM + Laravel)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_APP_REPO }}:${{ steps.tags.outputs.tag }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_APP_REPO }}:latest
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+          build-args: |
+            VITE_API_URL=/api
+            VITE_APP_NAME=BoldMark PMS
+            VITE_PUSHER_APP_KEY=${{ secrets.VITE_PUSHER_APP_KEY }}
+            VITE_PUSHER_APP_CLUSTER=${{ secrets.VITE_PUSHER_APP_CLUSTER }}
+
+      - name: Build & push nginx image (Nginx + Vue static files)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.nginx
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_NGINX_REPO }}:${{ steps.tags.outputs.tag }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_NGINX_REPO }}:latest
+          cache-from: type=gha,scope=nginx
+          cache-to: type=gha,mode=max,scope=nginx
+          build-args: |
+            VITE_API_URL=/api
+            VITE_APP_NAME=BoldMark PMS
+            VITE_PUSHER_APP_KEY=${{ secrets.VITE_PUSHER_APP_KEY }}
+            VITE_PUSHER_APP_CLUSTER=${{ secrets.VITE_PUSHER_APP_CLUSTER }}
+
+      - name: Prune old ECR images (keep last 5 per repo)
+        run: |
+          for repo in ${{ env.ECR_APP_REPO }} ${{ env.ECR_NGINX_REPO }}; do
+            DIGESTS=$(aws ecr describe-images \
+              --repository-name "$repo" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'sort_by(imageDetails,& imagePushedAt)[:-5].imageDigest' \
+              --output text 2>/dev/null || true)
+            if [ -n "$DIGESTS" ] && [ "$DIGESTS" != "None" ]; then
+              for digest in $DIGESTS; do
+                aws ecr batch-delete-image \
+                  --repository-name "$repo" \
+                  --region "${{ env.AWS_REGION }}" \
+                  --image-ids imageDigest="$digest" >/dev/null 2>&1 || true
+              done
+              echo "Pruned old images from $repo (kept 5 most recent)"
+            fi
+          done
+
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 3: Deploy to EC2
+  # SCPs compose file + helper scripts to EC2, then SSHes in to:
+  #   - Write production .env from PRODUCTION_ENV secret
+  #   - Pull new images from ECR
+  #   - Run deploy.sh (zero-ish-downtime restart, migrations, cache warm)
+  # ─────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
+    needs: build-images
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose, nginx, docker, scripts to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          source: 'docker-compose.yml,nginx,docker'
+          target: '/tmp/boldmark-deploy'
+          rm: true
+
+      - name: Deploy on EC2 via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          ECR_REGISTRY: ${{ needs.build-images.outputs.registry }}
+          IMAGE_TAG: ${{ needs.build-images.outputs.image_tag }}
+          ECR_APP_REPO: ${{ env.ECR_APP_REPO }}
+          ECR_NGINX_REPO: ${{ env.ECR_NGINX_REPO }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          envs: ECR_REGISTRY,IMAGE_TAG,ECR_APP_REPO,ECR_NGINX_REPO,AWS_REGION,PRODUCTION_ENV
+          script: |
+            set -euo pipefail
+
+            DEPLOY_DIR="/opt/boldmark"
+            sudo mkdir -p "$DEPLOY_DIR"
+            sudo chown -R "$USER:$USER" "$DEPLOY_DIR"
+
+            # Sync compose + nginx + docker configs/scripts to deploy dir
+            cp /tmp/boldmark-deploy/docker-compose.yml "$DEPLOY_DIR/"
+            rm -rf "$DEPLOY_DIR/nginx" "$DEPLOY_DIR/docker"
+            cp -r /tmp/boldmark-deploy/nginx "$DEPLOY_DIR/"
+            cp -r /tmp/boldmark-deploy/docker "$DEPLOY_DIR/"
+            chmod +x "$DEPLOY_DIR/docker/scripts/"*.sh
+
+            # Write production .env from secret (single source of truth)
+            echo "$PRODUCTION_ENV" > "$DEPLOY_DIR/.env"
+            chmod 600 "$DEPLOY_DIR/.env"
+
+            # Compose env file (image refs only — kept separate for safety)
+            APP_IMAGE="${ECR_REGISTRY}/${ECR_APP_REPO}:${IMAGE_TAG}"
+            NGINX_IMAGE="${ECR_REGISTRY}/${ECR_NGINX_REPO}:${IMAGE_TAG}"
+            cat > "$DEPLOY_DIR/.deploy.env" <<EOF
+            APP_IMAGE=$APP_IMAGE
+            NGINX_IMAGE=$NGINX_IMAGE
+            EOF
+
+            # Authenticate with ECR
+            aws ecr get-login-password --region "$AWS_REGION" \
+              | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+            # Pull new images first (so swap is fast)
+            docker pull "$APP_IMAGE"
+            docker pull "$NGINX_IMAGE"
+
+            # Run the deploy script (it knows about blue/green, migrations, cache warm)
+            export APP_IMAGE NGINX_IMAGE
+            bash "$DEPLOY_DIR/docker/scripts/deploy.sh"
+
+            # Post-deploy cleanup: free disk space
+            docker image prune -af
+            docker builder prune -af 2>/dev/null || true
+            sudo journalctl --vacuum-time=7d 2>/dev/null || true

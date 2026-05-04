@@ -20,6 +20,9 @@ class DemoSeeder extends Seeder
             DemoTenantSeeder::class,
             DefaultChargeTypesSeeder::class,
             DemoUsersSeeder::class,
+            DemoExternalUsersSeeder::class,
+            DemoEstatesSeeder::class,
+            ComplianceTemplatesSeeder::class,
         ]);
     }
 }

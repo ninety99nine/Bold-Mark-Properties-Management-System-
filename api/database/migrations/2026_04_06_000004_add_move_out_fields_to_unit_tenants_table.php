@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('unit_tenants', function (Blueprint $table) {
+        Schema::table('tenants', function (Blueprint $table) {
             $table->date('move_out_date')->nullable()->after('lease_end');
             $table->string('move_out_reason')->nullable()->after('move_out_date');
             $table->text('move_out_notes')->nullable()->after('move_out_reason');
@@ -23,7 +23,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('unit_tenants', function (Blueprint $table) {
+        Schema::table('tenants', function (Blueprint $table) {
             $table->dropColumn(['move_out_date', 'move_out_reason', 'move_out_notes']);
         });
     }

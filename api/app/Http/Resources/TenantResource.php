@@ -14,27 +14,30 @@ class TenantResource extends JsonResource
     public function toArray($request): array
     {
         return [
-            'id'               => $this->id,
-            'name'             => $this->name,
-            'slug'             => $this->slug,
-            'company_name'     => $this->company_name,
-            'company_slogan'   => $this->company_slogan,
-            'logo_url'         => $this->logo_url,
-            'contact_email'    => $this->contact_email,
-            'contact_phone'    => $this->contact_phone,
-            'address'          => $this->address,
-            'country'          => $this->country,
-            'currency'         => $this->currency,
-            'primary_color'    => $this->primary_color,
-            'secondary_color'  => $this->secondary_color,
-            'copyright_name'   => $this->copyright_name,
-            'is_active'        => (bool) $this->is_active,
-            'created_at'       => $this->created_at?->toDateTimeString(),
-            'updated_at'       => $this->updated_at?->toDateTimeString(),
+            'id'          => $this->id,
+            'unit_id'     => $this->unit_id,
+            'organization_id'   => $this->organization_id,
+            'full_name'   => $this->full_name,
+            'email'       => $this->email,
+            'phone'       => $this->phone,
+            'id_number'   => $this->id_number,
+            'is_active'             => (bool) $this->is_active,
+            'lease_start'           => $this->lease_start?->toDateString(),
+            'lease_end'             => $this->lease_end?->toDateString(),
+            'lease_document_url'    => $this->lease_document_url,
+            'lease_document_name'   => $this->lease_document_name,
+            'move_out_date'         => $this->move_out_date?->toDateString(),
+            'move_out_reason'       => $this->move_out_reason,
+            'move_out_notes'        => $this->move_out_notes,
+            'created_at'            => $this->created_at?->toDateTimeString(),
+            'updated_at'  => $this->updated_at?->toDateTimeString(),
 
-            'users'         => UserResource::collection($this->whenLoaded('users')),
-            'estates'       => EstateResource::collection($this->whenLoaded('estates')),
-            'charge_types'  => ChargeTypeResource::collection($this->whenLoaded('chargeTypes')),
+            'rent_amount' => $this->when($this->relationLoaded('unit'), fn() => $this->unit?->rent_amount),
+
+            'invoices_count' => $this->whenCounted('invoices'),
+
+            'unit'     => UnitResource::make($this->whenLoaded('unit')),
+            'invoices' => InvoiceResource::collection($this->whenLoaded('invoices')),
         ];
     }
 }

@@ -7,6 +7,7 @@ use App\Models\ChargeType;
 use App\Services\ChargeTypeService;
 use App\Http\Resources\ChargeTypeResource;
 use App\Http\Resources\ChargeTypeResources;
+use Illuminate\Http\JsonResponse;
 use App\Http\Requests\ChargeType\ShowChargeTypesRequest;
 use App\Http\Requests\ChargeType\CreateChargeTypeRequest;
 use App\Http\Requests\ChargeType\ShowChargeTypeRequest;
@@ -38,11 +39,11 @@ class ChargeTypeController extends Controller
      * Create a new custom charge type.
      *
      * @param CreateChargeTypeRequest $request
-     * @return array
+     * @return JsonResponse
      */
-    public function createChargeType(CreateChargeTypeRequest $request): array
+    public function createChargeType(CreateChargeTypeRequest $request): JsonResponse
     {
-        return $this->service->createChargeType($request->validated());
+        return response()->json($this->service->createChargeType($request->validated()), 201);
     }
 
     /**

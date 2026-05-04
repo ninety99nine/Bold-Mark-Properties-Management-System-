@@ -10,10 +10,12 @@ import AppInput         from '@/components/common/AppInput.vue'
 import AppInvoiceSelect from '@/components/common/AppInvoiceSelect.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
 import { useBack } from '@/composables/useBack.js'
+import { useCountryStore } from '@/stores/country'
 
 const router = useRouter()
 const route  = useRoute()
 const { goBack } = useBack({ name: 'age-analysis' })
+const countryStore = useCountryStore()
 
 // ── State ─────────────────────────────────────────────────────────────
 const loading         = ref(true)
@@ -210,20 +212,18 @@ function occupancyBadge(occupancy) {
 function fmt(val) {
   const num = parseFloat(val ?? 0)
   if (num === 0) return '—'
-  return 'R\u00a0' + Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(num)
 }
 
 function fmtAmount(n) {
   if (n == null) return '—'
-  const abs  = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  const sign = n < 0 ? '-' : ''
-  return `${sign}R\u00A0${abs}`
+  if (n < 0) return '-' + countryStore.formatCurrency(Math.abs(n))
+  return countryStore.formatCurrency(n)
 }
 
 function fmtPaymentAmount(n) {
   if (n == null) return '—'
-  const abs = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  return `+R\u00A0${abs}`
+  return '+' + countryStore.formatCurrency(Math.abs(n))
 }
 
 function statusVariant(s) {

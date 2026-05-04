@@ -22,7 +22,7 @@ return new class extends Migration
 
             $table->uuid('id')->primary();
 
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
 
             // Identifies which table this view belongs to.
@@ -53,8 +53,8 @@ return new class extends Migration
             // Look up all views for a user in a given context
             $table->index(['user_id', 'context'], 'table_views_user_context_idx');
 
-            // Tenant-level index for data isolation checks
-            $table->index(['tenant_id', 'context'], 'table_views_tenant_context_idx');
+            // Organization-level index for data isolation checks
+            $table->index(['organization_id', 'context'], 'table_views_tenant_context_idx');
         });
     }
 

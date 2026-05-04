@@ -11,6 +11,8 @@ use App\Http\Resources\UnitChargeConfigResources;
 
 class UnitChargeConfigService extends BaseService
 {
+    protected array $allowedRelationships = ['unit', 'chargeType'];
+
     /**
      * Return a paginated list of charge configurations for the given unit.
      *

@@ -13,7 +13,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
 
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             // Who made the change (nullable so system events are supported)
             // users.id is bigint (default Laravel convention)
@@ -33,7 +33,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('unit_id');
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index(['unit_id', 'created_at']);
         });
     }

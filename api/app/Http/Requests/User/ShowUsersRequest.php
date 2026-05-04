@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests\User;
 
+use App\Enums\UserStatus;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ShowUsersRequest extends FormRequest
 {
@@ -22,6 +24,9 @@ class ShowUsersRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [];
+        return [
+            'role'   => ['nullable', 'string', 'exists:roles,name'],
+            'status' => ['nullable', Rule::in(UserStatus::values())],
+        ];
     }
 }

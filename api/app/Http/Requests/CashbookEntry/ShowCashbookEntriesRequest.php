@@ -31,6 +31,7 @@ class ShowCashbookEntriesRequest extends FormRequest
             'date_range'       => ['sometimes', 'string'],
             'date_range_start' => ['sometimes', 'date'],
             'date_range_end'   => ['sometimes', 'date'],
+            'country'          => ['nullable', 'string', 'max:3'],
         ];
     }
 }

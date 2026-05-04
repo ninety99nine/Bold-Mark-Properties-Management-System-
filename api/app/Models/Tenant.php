@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Tenant extends Model
@@ -20,7 +21,9 @@ class Tenant extends Model
      */
     protected $casts = [
         'is_active'   => 'boolean',
-        'credentials' => 'array',
+        'lease_start' => 'date',
+        'lease_end'   => 'date',
+        'move_out_date' => 'date',
     ];
 
     /**
@@ -29,21 +32,20 @@ class Tenant extends Model
      * @var array
      */
     protected $fillable = [
-        'name',
-        'slug',
-        'company_name',
-        'company_slogan',
-        'logo_url',
+        'full_name',
+        'email',
+        'phone',
+        'id_number',
         'is_active',
-        'contact_email',
-        'contact_phone',
-        'address',
-        'country',
-        'currency',
-        'primary_color',
-        'secondary_color',
-        'copyright_name',
-        'credentials',
+        'lease_start',
+        'lease_end',
+        'move_out_date',
+        'move_out_reason',
+        'move_out_notes',
+        'lease_document_url',
+        'lease_document_name',
+        'unit_id',
+        'organization_id',
     ];
 
     /**
@@ -56,108 +58,63 @@ class Tenant extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'like', '%' . $searchTerm . '%')
-              ->orWhere('company_name', 'like', '%' . $searchTerm . '%')
-              ->orWhere('contact_email', 'like', '%' . $searchTerm . '%');
+        $query->where('full_name', 'ilike', '%' . $searchTerm . '%')
+              ->orWhere('email', 'ilike', '%' . $searchTerm . '%')
+              ->orWhere('phone', 'ilike', '%' . $searchTerm . '%');
     }
 
     /**
-     * Get users belonging to this tenant.
+     * Scope to active (current) organizations only.
      *
-     * @return HasMany
+     * @param Builder $query
+     * @return void
      */
-    public function users(): HasMany
+    #[Scope]
+    protected function active(Builder $query): void
     {
-        return $this->hasMany(User::class);
+        $query->where('is_active', true);
     }
 
     /**
-     * Get charge types belonging to this tenant.
+     * Scope to past (archived) organizations only.
      *
-     * @return HasMany
+     * @param Builder $query
+     * @return void
      */
-    public function chargeTypes(): HasMany
+    #[Scope]
+    protected function past(Builder $query): void
     {
-        return $this->hasMany(ChargeType::class);
+        $query->where('is_active', false);
     }
 
     /**
-     * Get estates belonging to this tenant.
+     * Get the unit this tenant occupies.
      *
-     * @return HasMany
+     * @return BelongsTo
      */
-    public function estates(): HasMany
+    public function unit(): BelongsTo
     {
-        return $this->hasMany(Estate::class);
+        return $this->belongsTo(Unit::class);
     }
 
     /**
-     * Get units belonging to this tenant.
+     * Get the tenant (organisation) this unit tenant belongs to.
      *
-     * @return HasMany
+     * @return BelongsTo
      */
-    public function units(): HasMany
+    public function organization(): BelongsTo
     {
-        return $this->hasMany(Unit::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**
-     * Get owners belonging to this tenant.
-     *
-     * @return HasMany
-     */
-    public function owners(): HasMany
-    {
-        return $this->hasMany(Owner::class);
-    }
-
-    /**
-     * Get unit tenants (property occupants) belonging to this tenant.
-     *
-     * @return HasMany
-     */
-    public function unitTenants(): HasMany
-    {
-        return $this->hasMany(UnitTenant::class);
-    }
-
-    /**
-     * Get invoices belonging to this tenant.
+     * Get invoices billed to this unit tenant.
      *
      * @return HasMany
      */
     public function invoices(): HasMany
     {
-        return $this->hasMany(Invoice::class);
-    }
-
-    /**
-     * Get cashbook entries belonging to this tenant.
-     *
-     * @return HasMany
-     */
-    public function cashbookEntries(): HasMany
-    {
-        return $this->hasMany(CashbookEntry::class);
-    }
-
-    /**
-     * Get the display name: company_name if set, otherwise name.
-     *
-     * @return string
-     */
-    public function getDisplayNameAttribute(): string
-    {
-        return $this->company_name ?? $this->name;
-    }
-
-    /**
-     * Get the copyright name: copyright_name if set, otherwise name.
-     *
-     * @return string
-     */
-    public function getCopyrightNameAttribute(?string $value): string
-    {
-        return $value ?? $this->name;
+        return $this->hasMany(Invoice::class, 'billed_to_id')
+                    ->where('billed_to_type', 'organization');
     }
 }

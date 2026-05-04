@@ -32,6 +32,9 @@ class CashbookEntryPolicy extends BasePolicy
      */
     public function view(User $user, CashbookEntry $entry): bool
     {
+        if ($entry->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -48,21 +51,17 @@ class CashbookEntryPolicy extends BasePolicy
      */
     public function update(User $user, CashbookEntry $entry): bool
     {
+        if ($entry->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'cashbook.update');
     }
 
     /**
      * Determine whether the user can bulk-delete cashbook entries.
-     * Iterates the incoming `entry_ids` array and checks permission.
      */
     public function deleteAny(User $user): bool
     {
-        $entryIds = request()->input('entry_ids', []);
-
-        if (empty($entryIds)) {
-            return false;
-        }
-
         return $this->authService->hasPermission($user, 'cashbook.delete');
     }
 
@@ -71,6 +70,9 @@ class CashbookEntryPolicy extends BasePolicy
      */
     public function delete(User $user, CashbookEntry $entry): bool
     {
+        if ($entry->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'cashbook.delete');
     }
 

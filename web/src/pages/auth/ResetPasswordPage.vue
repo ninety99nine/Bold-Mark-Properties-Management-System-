@@ -1,13 +1,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTenantStore } from '@/stores/tenant'
+import { useOrganizationStore } from '@/stores/organization'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AuthBrandPanel from '@/components/auth/AuthBrandPanel.vue'
 import api from '@/composables/useApi'
 
-const tenant = useTenantStore()
+const tenant = useOrganizationStore()
 
 const route = useRoute()
 const router = useRouter()

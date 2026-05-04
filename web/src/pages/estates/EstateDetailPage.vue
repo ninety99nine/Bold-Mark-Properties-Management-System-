@@ -28,7 +28,9 @@ import AppPoptip from '@/components/common/AppPoptip.vue'
 import AppDropdown from '@/components/common/AppDropdown.vue'
 import AppDropdownItem from '@/components/common/AppDropdownItem.vue'
 import BulkImportUnitsModal from '@/components/common/BulkImportUnitsModal.vue'
+import { useCountryStore } from '@/stores/country'
 import AppExportModal from '@/components/common/AppExportModal.vue'
+import CreateChecklistModal from '@/pages/compliance/CreateChecklistModal.vue'
 import api from '@/composables/useApi.js'
 import { useExport } from '@/composables/useExport.js'
 import { useBack } from '@/composables/useBack.js'
@@ -36,6 +38,7 @@ import { useBack } from '@/composables/useBack.js'
 const router = useRouter()
 const route  = useRoute()
 const { goBack } = useBack('/estates')
+const countryStore = useCountryStore()
 
 // ── API state ─────────────────────────────────────────────────────────
 const estateLoading = ref(true)
@@ -166,8 +169,46 @@ async function fetchUnits() {
   }
 }
 
+// ── Compliance state ─────────────────────────────────────────────────
+const complianceChecklists = ref([])
+const complianceLoading = ref(false)
+const showCreateChecklist = ref(false)
+
+async function fetchComplianceChecklists() {
+  complianceLoading.value = true
+  try {
+    const { data } = await api.get('/compliance/checklists', {
+      params: { estate_id: route.params.id, _per_page: 5 },
+    })
+    complianceChecklists.value = data.data || []
+  } catch {
+    // silent
+  } finally {
+    complianceLoading.value = false
+  }
+}
+
+function complianceProgressColor(pct) {
+  if (pct === 100) return 'bg-emerald-500'
+  if (pct >= 50)   return 'bg-amber-500'
+  if (pct > 0)     return 'bg-red-500'
+  return 'bg-gray-300'
+}
+
+function complianceProgress(cl) {
+  const total = cl.items_count || 0
+  const done = cl.completed_items_count || 0
+  return total > 0 ? Math.round((done / total) * 100) : 0
+}
+
+function onChecklistCreated(checklist) {
+  fetchComplianceChecklists()
+  router.push({ name: 'compliance-checklist', params: { checklistId: checklist.id } })
+}
+
 onMounted(() => {
   fetchEstate()
+  fetchComplianceChecklists()
   // fetchUnits() is intentionally NOT called here.
   // AppTableToolbar emits its initial state on mount, which triggers
   // onToolbarUpdate → fetchUnits(). Calling it here too causes a double
@@ -270,10 +311,9 @@ function onBulkImported() {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 function formatAmount(amount) {
-  if (amount === 0) return 'R 0'
-  const abs  = Math.abs(amount).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  const sign = amount < 0 ? '-' : ''
-  return `${sign}R\u00A0${abs}`
+  if (amount === 0) return countryStore.formatCurrency(0)
+  if (amount < 0) return '-' + countryStore.formatCurrency(Math.abs(amount))
+  return countryStore.formatCurrency(amount)
 }
 
 function balanceClass(balance) {
@@ -444,10 +484,16 @@ const editEstateForm   = ref({
   name:                '',
   type:                'sectional_title',
   address:             '',
+  country:             '',
   default_levy_amount: '',
   default_rent_amount: '',
   billing_day:         '',
 })
+
+const editCountryOptions = Object.entries(countryStore.COUNTRY_MAP).map(([code, info]) => ({
+  value: code,
+  label: `${info.flag} ${info.name}`,
+}))
 
 const ESTATE_TYPE_OPTS = [
   { value: 'sectional_title',    label: 'Sectional Title'    },
@@ -463,12 +509,18 @@ const editShowRent = computed(() =>
   ['residential_rental', 'commercial_rental', 'mixed'].includes(editEstateForm.value.type)
 )
 
+const editFormCurrencySymbol = computed(() => {
+  const code = editEstateForm.value.country
+  return code ? (countryStore.COUNTRY_MAP[code]?.symbol || countryStore.currencySymbol) : countryStore.currencySymbol
+})
+
 function openEditEstate() {
   if (!estate.value) return
   editEstateForm.value = {
     name:                estate.value.name                ?? '',
     type:                estate.value.type                ?? 'sectional_title',
     address:             estate.value.address             ?? '',
+    country:             estate.value.country             ?? countryStore.activeCountry ?? '',
     default_levy_amount: estate.value.default_levy_amount ?? '',
     default_rent_amount: estate.value.default_rent_amount ?? '',
     billing_day:         estate.value.billing_day         ?? '',
@@ -486,6 +538,10 @@ async function saveEditEstate() {
       type:    editEstateForm.value.type    || undefined,
       address: editEstateForm.value.address || undefined,
     }
+    if (editEstateForm.value.country) {
+      payload.country  = editEstateForm.value.country
+      payload.currency = countryStore.COUNTRY_MAP[editEstateForm.value.country]?.currencyCode || null
+    }
     if (editShowLevy.value && editEstateForm.value.default_levy_amount !== '') {
       payload.default_levy_amount = parseFloat(editEstateForm.value.default_levy_amount) || 0
     }
@@ -502,6 +558,37 @@ async function saveEditEstate() {
     editEstateError.value = e?.response?.data?.message ?? 'Failed to update estate. Please try again.'
   } finally {
     editEstateSaving.value = false
+  }
+}
+
+// ── Billing Day modal ─────────────────────────────────────────────────
+const showBillingDay      = ref(false)
+const billingDayForm      = ref('')
+const billingDaySaving    = ref(false)
+const billingDayError     = ref(null)
+
+function openBillingDay() {
+  billingDayForm.value  = estate.value?.billing_day ?? ''
+  billingDayError.value = null
+  showBillingDay.value  = true
+}
+
+async function saveBillingDay() {
+  billingDaySaving.value = true
+  billingDayError.value  = null
+  try {
+    const day = parseInt(billingDayForm.value)
+    if (!day || day < 1 || day > 28) {
+      billingDayError.value = 'Please enter a day between 1 and 28.'
+      return
+    }
+    await api.put(`/estates/${route.params.id}`, { billing_day: day })
+    showBillingDay.value = false
+    await fetchEstate()
+  } catch (e) {
+    billingDayError.value = e?.response?.data?.message ?? 'Failed to update billing day.'
+  } finally {
+    billingDaySaving.value = false
   }
 }
 
@@ -968,6 +1055,71 @@ const countdownText = computed(() => {
   return `${mins}m ${String(secs).padStart(2, '0')}s`
 })
 
+// ── Run Billing Now ──────────────────────────────────────────────
+const showRunBilling    = ref(false)
+const runBillingPreview = ref([])
+const runBillingLoading = ref(false)
+const runBillingConfirm = ref(false)
+const runBillingError   = ref('')
+
+const runBillingPeriod = computed(() => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+})
+
+const runBillingPeriodLabel = computed(() => {
+  const now = new Date()
+  return now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+})
+
+const nonDuplicateRun = computed(() => runBillingPreview.value.filter(r => !r.duplicate))
+const duplicateRunCount = computed(() => runBillingPreview.value.filter(r => r.duplicate).length)
+const runBillingTotal = computed(() => nonDuplicateRun.value.reduce((sum, r) => sum + Number(r.amount), 0))
+
+async function openRunBilling() {
+  showRunBilling.value    = true
+  runBillingLoading.value = true
+  runBillingError.value   = ''
+  runBillingPreview.value = []
+  try {
+    const { data } = await api.post('/invoices/run-billing', {
+      estate_id:      route.params.id,
+      billing_period: runBillingPeriod.value,
+      dry_run:        true,
+    })
+    runBillingPreview.value = data.preview || []
+  } catch (e) {
+    runBillingError.value = e.response?.data?.message || 'Failed to load billing preview'
+  } finally {
+    runBillingLoading.value = false
+  }
+}
+
+async function confirmRunBilling() {
+  runBillingConfirm.value = true
+  runBillingError.value   = ''
+  try {
+    await api.post('/invoices/run-billing', {
+      estate_id:      route.params.id,
+      billing_period: runBillingPeriod.value,
+      dry_run:        false,
+    })
+    closeRunBilling()
+    fetchEstate()
+    fetchUnits()
+  } catch (e) {
+    runBillingError.value = e.response?.data?.message || 'Failed to run billing'
+  } finally {
+    runBillingConfirm.value = false
+  }
+}
+
+function closeRunBilling() {
+  showRunBilling.value    = false
+  runBillingPreview.value = []
+  runBillingError.value   = ''
+}
+
 // ── Charts ────────────────────────────────────────────────────────────
 
 // Helpers — occupancy totals from filter-aware chartStats
@@ -1093,8 +1245,9 @@ const invoiceChartOptions = {
   },
 }
 
-// Top Arrears — Horizontal Bar (top 5 across ALL filtered units, from chartStats)
-const arrearsUnits = computed(() => chartStats.value?.top_arrears ?? [])
+// Top Owner Arrears — Horizontal Bar (top 10 across ALL filtered units, from chartStats)
+// Reversed so longest bar (highest arrears) is at the bottom
+const arrearsUnits = computed(() => [...(chartStats.value?.top_owner_arrears ?? [])].reverse())
 
 const arrearsChartData = computed(() => ({
   labels: arrearsUnits.value.map(u => {
@@ -1109,10 +1262,18 @@ const arrearsChartData = computed(() => ({
   }],
 }))
 
-const arrearsChartOptions = {
+const arrearsChartOptions = computed(() => ({
   indexAxis: 'y',
   responsive: true,
   maintainAspectRatio: false,
+  onHover: (event) => { event.native.target.style.cursor = 'pointer' },
+  onClick: (_event, elements) => {
+    if (!elements.length) return
+    const unit = arrearsUnits.value[elements[0].index]
+    if (unit?.unit_id) {
+      router.push({ name: 'unit-detail', params: { estateId: route.params.id, unitId: unit.unit_id } })
+    }
+  },
   plugins: {
     legend: { display: false },
     tooltip: {
@@ -1127,7 +1288,7 @@ const arrearsChartOptions = {
       ticks: {
         font: { size: 11 },
         color: '#717B99',
-        callback: (v) => `R ${(v / 1000).toFixed(0)}k`,
+        callback: (v) => countryStore.formatCurrencyCompact(v),
       },
       grid: { color: '#DCDEE8' },
     },
@@ -1136,7 +1297,7 @@ const arrearsChartOptions = {
       ticks: { font: { size: 11 }, color: '#717B99' },
     },
   },
-}
+}))
 
 // ── Tenant Insights — only rendered for non-sectional-title estates ──
 const estateHasTenants = computed(() => estate.value?.type !== 'sectional_title')
@@ -1195,8 +1356,8 @@ const leaseChartOptions = {
   },
 }
 
-// Top Tenant Arrears — Horizontal Bar
-const topTenantArrears = computed(() => chartStats.value?.top_tenant_arrears ?? [])
+// Top Tenant Arrears — Horizontal Bar (top 10, reversed so longest at bottom)
+const topTenantArrears = computed(() => [...(chartStats.value?.top_tenant_arrears ?? [])].reverse())
 const hasTopTenantArrearsData = computed(() => topTenantArrears.value.length > 0)
 
 const tenantArrearsChartData = computed(() => ({
@@ -1230,7 +1391,7 @@ const tenantArrearsChartOptions = {
       ticks: {
         font: { size: 11 },
         color: '#717B99',
-        callback: (v) => `R ${(v / 1000).toFixed(0)}k`,
+        callback: (v) => countryStore.formatCurrencyCompact(v),
       },
       grid: { color: '#DCDEE8' },
     },
@@ -1398,66 +1559,90 @@ const tenantArrearsChartOptions = {
     </div>
 
     <!-- ── Billing Schedule Strip ────────────────────────────────────── -->
-    <div v-if="!estateLoading && estate" class="rounded-lg border bg-card shadow-sm px-5 py-3.5 flex items-center gap-4 flex-wrap">
+    <div v-if="!estateLoading && estate" class="rounded-lg border bg-card shadow-sm overflow-hidden">
+      <div class="flex items-center gap-0">
 
-      <!-- Calendar icon -->
-      <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
-          <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
-        </svg>
-      </div>
-
-      <!-- Schedule info -->
-      <div class="flex-1 min-w-0">
-        <template v-if="billingSchedule">
-          <p class="text-sm font-medium text-foreground">
-            Billing runs on the <span class="text-accent font-semibold">{{ billingSchedule.ordinal }}</span> of each month
-          </p>
-          <p class="text-xs text-muted-foreground mt-0.5">
-            Invoices are automatically generated and sent to
-            <template v-if="estate?.type === 'sectional_title'">owners</template>
-            <template v-else-if="estate?.type === 'residential_rental' || estate?.type === 'commercial_rental'">tenants</template>
-            <template v-else>owners and tenants</template>
-            on this date.
-          </p>
-        </template>
-        <template v-else>
-          <p class="text-sm font-medium text-muted-foreground">No billing day configured</p>
-          <p class="text-xs text-muted-foreground mt-0.5">Edit the estate to set a billing day so invoices generate automatically each month.</p>
-        </template>
-      </div>
-
-      <!-- Countdown — only shown when units exist -->
-      <template v-if="billingSchedule && computedStats.units > 0">
-        <div class="shrink-0 text-right border-l border-border pl-5 ml-1">
-          <div class="flex items-center justify-end gap-2 mb-1">
-            <p class="text-xs text-muted-foreground leading-none">Next billing run</p>
-            <span
-              class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-medium leading-none bg-[#1F3A5C]/8 text-[#1F3A5C] border border-[#1F3A5C]/15"
-            >{{ countdownText }}</span>
+        <!-- Left section: schedule info with accent left border -->
+        <div class="flex items-center gap-3.5 flex-1 min-w-0 px-5 py-4 border-l-[3px] border-l-accent">
+          <!-- Calendar icon -->
+          <div class="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
+              <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
+            </svg>
           </div>
-          <p class="text-sm font-semibold text-foreground">{{ billingSchedule.formatted }}</p>
-        </div>
-      </template>
 
-      <!-- No units — prompt instead of countdown -->
-      <template v-else-if="billingSchedule && computedStats.units === 0">
-        <div class="shrink-0 border-l border-border pl-5 ml-1">
-          <p class="text-xs text-muted-foreground">Add units to see the</p>
-          <p class="text-xs text-muted-foreground">next billing countdown</p>
+          <!-- Schedule text -->
+          <div class="min-w-0">
+            <template v-if="billingSchedule">
+              <p class="text-sm font-medium text-foreground">
+                Billing runs on the <span class="text-accent font-semibold">{{ billingSchedule.ordinal }}</span> of each month
+              </p>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                Invoices auto-generated for
+                <template v-if="estate?.type === 'sectional_title'">owners</template>
+                <template v-else-if="estate?.type === 'residential_rental' || estate?.type === 'commercial_rental'">tenants</template>
+                <template v-else>owners &amp; tenants</template>
+              </p>
+            </template>
+            <template v-else>
+              <p class="text-sm font-medium text-muted-foreground">No billing day configured</p>
+              <p class="text-xs text-muted-foreground mt-0.5">Set a billing day to auto-generate invoices each month.</p>
+            </template>
+          </div>
         </div>
-      </template>
 
-      <!-- Edit billing day shortcut -->
-      <button
-        @click="openEditEstate"
-        title="Edit schedule"
-        class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-        </svg>
-      </button>
+        <!-- Run Now button -->
+        <div v-if="billingSchedule && computedStats.units > 0" class="shrink-0 flex items-center px-5 py-3">
+          <AppButton
+            variant="primary"
+            size="sm"
+            @click="openRunBilling"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="6 3 20 12 6 21 6 3"/>
+            </svg>
+            Run Now
+          </AppButton>
+        </div>
+
+        <!-- Countdown section -->
+        <template v-if="billingSchedule && computedStats.units > 0">
+          <div class="shrink-0 flex items-center gap-3 pl-5 pr-5 py-4 border-l border-border/40">
+            <div>
+              <p class="text-[11px] uppercase tracking-wider text-muted-foreground font-medium leading-none mb-1.5">Next Run</p>
+              <p class="text-sm font-semibold text-foreground leading-tight">{{ billingSchedule.formatted }}</p>
+            </div>
+            <span
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-mono font-semibold leading-none bg-accent/10 text-accent border border-accent/20"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-70">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              {{ countdownText }}
+            </span>
+          </div>
+        </template>
+
+        <!-- No units prompt -->
+        <template v-else-if="billingSchedule && computedStats.units === 0">
+          <div class="shrink-0 px-5 py-4 border-l border-border">
+            <p class="text-xs text-muted-foreground">Add units to see the</p>
+            <p class="text-xs text-muted-foreground">billing countdown</p>
+          </div>
+        </template>
+
+        <!-- Edit button -->
+        <button
+          @click="openBillingDay"
+          title="Edit billing day"
+          class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors mx-4"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+          </svg>
+        </button>
+
+      </div>
     </div>
 
     <!-- ── Units Table Card ─────────────────────────────────────────── -->
@@ -1985,7 +2170,7 @@ const tenantArrearsChartOptions = {
     </div>
     <div v-else class="rounded-lg border bg-card shadow-sm">
       <div class="px-6 pt-5 pb-2">
-        <h3 class="font-body font-semibold text-base text-foreground">Top Arrears</h3>
+        <h3 class="font-body font-semibold text-base text-foreground">Top Owner Arrears</h3>
       </div>
       <div class="px-6 pb-6">
         <div v-if="unitsLoading" class="space-y-3 py-4">
@@ -2023,7 +2208,7 @@ const tenantArrearsChartOptions = {
             <rect x="6" y="142" width="98" height="14" rx="4" fill="#E8EAF0"/>
             <rect x="114" y="142" width="88"  height="20" rx="4" fill="#FBDADA" opacity="0.8"/>
           </svg>
-          <p class="text-xs text-muted-foreground mt-2">No arrears — top debtors will appear here</p>
+          <p class="text-xs text-muted-foreground mt-2">No arrears — top owner arrears will appear here</p>
         </div>
         <div v-else style="height: 200px; position: relative;">
           <Bar :data="arrearsChartData" :options="arrearsChartOptions" />
@@ -2115,6 +2300,86 @@ const tenantArrearsChartOptions = {
 
       </div>
     </template>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Compliance Section                                            -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <div class="rounded-lg border bg-card shadow-sm mt-6">
+      <div class="flex items-center justify-between px-6 pt-5 pb-3">
+        <div>
+          <h3 class="font-body font-semibold text-base text-foreground">Compliance</h3>
+          <p class="text-xs text-muted-foreground mt-0.5">Annual compliance checklists for this estate</p>
+        </div>
+        <AppButton variant="outline" size="sm" @click="showCreateChecklist = true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 mr-1">
+            <path d="M12 5v14"/><path d="M5 12h14"/>
+          </svg>
+          New Checklist
+        </AppButton>
+      </div>
+      <div class="px-6 pb-5">
+        <!-- Loading -->
+        <div v-if="complianceLoading" class="space-y-2">
+          <div v-for="i in 2" :key="i" class="h-16 bg-muted/50 rounded-lg animate-pulse" />
+        </div>
+
+        <!-- Checklists -->
+        <div v-else-if="complianceChecklists.length" class="space-y-2">
+          <router-link
+            v-for="cl in complianceChecklists"
+            :key="cl.id"
+            :to="{ name: 'compliance-checklist', params: { checklistId: cl.id } }"
+            class="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-gray-50 hover:border-primary/20 transition-all group"
+          >
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                FY {{ cl.financial_year_label }}
+              </p>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                {{ cl.completed_items_count || 0 }} of {{ cl.items_count || 0 }} items completed
+                <span v-if="cl.overdue_items_count > 0" class="text-red-600 ml-1">&bull; {{ cl.overdue_items_count }} overdue</span>
+              </p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <div class="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  :class="['h-full rounded-full transition-all', complianceProgressColor(complianceProgress(cl))]"
+                  :style="{ width: complianceProgress(cl) + '%' }"
+                />
+              </div>
+              <span class="text-xs font-semibold w-8 text-right" :class="complianceProgress(cl) === 100 ? 'text-emerald-600' : 'text-muted-foreground'">
+                {{ complianceProgress(cl) }}%
+              </span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </div>
+          </router-link>
+        </div>
+
+        <!-- Empty state -->
+        <div v-else class="text-center py-8">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-10 h-10 text-muted-foreground mx-auto mb-2">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="9" y="3" width="6" height="4" rx="1" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M9 14l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="text-sm text-muted-foreground mb-3">No compliance checklists for this estate yet</p>
+          <AppButton variant="primary" size="sm" @click="showCreateChecklist = true">
+            Create First Checklist
+          </AppButton>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Checklist Modal -->
+    <CreateChecklistModal
+      :show="showCreateChecklist"
+      :estate-id="route.params.id"
+      :estate-name="estate?.name || ''"
+      @close="showCreateChecklist = false"
+      @created="onChecklistCreated"
+    />
 
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Modals                                                        -->
@@ -2411,12 +2676,20 @@ const tenantArrearsChartOptions = {
           <AppSelect v-model="editEstateForm.type" label="Estate Type" :options="ESTATE_TYPE_OPTS" required />
         </div>
 
-        <!-- Address -->
-        <AppInput
-          v-model="editEstateForm.address"
-          label="Address"
-          placeholder="Full street address"
-        />
+        <!-- Address + Country -->
+        <div class="grid grid-cols-2 gap-4">
+          <AppInput
+            v-model="editEstateForm.address"
+            label="Address"
+            placeholder="Full street address"
+          />
+          <AppSelect
+            v-model="editEstateForm.country"
+            label="Country"
+            :options="editCountryOptions"
+            placeholder="Select country..."
+          />
+        </div>
 
         <!-- Financial defaults -->
         <div class="grid grid-cols-2 gap-4">
@@ -2426,7 +2699,7 @@ const tenantArrearsChartOptions = {
             label="Default Levy Amount"
             type="number"
             placeholder="0.00"
-            prefix="R"
+            :prefix="editFormCurrencySymbol"
           />
           <AppInput
             v-if="editShowRent"
@@ -2434,7 +2707,7 @@ const tenantArrearsChartOptions = {
             label="Default Rent Amount"
             type="number"
             placeholder="0.00"
-            prefix="R"
+            :prefix="editFormCurrencySymbol"
           />
           <AppInput
             v-model="editEstateForm.billing_day"
@@ -2451,6 +2724,35 @@ const tenantArrearsChartOptions = {
         <AppButton variant="outline" :disabled="editEstateSaving" @click="showEditEstate = false">Cancel</AppButton>
         <AppButton variant="primary" :disabled="editEstateSaving" @click="saveEditEstate">
           {{ editEstateSaving ? 'Saving…' : 'Save Changes' }}
+        </AppButton>
+      </template>
+    </AppModal>
+
+    <!-- Billing Day Modal -->
+    <AppModal title="Billing Day" :show="showBillingDay" size="sm" @close="showBillingDay = false">
+      <div class="space-y-4 py-2">
+
+        <div v-if="billingDayError" class="rounded border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+          {{ billingDayError }}
+        </div>
+
+        <p class="text-sm text-muted-foreground">
+          Set the day of each month when invoices are automatically generated and sent.
+        </p>
+
+        <AppInput
+          v-model="billingDayForm"
+          label="Day of Month"
+          type="number"
+          placeholder="e.g. 25"
+          hint="Enter a value between 1 and 28"
+        />
+      </div>
+
+      <template #footer>
+        <AppButton variant="outline" :disabled="billingDaySaving" @click="showBillingDay = false">Cancel</AppButton>
+        <AppButton variant="primary" :disabled="billingDaySaving || !billingDayForm" @click="saveBillingDay">
+          {{ billingDaySaving ? 'Saving…' : 'Save' }}
         </AppButton>
       </template>
     </AppModal>
@@ -2629,6 +2931,107 @@ const tenantArrearsChartOptions = {
           Send Email
         </AppButton>
       </template>
+    </AppModal>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         Run Billing Now Modal
+    ════════════════════════════════════════════════════════════════ -->
+    <AppModal :show="showRunBilling" title="Run Billing Now" size="lg" @close="closeRunBilling">
+      <div class="space-y-4 py-4">
+
+        <!-- Period context -->
+        <div class="rounded-lg border border-border bg-muted/40 px-4 py-3 flex items-center gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0">
+            <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
+          </svg>
+          <div>
+            <p class="text-sm font-medium text-foreground">{{ estate?.name }}</p>
+            <p class="text-xs text-muted-foreground">Billing period: <span class="font-medium">{{ runBillingPeriodLabel }}</span></p>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <p v-if="runBillingError" class="text-sm text-danger">{{ runBillingError }}</p>
+
+        <!-- Preview loading -->
+        <div v-if="runBillingLoading" class="border rounded border-border p-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          Loading billing preview…
+        </div>
+
+        <!-- Preview table -->
+        <template v-else-if="runBillingPreview.length > 0">
+          <div class="border rounded border-border overflow-hidden">
+            <div class="bg-muted px-4 py-2 border-b border-border flex items-center justify-between">
+              <p class="text-sm font-medium text-foreground">
+                Billing Preview — {{ nonDuplicateRun.length }} invoice{{ nonDuplicateRun.length !== 1 ? 's' : '' }} to generate
+              </p>
+              <span v-if="duplicateRunCount > 0" class="text-xs text-muted-foreground">
+                {{ duplicateRunCount }} duplicate{{ duplicateRunCount !== 1 ? 's' : '' }} skipped
+              </span>
+            </div>
+            <div class="max-h-72 overflow-y-auto">
+              <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-muted/80">
+                  <tr class="border-b border-border">
+                    <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Unit</th>
+                    <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Charge Type</th>
+                    <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Recipient</th>
+                    <th class="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(row, idx) in runBillingPreview"
+                    :key="idx"
+                    :class="['border-b border-border', row.duplicate ? 'opacity-40' : '']"
+                  >
+                    <td class="py-2 px-3 font-medium text-foreground">{{ row.unit_number }}</td>
+                    <td class="py-2 px-3 text-foreground">{{ row.charge_type }}</td>
+                    <td class="py-2 px-3 text-foreground">
+                      {{ row.recipient_name || (row.billed_to_type === 'owner' ? 'Owner' : 'Tenant') }}
+                      <span v-if="row.duplicate" class="ml-1 text-xs text-muted-foreground">(duplicate)</span>
+                    </td>
+                    <td class="py-2 px-3 text-right font-medium text-foreground whitespace-nowrap">{{ formatAmount(row.amount) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Total -->
+          <div class="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
+            <p class="text-sm font-medium text-foreground">Total to be invoiced</p>
+            <p class="text-lg font-bold font-body text-foreground">{{ formatAmount(runBillingTotal) }}</p>
+          </div>
+        </template>
+
+        <!-- No invoices to generate -->
+        <div
+          v-else-if="!runBillingLoading"
+          class="border rounded border-border p-6 text-center text-sm text-muted-foreground"
+        >
+          No invoices to generate for this estate and period.
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <AppButton variant="outline" @click="closeRunBilling">Cancel</AppButton>
+          <AppButton
+            variant="primary"
+            :disabled="nonDuplicateRun.length === 0 || runBillingConfirm"
+            @click="confirmRunBilling"
+          >
+            <svg v-if="runBillingConfirm" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            Confirm &amp; Send Invoices
+          </AppButton>
+        </div>
+      </div>
     </AppModal>
 
     <!-- Bulk Import Modal -->

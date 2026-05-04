@@ -5,6 +5,9 @@ import AppButton from '@/components/common/AppButton.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import api from '@/composables/useApi.js'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 const props = defineProps({
   show:  { type: Boolean, required: true },
@@ -47,9 +50,7 @@ const splitRemainder = computed(() =>
 )
 
 function fmt(n) {
-  const num = Number(n)
-  const decimals = num % 1 === 0 ? 0 : 2
-  return `R ${num.toLocaleString('en-ZA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
+  return countryStore.formatCurrency(n)
 }
 
 function formatDate(d) {

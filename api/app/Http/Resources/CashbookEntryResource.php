@@ -17,7 +17,7 @@ class CashbookEntryResource extends JsonResource
         return [
             'id'              => $this->id,
             'estate_id'       => $this->estate_id,
-            'tenant_id'       => $this->tenant_id,
+            'organization_id'       => $this->organization_id,
             'unit_id'         => $this->unit_id,
             'invoice_id'      => $this->invoice_id,
             'charge_type_id'  => $this->charge_type_id,

@@ -2,14 +2,14 @@
 
 namespace Database\Seeders;
 
-use App\Models\Tenant;
+use App\Models\Organization;
 use Illuminate\Database\Seeder;
 
 class DemoTenantSeeder extends Seeder
 {
     public function run(): void
     {
-        Tenant::updateOrCreate(
+        Organization::updateOrCreate(
             ['slug' => 'boldmark'],
             [
                 'name'            => 'Bold Mark Properties',

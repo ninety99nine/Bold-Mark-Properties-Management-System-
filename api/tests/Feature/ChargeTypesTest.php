@@ -24,8 +24,8 @@ it('returns 401 on all charge type routes when unauthenticated', function (strin
 
 it('returns a paginated list of charge types scoped to tenant', function () {
     $user = adminUser();
-    ChargeType::factory()->count(3)->create(['tenant_id' => $user->tenant_id]);
-    ChargeType::factory()->count(2)->create(['tenant_id' => createTenant()->id]);
+    ChargeType::factory()->count(3)->create(['organization_id' => $user->organization_id]);
+    ChargeType::factory()->count(2)->create(['organization_id' => createTenant()->id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.charge.types'))
@@ -41,8 +41,8 @@ it('returns a paginated list of charge types scoped to tenant', function () {
 
 it('returns estates relationship on charge types index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $estate->chargeTypes()->attach($chargeType->id);
 
     $response = $this->actingAs($user, 'api')
@@ -58,7 +58,7 @@ it('returns estates relationship on charge types index when requested', function
 
 it('returns a single charge type belonging to the user tenant', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.charge.type', $chargeType))
@@ -68,7 +68,7 @@ it('returns a single charge type belonging to the user tenant', function () {
 
 it('returns 404 when showing a charge type from another tenant', function () {
     $user            = adminUser();
-    $otherChargeType = ChargeType::factory()->create(['tenant_id' => createTenant()->id]);
+    $otherChargeType = ChargeType::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.charge.type', $otherChargeType))
@@ -81,8 +81,8 @@ it('returns 404 when showing a charge type from another tenant', function () {
 
 it('returns estates relationship on charge type show when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $estate->chargeTypes()->attach($chargeType->id);
 
     $response = $this->actingAs($user, 'api')
@@ -112,7 +112,7 @@ it('creates a charge type with valid data', function () {
 
     $this->assertDatabaseHas('charge_types', [
         'code'      => 'GENERATOR_FEE',
-        'tenant_id' => $user->tenant_id,
+        'organization_id' => $user->organization_id,
     ]);
 });
 
@@ -236,7 +236,7 @@ it('accepts all valid applies_to values', function (string $appliesTo) {
             'is_recurring' => false,
         ])
         ->assertCreated();
-})->with(['owner', 'tenant', 'either']);
+})->with(['owner', 'organization', 'either']);
 
 it('returns 422 when is_recurring is missing', function () {
     $user = adminUser();
@@ -304,7 +304,7 @@ it('returns estates relationship in charge type create response when requested',
 
 it('updates a charge type with valid data', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.charge.type', $chargeType), [
@@ -316,7 +316,7 @@ it('updates a charge type with valid data', function () {
 
 it('returns 422 when update code contains invalid characters', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.charge.type', $chargeType), ['code' => 'invalid-code'])
@@ -326,7 +326,7 @@ it('returns 422 when update code contains invalid characters', function () {
 
 it('returns 422 when update applies_to is invalid', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.charge.type', $chargeType), ['applies_to' => 'both'])
@@ -336,7 +336,7 @@ it('returns 422 when update applies_to is invalid', function () {
 
 it('returns 422 when update code exceeds 50 characters', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.charge.type', $chargeType), ['code' => str_repeat('A', 51)])
@@ -346,7 +346,7 @@ it('returns 422 when update code exceeds 50 characters', function () {
 
 it('returns 404 when updating a charge type from another tenant', function () {
     $user            = adminUser();
-    $otherChargeType = ChargeType::factory()->create(['tenant_id' => createTenant()->id]);
+    $otherChargeType = ChargeType::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.charge.type', $otherChargeType), ['name' => 'Hacked'])
@@ -359,7 +359,7 @@ it('returns 404 when updating a charge type from another tenant', function () {
 
 it('deletes a single non-system charge type', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id, 'is_system' => false]);
+    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id, 'is_system' => false]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.charge.type', $chargeType))
@@ -370,7 +370,7 @@ it('deletes a single non-system charge type', function () {
 
 it('returns 404 when deleting a charge type from another tenant', function () {
     $user            = adminUser();
-    $otherChargeType = ChargeType::factory()->create(['tenant_id' => createTenant()->id]);
+    $otherChargeType = ChargeType::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.charge.type', $otherChargeType))
@@ -383,7 +383,7 @@ it('returns 404 when deleting a charge type from another tenant', function () {
 
 it('bulk deletes own-tenant charge types', function () {
     $user        = adminUser();
-    $chargeTypes = ChargeType::factory()->count(3)->create(['tenant_id' => $user->tenant_id]);
+    $chargeTypes = ChargeType::factory()->count(3)->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.charge.types'), [

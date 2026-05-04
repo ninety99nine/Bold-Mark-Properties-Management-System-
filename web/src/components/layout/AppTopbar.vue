@@ -2,10 +2,49 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationStore } from '@/stores/notifications'
+import { useCountryStore } from '@/stores/country'
 import AppInput from '@/components/common/AppInput.vue'
+import api from '@/composables/useApi'
 
 const router = useRouter()
 const auth = useAuthStore()
+const notifStore = useNotificationStore()
+const countryStore = useCountryStore()
+
+// --- Country Switcher ---
+const countryOpen = ref(false)
+const countryRef = ref(null)
+
+function toggleCountry() {
+  countryOpen.value = !countryOpen.value
+  if (countryOpen.value) {
+    userMenuOpen.value = false
+    notifOpen.value = false
+  }
+}
+
+// Detail routes that are region-specific → map to their parent list page
+const detailRouteParents = {
+  'estate-detail': 'estates',
+  'unit-detail': 'estates',
+  'tenant-detail': 'estates',
+  'owner-detail': 'estates',
+  'invoice-detail': 'billing',
+  'cashbook-entry': 'cashbook',
+  'user-detail': 'users',
+}
+
+function selectCountry(code) {
+  countryStore.select(code)
+  countryOpen.value = false
+
+  const currentRoute = router.currentRoute.value.name
+  const parentRoute = detailRouteParents[currentRoute]
+  if (parentRoute) {
+    router.push({ name: parentRoute })
+  }
+}
 
 const userMenuOpen = ref(false)
 const userMenuRef = ref(null)
@@ -13,66 +52,76 @@ const userMenuRef = ref(null)
 const notifOpen = ref(false)
 const notifRef = ref(null)
 
+// Fetch notifications on mount and poll every 60s
+let notifPollTimer = null
+
 function toggleNotif() {
   notifOpen.value = !notifOpen.value
   if (notifOpen.value) userMenuOpen.value = false
+}
+
+function handleNotifClick(notif) {
+  // Mark as read
+  if (!notif.read_at) {
+    notifStore.markAsRead(notif.id)
+  }
+  // Navigate based on notification type
+  if (notif.data?.estate_id) {
+    router.push(`/estates/${notif.data.estate_id}`)
+  }
+  notifOpen.value = false
+}
+
+function handleMarkAllRead() {
+  notifStore.markAllAsRead()
+}
+
+function timeAgo(dateStr) {
+  const now = new Date()
+  const date = new Date(dateStr)
+  const seconds = Math.floor((now - date) / 1000)
+  if (seconds < 60) return 'Just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return '1 day ago'
+  if (days < 30) return `${days} days ago`
+  return date.toLocaleDateString()
 }
 
 // --- Global Search ---
 const searchQuery = ref('')
 const searchOpen = ref(false)
 const searchRef = ref(null)
+const searchLoading = ref(false)
+let searchDebounce = null
 
-// Sample data — in production this would come from the API
-const sampleEstates = [
-  { id: 1, name: 'Crystal Mews Body Corporate', type: 'Sectional Title', units: 47 },
-  { id: 2, name: 'King Arthur BC', type: 'Mixed', units: 32 },
-  { id: 3, name: 'Lyndhurst Estate', type: 'Residential', units: 28 },
-  { id: 4, name: 'Gaborone Residences', type: 'Residential', units: 20 },
-  { id: 5, name: 'Sandton Heights', type: 'Commercial', units: 15 },
-]
-
-const sampleUnits = [
-  { id: 1, number: 'A01', estate: 'Crystal Mews BC', owner: 'Sarah van der Merwe' },
-  { id: 2, number: 'A02', estate: 'Crystal Mews BC', owner: 'Michael Ndaba' },
-  { id: 3, number: 'B04', estate: 'Crystal Mews BC', owner: 'Anele Zulu' },
-  { id: 4, number: 'C12', estate: 'King Arthur BC', owner: 'Johan Pretorius' },
-  { id: 5, number: '5A', estate: 'Lyndhurst Estate', owner: 'Thandi Dlamini' },
-]
-
-const samplePeople = [
-  { id: 1, name: 'Sarah van der Merwe', role: 'Owner', unit: 'A01 · Crystal Mews BC' },
-  { id: 2, name: 'Michael Ndaba', role: 'Owner', unit: 'A02 · Crystal Mews BC' },
-  { id: 3, name: 'Lisa Mokoena', role: 'Tenant', unit: 'A02 · Crystal Mews BC' },
-  { id: 4, name: 'Johan Pretorius', role: 'Owner', unit: 'C12 · King Arthur BC' },
-  { id: 5, name: 'Rachel Naidoo', role: 'Tenant', unit: 'B04 · Crystal Mews BC' },
-  { id: 6, name: 'Justin Mokoena', role: 'Admin', unit: null },
-]
-
-const q = computed(() => searchQuery.value.trim().toLowerCase())
-
-const filteredEstates = computed(() =>
-  q.value.length < 1 ? sampleEstates.slice(0, 3) : sampleEstates.filter(e => e.name.toLowerCase().includes(q.value)).slice(0, 4)
-)
-
-const filteredUnits = computed(() =>
-  q.value.length < 1 ? sampleUnits.slice(0, 3) : sampleUnits.filter(u =>
-    u.number.toLowerCase().includes(q.value) ||
-    u.owner.toLowerCase().includes(q.value) ||
-    u.estate.toLowerCase().includes(q.value)
-  ).slice(0, 4)
-)
-
-const filteredPeople = computed(() =>
-  q.value.length < 1 ? samplePeople.slice(0, 3) : samplePeople.filter(p =>
-    p.name.toLowerCase().includes(q.value) ||
-    p.role.toLowerCase().includes(q.value)
-  ).slice(0, 4)
-)
+const searchResults = ref({ estates: [], units: [], people: [], invoices: [] })
 
 const hasResults = computed(() =>
-  filteredEstates.value.length > 0 || filteredUnits.value.length > 0 || filteredPeople.value.length > 0
+  searchResults.value.estates.length > 0 ||
+  searchResults.value.units.length > 0 ||
+  searchResults.value.people.length > 0 ||
+  searchResults.value.invoices.length > 0
 )
+
+async function performSearch(query) {
+  if (!query || query.trim().length < 1) {
+    searchResults.value = { estates: [], units: [], people: [], invoices: [] }
+    return
+  }
+  searchLoading.value = true
+  try {
+    const { data } = await api.get('/search', { params: { q: query.trim() } })
+    searchResults.value = data
+  } catch {
+    searchResults.value = { estates: [], units: [], people: [], invoices: [] }
+  } finally {
+    searchLoading.value = false
+  }
+}
 
 function onSearchFocus() {
   searchOpen.value = true
@@ -80,6 +129,8 @@ function onSearchFocus() {
 
 function onSearchInput() {
   searchOpen.value = true
+  clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => performSearch(searchQuery.value), 300)
 }
 
 function closeSearch() {
@@ -95,22 +146,72 @@ function navigateToEstate(estate) {
 function navigateToUnit(unit) {
   closeSearch()
   searchQuery.value = ''
-  router.push(`/estates/${unit.id}/units/${unit.id}`)
+  router.push(`/estates/${unit.estate_id}/units/${unit.id}`)
 }
 
 function navigateToPerson(person) {
   closeSearch()
   searchQuery.value = ''
+  if (person.role === 'Owner' && person.estate_id && person.unit_id) {
+    router.push(`/estates/${person.estate_id}/units/${person.unit_id}`)
+  } else if (person.role === 'Tenant' && person.estate_id && person.unit_id) {
+    router.push(`/estates/${person.estate_id}/units/${person.unit_id}`)
+  } else {
+    router.push(`/users/${person.id}`)
+  }
+}
+
+function navigateToInvoice(invoice) {
+  closeSearch()
+  searchQuery.value = ''
+  router.push(`/billing/invoices/${invoice.id}`)
 }
 
 function estateTypeBadgeClass(type) {
   const map = {
-    'Sectional Title': 'bg-primary/10 text-primary',
-    'Mixed': 'bg-[#717B99]/10 text-[#717B99]',
-    'Residential': 'bg-green-100 text-green-700',
-    'Commercial': 'bg-amber-100 text-amber-700',
+    'sectional_title': 'bg-primary/10 text-primary',
+    'mixed': 'bg-[#717B99]/10 text-[#717B99]',
+    'residential_rental': 'bg-green-100 text-green-700',
+    'commercial_rental': 'bg-amber-100 text-amber-700',
   }
   return map[type] || 'bg-muted text-muted-foreground'
+}
+
+function estateTypeLabel(type) {
+  const map = {
+    'sectional_title': 'Sectional Title',
+    'mixed': 'Mixed',
+    'residential_rental': 'Residential',
+    'commercial_rental': 'Commercial',
+  }
+  return map[type] || type
+}
+
+function invoiceStatusClass(status) {
+  const map = {
+    'paid': 'bg-green-100 text-green-700',
+    'unpaid': 'bg-amber-100 text-amber-700',
+    'overdue': 'bg-red-100 text-red-700',
+    'partially_paid': 'bg-blue-100 text-blue-700',
+    'draft': 'bg-muted text-muted-foreground',
+  }
+  return map[status] || 'bg-muted text-muted-foreground'
+}
+
+function invoiceStatusLabel(status) {
+  const map = {
+    'paid': 'Paid',
+    'unpaid': 'Unpaid',
+    'overdue': 'Overdue',
+    'partially_paid': 'Partial',
+    'draft': 'Draft',
+  }
+  return map[status] || status
+}
+
+function formatCurrency(amount) {
+  if (amount == null) return '—'
+  return countryStore.formatCurrency(amount)
 }
 
 // --- User menu ---
@@ -139,10 +240,22 @@ function handleDocumentClick(e) {
   if (searchRef.value && !searchRef.value.contains(e.target)) {
     searchOpen.value = false
   }
+  if (countryRef.value && !countryRef.value.contains(e.target)) {
+    countryOpen.value = false
+  }
 }
 
-onMounted(() => document.addEventListener('click', handleDocumentClick))
-onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+  notifStore.fetch()
+  countryStore.fetch()
+  notifPollTimer = setInterval(() => notifStore.fetch(), 60000)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
+  if (notifPollTimer) clearInterval(notifPollTimer)
+  clearTimeout(searchDebounce)
+})
 </script>
 
 <template>
@@ -187,101 +300,137 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 
             <div class="max-h-[420px] overflow-y-auto">
 
-              <!-- Estates section -->
-              <div v-if="filteredEstates.length > 0" class="px-2 pt-2">
-                <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Estates</p>
-                <button
-                  v-for="estate in filteredEstates"
-                  :key="estate.id"
-                  @click="navigateToEstate(estate)"
-                  class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left group"
-                >
-                  <!-- Icon -->
-                  <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-primary">
-                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-                    </svg>
-                  </div>
-                  <!-- Info -->
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-foreground truncate">{{ estate.name }}</p>
-                    <p class="text-xs text-muted-foreground">{{ estate.units }} units</p>
-                  </div>
-                  <!-- Badge -->
-                  <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" :class="estateTypeBadgeClass(estate.type)">
-                    {{ estate.type }}
-                  </span>
-                </button>
+              <!-- Loading state -->
+              <div v-if="searchLoading && searchQuery" class="px-4 py-8 text-center">
+                <div class="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-2"></div>
+                <p class="text-xs text-muted-foreground">Searching...</p>
               </div>
 
-              <!-- Divider -->
-              <div v-if="filteredEstates.length > 0 && (filteredUnits.length > 0 || filteredPeople.length > 0)" class="mx-3 my-1.5 h-px bg-border" />
+              <template v-else-if="searchQuery">
+                <!-- Estates section -->
+                <div v-if="searchResults.estates.length > 0" class="px-2 pt-2">
+                  <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Estates</p>
+                  <button
+                    v-for="estate in searchResults.estates"
+                    :key="estate.id"
+                    @click="navigateToEstate(estate)"
+                    class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left group"
+                  >
+                    <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-primary">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+                      </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-foreground truncate">{{ estate.name }}</p>
+                      <p class="text-xs text-muted-foreground">{{ estate.units_count }} units</p>
+                    </div>
+                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" :class="estateTypeBadgeClass(estate.type)">
+                      {{ estateTypeLabel(estate.type) }}
+                    </span>
+                  </button>
+                </div>
 
-              <!-- Units section -->
-              <div v-if="filteredUnits.length > 0" class="px-2">
-                <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Units</p>
-                <button
-                  v-for="unit in filteredUnits"
-                  :key="unit.id"
-                  @click="navigateToUnit(unit)"
-                  class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
-                >
-                  <!-- Icon -->
-                  <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-amber-600">
-                      <rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/>
-                    </svg>
-                  </div>
-                  <!-- Info -->
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-foreground">Unit {{ unit.number }}</p>
-                    <p class="text-xs text-muted-foreground truncate">{{ unit.owner }} · {{ unit.estate }}</p>
-                  </div>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 flex-shrink-0">
-                    <path d="m9 18 6-6-6-6"/>
+                <!-- Divider -->
+                <div v-if="searchResults.estates.length > 0 && (searchResults.units.length > 0 || searchResults.people.length > 0 || searchResults.invoices.length > 0)" class="mx-3 my-1.5 h-px bg-border" />
+
+                <!-- Units section -->
+                <div v-if="searchResults.units.length > 0" class="px-2">
+                  <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Units</p>
+                  <button
+                    v-for="unit in searchResults.units"
+                    :key="unit.id"
+                    @click="navigateToUnit(unit)"
+                    class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
+                  >
+                    <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-amber-600">
+                        <rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/>
+                      </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-foreground">Unit {{ unit.unit_number }}</p>
+                      <p class="text-xs text-muted-foreground truncate">{{ unit.owner_name || '—' }} · {{ unit.estate_name }}</p>
+                    </div>
+                  </button>
+                </div>
+
+                <!-- Divider -->
+                <div v-if="searchResults.units.length > 0 && (searchResults.people.length > 0 || searchResults.invoices.length > 0)" class="mx-3 my-1.5 h-px bg-border" />
+
+                <!-- People section -->
+                <div v-if="searchResults.people.length > 0" class="px-2">
+                  <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">People</p>
+                  <button
+                    v-for="person in searchResults.people"
+                    :key="`${person.role}-${person.id}`"
+                    @click="navigateToPerson(person)"
+                    class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
+                  >
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
+                      :class="person.role === 'Tenant' ? 'bg-blue-100 text-blue-700' : (person.role === 'Owner' ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary')"
+                    >
+                      {{ person.name.split(' ').map(n => n[0]).join('').slice(0, 2) }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-foreground">{{ person.name }}</p>
+                      <p class="text-xs text-muted-foreground truncate">{{ person.context || 'System User' }}</p>
+                    </div>
+                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
+                      :class="person.role === 'Tenant' ? 'bg-blue-100 text-blue-700' : (person.role === 'Owner' ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary')"
+                    >
+                      {{ person.role }}
+                    </span>
+                  </button>
+                </div>
+
+                <!-- Divider -->
+                <div v-if="searchResults.people.length > 0 && searchResults.invoices.length > 0" class="mx-3 my-1.5 h-px bg-border" />
+
+                <!-- Invoices section -->
+                <div v-if="searchResults.invoices.length > 0" class="px-2 pb-2">
+                  <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Invoices</p>
+                  <button
+                    v-for="invoice in searchResults.invoices"
+                    :key="invoice.id"
+                    @click="navigateToInvoice(invoice)"
+                    class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
+                  >
+                    <div class="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-purple-600">
+                        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
+                      </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-foreground">{{ invoice.invoice_number }}</p>
+                      <p class="text-xs text-muted-foreground truncate">{{ invoice.unit_number ? `Unit ${invoice.unit_number}` : '' }}{{ invoice.unit_number && invoice.estate_name ? ' · ' : '' }}{{ invoice.estate_name || '' }}</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                      <span class="text-xs font-medium text-foreground">{{ formatCurrency(invoice.amount) }}</span>
+                      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full" :class="invoiceStatusClass(invoice.status)">
+                        {{ invoiceStatusLabel(invoice.status) }}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+
+                <!-- Empty state -->
+                <div v-if="!hasResults" class="px-4 py-8 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/40 mx-auto mb-2">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
                   </svg>
-                </button>
-              </div>
+                  <p class="text-sm text-muted-foreground">No results for "<span class="font-medium">{{ searchQuery }}</span>"</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">Try searching for an estate name, unit number, invoice number, or person</p>
+                </div>
+              </template>
 
-              <!-- Divider -->
-              <div v-if="filteredUnits.length > 0 && filteredPeople.length > 0" class="mx-3 my-1.5 h-px bg-border" />
-
-              <!-- People section -->
-              <div v-if="filteredPeople.length > 0" class="px-2 pb-2">
-                <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">People</p>
-                <button
-                  v-for="person in filteredPeople"
-                  :key="person.id"
-                  @click="navigateToPerson(person)"
-                  class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
-                >
-                  <!-- Avatar -->
-                  <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
-                    :class="person.role === 'Tenant' ? 'bg-blue-100 text-blue-700' : person.role === 'Admin' ? 'bg-primary/10 text-primary' : 'bg-green-100 text-green-700'"
-                  >
-                    {{ person.name.split(' ').map(n => n[0]).join('').slice(0, 2) }}
-                  </div>
-                  <!-- Info -->
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-foreground">{{ person.name }}</p>
-                    <p class="text-xs text-muted-foreground truncate">{{ person.unit || 'System User' }}</p>
-                  </div>
-                  <!-- Role badge -->
-                  <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
-                    :class="person.role === 'Tenant' ? 'bg-blue-100 text-blue-700' : person.role === 'Admin' ? 'bg-primary/10 text-primary' : 'bg-green-100 text-green-700'"
-                  >
-                    {{ person.role }}
-                  </span>
-                </button>
-              </div>
-
-              <!-- Empty state -->
-              <div v-if="!hasResults" class="px-4 py-8 text-center">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/40 mx-auto mb-2">
+              <!-- Empty state when no query -->
+              <div v-else class="px-4 py-6 text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/30 mx-auto mb-2">
                   <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
                 </svg>
-                <p class="text-sm text-muted-foreground">No results for "<span class="font-medium">{{ searchQuery }}</span>"</p>
-                <p class="text-xs text-muted-foreground mt-0.5">Try searching for an estate name, unit number, or person</p>
+                <p class="text-sm text-muted-foreground">Search estates, units, people, invoices...</p>
+                <p class="text-xs text-muted-foreground/60 mt-0.5">Start typing to find results</p>
               </div>
 
             </div>
@@ -296,8 +445,68 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
       </div>
     </div>
 
-    <!-- Right: Notifications + User -->
+    <!-- Right: Country Switcher + Notifications + User -->
     <div class="flex items-center gap-2">
+
+      <!-- Country switcher — only shown when estates span multiple countries -->
+      <div v-if="countryStore.isMultiCountry" class="relative" ref="countryRef">
+        <button
+          @click="toggleCountry"
+          class="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium transition-colors"
+          :class="countryOpen ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+        >
+          <span class="text-base leading-none">{{ countryStore.activeCountryInfo?.flag }}</span>
+          <span class="hidden sm:inline">{{ countryStore.activeCountryInfo?.name }}</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+            class="w-3.5 h-3.5 transition-transform"
+            :class="countryOpen ? 'rotate-180' : ''"
+          >
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+
+        <!-- Country dropdown -->
+        <Transition
+          enter-active-class="transition duration-150 ease-out"
+          enter-from-class="opacity-0 scale-[0.97] translate-y-[-4px]"
+          enter-to-class="opacity-100 scale-100 translate-y-0"
+          leave-active-class="transition duration-100 ease-in"
+          leave-from-class="opacity-100 scale-100 translate-y-0"
+          leave-to-class="opacity-0 scale-[0.97] translate-y-[-4px]"
+        >
+          <div
+            v-if="countryOpen"
+            class="absolute right-0 top-full mt-1.5 w-56 rounded-lg bg-card border border-border shadow-lg py-1 z-50"
+          >
+            <p class="px-3 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Portfolio Region</p>
+            <button
+              v-for="c in countryStore.countries"
+              :key="c.code"
+              @click="selectCountry(c.code)"
+              class="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left"
+              :class="c.code === countryStore.activeCountry
+                ? 'bg-primary/5 text-foreground font-medium'
+                : 'text-foreground hover:bg-muted'"
+            >
+              <span class="text-base leading-none">{{ c.flag }}</span>
+              <span class="flex-1">{{ c.name }}</span>
+              <svg
+                v-if="c.code === countryStore.activeCountry"
+                xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                class="w-3.5 h-3.5 text-primary shrink-0"
+              >
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </button>
+          </div>
+        </Transition>
+      </div>
+
+      <!-- Divider (after country switcher) -->
+      <div v-if="countryStore.isMultiCountry" class="w-px h-8 bg-border mx-1"></div>
 
       <!-- Notification bell -->
       <div class="relative" ref="notifRef">
@@ -315,8 +524,11 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
           </svg>
           <!-- Badge -->
-          <span class="absolute top-1 right-1 min-w-[16px] h-4 bg-destructive rounded-full ring-2 ring-card text-[10px] font-bold text-white flex items-center justify-center px-1">
-            3
+          <span
+            v-if="notifStore.unreadCount > 0"
+            class="absolute top-1 right-1 min-w-[16px] h-4 bg-destructive rounded-full ring-2 ring-card text-[10px] font-bold text-white flex items-center justify-center px-1"
+          >
+            {{ notifStore.unreadCount > 9 ? '9+' : notifStore.unreadCount }}
           </span>
         </button>
 
@@ -336,77 +548,46 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
             <!-- Header -->
             <div class="px-4 py-3 border-b border-border flex items-center justify-between">
               <p class="text-sm font-semibold text-foreground">Notifications</p>
-              <button class="text-xs text-primary hover:underline">Mark all read</button>
+              <button
+                v-if="notifStore.unreadCount > 0"
+                @click="handleMarkAllRead"
+                class="text-xs text-primary hover:underline"
+              >Mark all read</button>
             </div>
             <!-- Items -->
             <div class="max-h-80 overflow-y-auto">
-              <!-- Invoice overdue (unread) -->
-              <div class="flex gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors border-b border-border bg-primary/[0.03]">
+              <div
+                v-for="notif in notifStore.notifications"
+                :key="notif.id"
+                @click="handleNotifClick(notif)"
+                class="flex gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors border-b border-border"
+                :class="!notif.read_at ? 'bg-primary/[0.03]' : ''"
+              >
+                <!-- Icon -->
                 <div class="mt-0.5 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-destructive">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-primary">
                     <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
                   </svg>
                 </div>
+                <!-- Content -->
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm font-semibold text-foreground">Invoice overdue</p>
-                  <p class="text-xs text-muted-foreground mt-0.5 truncate">INV-2026-0002 — Michael Ndaba owes R 2 850</p>
-                  <p class="text-[11px] text-muted-foreground/60 mt-1">2 hours ago</p>
+                  <p class="text-sm" :class="!notif.read_at ? 'font-semibold text-foreground' : 'font-medium text-foreground'">
+                    Billing run completed
+                  </p>
+                  <p class="text-xs text-muted-foreground mt-0.5 truncate">{{ notif.data?.message }}</p>
+                  <p class="text-[11px] text-muted-foreground/60 mt-1">{{ timeAgo(notif.created_at) }}</p>
                 </div>
-                <span class="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0"></span>
+                <!-- Unread dot -->
+                <span v-if="!notif.read_at" class="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0"></span>
               </div>
-              <!-- Payment received (unread) -->
-              <div class="flex gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors border-b border-border bg-primary/[0.03]">
-                <div class="mt-0.5 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-success">
-                    <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
-                  </svg>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-semibold text-foreground">Payment received</p>
-                  <p class="text-xs text-muted-foreground mt-0.5 truncate">Sarah van der Merwe paid R 2 850 for Levy</p>
-                  <p class="text-[11px] text-muted-foreground/60 mt-1">3 hours ago</p>
-                </div>
-                <span class="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0"></span>
-              </div>
-              <!-- Unallocated payment (unread) -->
-              <div class="flex gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors border-b border-border bg-primary/[0.03]">
-                <div class="mt-0.5 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-warning">
-                    <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
-                  </svg>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-semibold text-foreground">Unallocated payment</p>
-                  <p class="text-xs text-muted-foreground mt-0.5 truncate">EFT ref 8827 — R 2 850 not linked to any invoice</p>
-                  <p class="text-[11px] text-muted-foreground/60 mt-1">5 hours ago</p>
-                </div>
-                <span class="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0"></span>
-              </div>
-              <!-- Payment received (read) -->
-              <div class="flex gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors border-b border-border">
-                <div class="mt-0.5 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-success">
-                    <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
-                  </svg>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-foreground">Payment received</p>
-                  <p class="text-xs text-muted-foreground mt-0.5 truncate">Lisa Mokoena paid R 9 500 for Rent</p>
-                  <p class="text-[11px] text-muted-foreground/60 mt-1">1 day ago</p>
-                </div>
-              </div>
-              <!-- 3 invoices overdue (read) -->
-              <div class="flex gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors">
-                <div class="mt-0.5 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-destructive">
-                    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
-                  </svg>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-foreground">3 invoices overdue</p>
-                  <p class="text-xs text-muted-foreground mt-0.5 truncate">Crystal Mews — Johan Pretorius, Thandi Dlamini, Anele Zulu</p>
-                  <p class="text-[11px] text-muted-foreground/60 mt-1">1 day ago</p>
-                </div>
+
+              <!-- Empty state -->
+              <div v-if="notifStore.notifications.length === 0" class="px-4 py-8 text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/40 mx-auto mb-2">
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+                <p class="text-sm text-muted-foreground">No notifications yet</p>
               </div>
             </div>
           </div>

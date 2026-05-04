@@ -28,6 +28,8 @@ class ShowInvoicesRequest extends FormRequest
             'estate_id'      => ['sometimes', 'uuid', 'exists:estates,id'],
             'status'         => ['sometimes', 'string'],
             'charge_type_id' => ['sometimes', 'uuid', 'exists:charge_types,id'],
+            'billed_to_type' => ['sometimes', 'string'],
+            'country'        => ['nullable', 'string', 'max:3'],
         ];
     }
 }

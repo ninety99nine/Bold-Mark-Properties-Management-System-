@@ -10,9 +10,11 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppTableToolbar from '@/components/common/AppTableToolbar.vue'
 import AppExportModal from '@/components/common/AppExportModal.vue'
+import { useCountryStore } from '@/stores/country'
 
 const router = useRouter()
 const route  = useRoute()
+const countryStore = useCountryStore()
 
 // ─── Remote state ─────────────────────────────────────────────────────────
 const invoices   = ref([])
@@ -111,6 +113,8 @@ function buildApiParams() {
   if (state.filters?.billed_to_type)  params.billed_to_type  = state.filters.billed_to_type
   if (state.sort)                      params._sort           = SORT_API_MAP[state.sort] ?? state.sort
 
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
+
   return params
 }
 
@@ -163,7 +167,9 @@ async function fetchInvoices() {
 async function fetchSummary() {
   summaryLoading.value = true
   try {
-    const { data } = await api.get('/invoices/summary')
+    const summaryParams = {}
+    if (countryStore.activeCountry) summaryParams.country = countryStore.activeCountry
+    const { data } = await api.get('/invoices/summary', { params: summaryParams })
     summary.value = data
   } catch (e) {
     console.error('Failed to fetch invoice summary', e)
@@ -183,7 +189,9 @@ async function fetchChargeTypes() {
 
 async function fetchEstates() {
   try {
-    const { data } = await api.get('/estates', { params: { _per_page: 100 } })
+    const estateParams = { _per_page: 100 }
+    if (countryStore.activeCountry) estateParams.country = countryStore.activeCountry
+    const { data } = await api.get('/estates', { params: estateParams })
     estates.value = data.data
   } catch (e) {
     console.error('Failed to fetch estates', e)
@@ -197,6 +205,19 @@ onMounted(() => {
   fetchEstates()
   if (route.query.tab === 'trash') {
     switchView('trash')
+  }
+  if (route.query.action === 'run-billing') {
+    showRun.value = true
+    router.replace({ query: { ...route.query, action: undefined } })
+  }
+})
+
+watch(() => countryStore.activeCountry, (newVal, oldVal) => {
+  if (oldVal !== null && newVal !== oldVal) {
+    currentPage.value = 1
+    fetchInvoices()
+    fetchSummary()
+    fetchEstates()
   }
 })
 
@@ -243,8 +264,7 @@ const BADGE_LABEL = {
 }
 
 function fmt(n) {
-  const num = Math.round(Number(n) * 100) / 100
-  return 'R\u00a0' + num.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f')
+  return countryStore.formatCurrency(n)
 }
 
 function fmtStat(card) {
@@ -356,6 +376,7 @@ function closeRun() {
 
 const nonDuplicatePreview = computed(() => runPreview.value.filter(r => !r.duplicate))
 const duplicateCount      = computed(() => runPreview.value.filter(r => r.duplicate).length)
+const runPreviewTotal     = computed(() => nonDuplicatePreview.value.reduce((sum, r) => sum + Number(r.amount), 0))
 
 // ── Ad-Hoc Billing ────────────────────────────────────────────────────────
 const adHocEstate     = ref('')
@@ -415,6 +436,8 @@ function buildExportParams(format, records) {
   if (state.filters?.charge_type_id)  params.charge_type_id  = state.filters.charge_type_id
   if (state.filters?.billed_to_type)  params.billed_to_type  = state.filters.billed_to_type
   if (state.sort)                      params._sort           = SORT_API_MAP[state.sort] ?? state.sort
+
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
 
   params._format = format
   params._limit  = records
@@ -633,7 +656,7 @@ const barChart = computed(() => {
     return {
       val,
       y:     PY1 - Math.round((val / scale) * PH),
-      label: val >= 1000 ? `R ${val / 1000}k` : `R ${val}`,
+      label: countryStore.formatCurrencyCompact(val),
     }
   })
 
@@ -707,32 +730,36 @@ function onBarMove(event, bar) {
       <!-- Section header with Active / Trash tabs -->
       <div class="px-6 pt-5 pb-0 flex items-center justify-between">
         <!-- Tab toggle -->
-        <div class="flex items-center gap-1 p-1 rounded-lg bg-muted/60 border border-border">
+        <div class="flex items-center gap-4 border-b border-border -mb-px">
           <button
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            class="inline-flex items-center gap-1.5 px-1 pb-2.5 text-sm font-medium transition-all duration-150 border-b-2 -mb-px"
             :class="activeView === 'active'
-              ? 'bg-background shadow-sm text-foreground border border-border'
-              : 'text-muted-foreground hover:text-foreground'"
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
             @click="switchView('active')"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
               <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
               <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
             </svg>
             Invoices
           </button>
           <button
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            class="inline-flex items-center gap-1.5 px-1 pb-2.5 text-sm font-medium transition-all duration-150 border-b-2 -mb-px"
             :class="activeView === 'trash'
-              ? 'bg-background shadow-sm text-foreground border border-border'
-              : 'text-muted-foreground hover:text-foreground'"
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
             @click="switchView('trash')"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
               <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
             </svg>
             Trash
+            <span
+              v-if="deletedPagination.total > 0"
+              class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-semibold leading-none bg-destructive/10 text-destructive"
+            >{{ deletedPagination.total }}</span>
           </button>
         </div>
 
@@ -1281,6 +1308,12 @@ function onBarMove(event, bar) {
               </tbody>
             </table>
           </div>
+
+          <!-- Total -->
+          <div class="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3 mt-4">
+            <p class="text-sm font-medium text-foreground">Total to be invoiced</p>
+            <p class="text-lg font-bold font-body text-foreground">{{ fmt(runPreviewTotal) }}</p>
+          </div>
         </div>
 
         <!-- No invoices to generate -->
@@ -1323,7 +1356,7 @@ function onBarMove(event, bar) {
           label="Amount"
           type="number"
           placeholder="0.00"
-          prefix="R"
+          :prefix="countryStore.currencySymbol"
           required
         />
         <p v-if="adHocError" class="text-sm text-danger">{{ adHocError }}</p>

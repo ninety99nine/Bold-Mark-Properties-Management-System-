@@ -38,7 +38,7 @@ class CashbookEntry extends Model
         'date',
         'notes',
         'estate_id',
-        'tenant_id',
+        'organization_id',
         'charge_type_id',
         'unit_id',
         'invoice_id',
@@ -123,9 +123,9 @@ class CashbookEntry extends Model
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function organization(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Organization::class);
     }
 
     /**

@@ -22,6 +22,9 @@ class ShowCashbookSummaryRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [];
+        return [
+            'estate_id' => ['sometimes', 'uuid', 'exists:estates,id'],
+            'country'   => ['nullable', 'string', 'max:3'],
+        ];
     }
 }

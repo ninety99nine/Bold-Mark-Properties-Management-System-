@@ -14,11 +14,21 @@ class ShowEstatesRequest extends FormRequest
         return $this->user()->can('viewAny', Estate::class);
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('is_active')) {
+            $this->merge([
+                'is_active' => filter_var($this->input('is_active'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
             'type'      => ['nullable', Rule::in(EstateType::values())],
             'is_active' => ['nullable', 'boolean'],
+            'country'   => ['nullable', 'string', 'max:3'],
         ];
     }
 }

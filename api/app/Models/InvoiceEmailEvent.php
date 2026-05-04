@@ -27,7 +27,7 @@ class InvoiceEmailEvent extends Model
      */
     protected $fillable = [
         'invoice_id',
-        'tenant_id',
+        'organization_id',
         'event_type',
         'email',
         'resend_email_id',

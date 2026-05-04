@@ -1,0 +1,151 @@
+services:
+
+  # ──────────────────────────────────────────────────────────
+  # Nginx — Reverse proxy. Serves Vue SPA + proxies /api to PHP-FPM.
+  # The static Vue files are baked into the image.
+  # ──────────────────────────────────────────────────────────
+  nginx:
+    image: ${NGINX_IMAGE:-boldmark-nginx:latest}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+  # ──────────────────────────────────────────────────────────
+  # App — PHP-FPM. Restarted on every deploy (~5s downtime).
+  # ──────────────────────────────────────────────────────────
+  app:
+    image: ${APP_IMAGE:-boldmark-app:latest}
+    env_file: /opt/boldmark/.env
+    volumes:
+      - app_storage:/var/www/html/storage/app
+      - app_logs:/var/www/html/storage/logs
+      - passport_keys:/var/www/html/storage/passport
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+  # ──────────────────────────────────────────────────────────
+  # MySQL 8 — Primary database.
+  # Data persists in the mysql_data named volume across all deployments.
+  # Never restarted during a normal deploy.
+  # ──────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+  # ──────────────────────────────────────────────────────────
+  # Redis 7 — Queue driver + cache backend.
+  # ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+  # ──────────────────────────────────────────────────────────
+  # Horizon — Laravel queue worker manager + dashboard at /horizon
+  # ──────────────────────────────────────────────────────────
+  horizon:
+    image: ${APP_IMAGE:-boldmark-app:latest}
+    command: ["php", "artisan", "horizon"]
+    env_file: /opt/boldmark/.env
+    volumes:
+      - app_storage:/var/www/html/storage/app
+      - app_logs:/var/www/html/storage/logs
+      - passport_keys:/var/www/html/storage/passport
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+  # ──────────────────────────────────────────────────────────
+  # Scheduler — Laravel task scheduler (replaces cron on host)
+  # ──────────────────────────────────────────────────────────
+  scheduler:
+    image: ${APP_IMAGE:-boldmark-app:latest}
+    command: ["php", "artisan", "schedule:work"]
+    env_file: /opt/boldmark/.env
+    volumes:
+      - app_storage:/var/www/html/storage/app
+      - app_logs:/var/www/html/storage/logs
+      - passport_keys:/var/www/html/storage/passport
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+  # ──────────────────────────────────────────────────────────
+  # Certbot — Let's Encrypt SSL certificate auto-renewal.
+  # ──────────────────────────────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c 'trap exit TERM;
+      while :; do
+        certbot renew --webroot -w /var/www/certbot --quiet;
+        sleep 12h & wait $${!};
+      done'
+    restart: unless-stopped
+    networks:
+      - boldmark
+
+volumes:
+  mysql_data:
+  redis_data:
+  app_storage:
+  app_logs:
+  passport_keys:
+  certbot_certs:
+  certbot_webroot:
+
+networks:
+  boldmark:
+    driver: bridge

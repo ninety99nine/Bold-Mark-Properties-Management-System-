@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\Unit;
 use App\Models\Tenant;
 use App\Models\User;
 
@@ -20,57 +21,72 @@ class TenantPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can view any tenants (organisations).
-     * Only super-admins and company-admins (tenant admins) may list tenants.
+     * Determine whether the user can view any organizations for the given unit.
      */
-    public function viewAny(User $user): bool
+    public function viewAny(User $user, Unit $unit): bool
     {
-        return $this->authService->isTenantAdmin($user);
+        return true;
     }
 
     /**
-     * Determine whether the user can view a specific tenant.
-     * Users may only view their own tenant record.
+     * Determine whether the user can view the unit tenant.
      */
-    public function view(User $user, Tenant $tenant): bool
+    public function view(User $user, Unit $unit, Tenant $tenant): bool
     {
-        return (string) $user->tenant_id === (string) $tenant->id;
+        return true;
     }
 
     /**
-     * Determine whether the user can create a new tenant.
-     * Only super-admins (handled by before()) may create tenants.
+     * Determine whether the user can create (move in) a tenant for the given unit.
      */
-    public function create(User $user): bool
+    public function create(User $user, Unit $unit): bool
     {
-        return false;
+        return true;
     }
 
     /**
-     * Determine whether the user can update the tenant.
-     * Tenant admins may update their own tenant. Super-admins handled by before().
+     * Determine whether the user can update the unit tenant.
      */
-    public function update(User $user, Tenant $tenant): bool
+    public function update(User $user, Unit $unit, Tenant $tenant): bool
     {
-        return $this->authService->isTenantAdmin($user)
-            && (string) $user->tenant_id === (string) $tenant->id;
+        return $this->authService->hasPermission($user, 'unit.tenant.update');
     }
 
     /**
-     * Determine whether the user can bulk-delete tenants.
-     * Only super-admins (handled by before()) may bulk-delete tenants.
+     * Determine whether the user can bulk-delete organizations for the given unit.
      */
-    public function deleteAny(User $user): bool
+    public function deleteAny(User $user, Unit $unit): bool
     {
-        return false;
+        $unitTenantIds = request()->input('tenant_ids', []);
+
+        if (empty($unitTenantIds)) {
+            return false;
+        }
+
+        return $this->authService->hasPermission($user, 'unit.tenant.delete');
     }
 
     /**
-     * Determine whether the user can delete the tenant.
-     * Only super-admins (handled by before()) may delete tenants.
+     * Determine whether the user can delete (archive) the unit tenant.
      */
-    public function delete(User $user, Tenant $tenant): bool
+    public function delete(User $user, Unit $unit, Tenant $tenant): bool
     {
-        return false;
+        return $this->authService->hasPermission($user, 'unit.tenant.delete');
+    }
+
+    /**
+     * Determine whether the user can perform a move-out for the unit tenant.
+     */
+    public function moveOut(User $user, Unit $unit, Tenant $tenant): bool
+    {
+        return true;
+    }
+
+    /**
+     * Determine whether the user can reinstate an inactive tenant.
+     */
+    public function reinstate(User $user, Unit $unit, Tenant $tenant): bool
+    {
+        return true;
     }
 }

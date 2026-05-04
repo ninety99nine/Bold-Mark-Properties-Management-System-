@@ -4,23 +4,31 @@ namespace App\Providers;
 
 use App\Models\CashbookEntry;
 use App\Models\ChargeType;
+use App\Models\ComplianceChecklist;
+use App\Models\ComplianceChecklistItem;
+use App\Models\ComplianceTemplate;
 use App\Models\Estate;
 use App\Models\Invoice;
 use App\Models\Owner;
-use App\Models\Tenant;
+use App\Models\RiskRule;
+use App\Models\Organization;
 use App\Models\Unit;
 use App\Models\UnitChargeConfig;
-use App\Models\UnitTenant;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Policies\CashbookEntryPolicy;
 use App\Policies\ChargeTypePolicy;
+use App\Policies\ComplianceChecklistItemPolicy;
+use App\Policies\ComplianceChecklistPolicy;
+use App\Policies\ComplianceTemplatePolicy;
 use App\Policies\EstatePolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\OwnerPolicy;
-use App\Policies\TenantPolicy;
+use App\Policies\RiskRulePolicy;
+use App\Policies\OrganizationPolicy;
 use App\Policies\UnitChargeConfigPolicy;
 use App\Policies\UnitPolicy;
-use App\Policies\UnitTenantPolicy;
+use App\Policies\TenantPolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -77,16 +85,20 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function registerPolicies(): void
     {
-        Gate::policy(Tenant::class, TenantPolicy::class);
+        Gate::policy(Organization::class, OrganizationPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(ChargeType::class, ChargeTypePolicy::class);
         Gate::policy(Estate::class, EstatePolicy::class);
         Gate::policy(Unit::class, UnitPolicy::class);
         Gate::policy(Owner::class, OwnerPolicy::class);
-        Gate::policy(UnitTenant::class, UnitTenantPolicy::class);
+        Gate::policy(Tenant::class, TenantPolicy::class);
         Gate::policy(UnitChargeConfig::class, UnitChargeConfigPolicy::class);
         Gate::policy(Invoice::class, InvoicePolicy::class);
         Gate::policy(CashbookEntry::class, CashbookEntryPolicy::class);
+        Gate::policy(RiskRule::class, RiskRulePolicy::class);
+        Gate::policy(ComplianceChecklist::class, ComplianceChecklistPolicy::class);
+        Gate::policy(ComplianceChecklistItem::class, ComplianceChecklistItemPolicy::class);
+        Gate::policy(ComplianceTemplate::class, ComplianceTemplatePolicy::class);
     }
 
     /**
@@ -95,11 +107,11 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function registerRouteModelBindings(): void
     {
-        Route::model('tenant', Tenant::class);
+        Route::model('organization', Organization::class);
         Route::model('estate', Estate::class);
         Route::model('unit', Unit::class);
         Route::model('owner', Owner::class);
-        Route::model('unitTenant', UnitTenant::class);
+        Route::model('tenant', Tenant::class);
         Route::model('chargeType', ChargeType::class);
         Route::model('chargeConfig', UnitChargeConfig::class);
         // Resolves {invoice} — includes soft-deleted so the detail page can show deleted invoices
@@ -112,6 +124,10 @@ class AppServiceProvider extends ServiceProvider
             return Invoice::withTrashed()->findOrFail($value);
         });
         Route::model('cashbookEntry', CashbookEntry::class);
+        Route::model('riskRule', RiskRule::class);
+        Route::model('complianceChecklist', ComplianceChecklist::class);
+        Route::model('complianceChecklistItem', ComplianceChecklistItem::class);
+        Route::model('complianceTemplate', ComplianceTemplate::class);
         Route::model('user', User::class);
     }
 }

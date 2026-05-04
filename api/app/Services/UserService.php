@@ -24,7 +24,7 @@ class UserService extends BaseService
     public function showUsers(array $data): UserResources
     {
         $user  = Auth::user();
-        $query = User::where('tenant_id', $user->tenant_id)
+        $query = User::where('organization_id', $user->organization_id)
             ->with(['roles', 'estates']);
 
         if (!empty($data['role'])) {
@@ -51,9 +51,9 @@ class UserService extends BaseService
     public function showUsersSummary(array $data): array
     {
         $user     = Auth::user();
-        $tenantId = $user->tenant_id;
+        $tenantId = $user->organization_id;
 
-        $query = User::where('tenant_id', $tenantId);
+        $query = User::where('organization_id', $tenantId);
 
         $total    = (clone $query)->count();
         $active   = (clone $query)->where('status', UserStatus::ACTIVE->value)->count();
@@ -94,7 +94,7 @@ class UserService extends BaseService
             'email'     => $data['email'],
             'phone'     => $data['phone'] ?? null,
             'password'  => Hash::make(Str::random(16)),
-            'tenant_id' => $admin->tenant_id,
+            'organization_id' => $admin->organization_id,
             'status'    => UserStatus::INVITED->value,
         ]);
 
@@ -140,7 +140,7 @@ class UserService extends BaseService
         $ids = array_filter($ids, fn($id) => $id !== $admin->id);
 
         $users = User::whereIn('id', $ids)
-            ->where('tenant_id', $admin->tenant_id)
+            ->where('organization_id', $admin->organization_id)
             ->get();
 
         $total = $users->count();

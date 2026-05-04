@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\ChargeTypeAppliesTo;
 use App\Models\ChargeType;
+use App\Models\Organization;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -16,7 +17,7 @@ class ChargeTypeFactory extends Factory
     public function definition(): array
     {
         return [
-            'tenant_id'    => null,
+            'organization_id'    => Organization::factory(),
             'code'         => 'CHARGE_' . strtoupper(fake()->unique()->lexify('?????')),
             'name'         => fake()->words(2, true),
             'description'  => fake()->sentence(),
@@ -66,7 +67,7 @@ class ChargeTypeFactory extends Factory
     public function forTenant(): static
     {
         return $this->state(fn (array $attributes) => [
-            'applies_to' => ChargeTypeAppliesTo::Tenant->value,
+            'applies_to' => ChargeTypeAppliesTo::Organization->value,
         ]);
     }
 

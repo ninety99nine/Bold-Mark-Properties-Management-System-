@@ -19,7 +19,7 @@ class TableViewService extends BaseService
     public function indexTableViews(string $context): TableViewResources
     {
         $views = TableView::where('user_id', Auth::id())
-            ->where('tenant_id', Auth::user()->tenant_id)
+            ->where('organization_id', Auth::user()->organization_id)
             ->where('context', $context)
             ->orderBy('created_at', 'asc')
             ->get();
@@ -36,7 +36,7 @@ class TableViewService extends BaseService
 
         $view = TableView::create(array_merge($data, [
             'user_id'   => $user->id,
-            'tenant_id' => $user->tenant_id,
+            'organization_id' => $user->organization_id,
         ]));
 
         return $this->showCreatedResource($view);

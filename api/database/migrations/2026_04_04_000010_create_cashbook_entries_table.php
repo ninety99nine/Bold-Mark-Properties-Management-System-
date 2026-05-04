@@ -28,7 +28,7 @@ return new class extends Migration
             $table->uuid('parent_entry_id')->nullable();
 
             $table->foreignUuid('estate_id')->constrained('estates')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
             $table->foreignUuid('charge_type_id')->nullable()->constrained('charge_types')->nullOnDelete();
             $table->foreignUuid('unit_id')->nullable()->constrained('units')->nullOnDelete();
             $table->foreignUuid('invoice_id')->nullable()->constrained('invoices')->nullOnDelete();
@@ -36,7 +36,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('estate_id');
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index('date');
             $table->index('type');
             $table->index('unit_id');
@@ -45,7 +45,7 @@ return new class extends Migration
             $table->index('parent_entry_id');
             $table->index(['estate_id', 'date']);
             $table->index(['unit_id', 'invoice_id']);
-            $table->index(['tenant_id', 'type']);
+            $table->index(['organization_id', 'type']);
             $table->index(['estate_id', 'type', 'date']);
         });
 

@@ -2,24 +2,16 @@
 
 namespace App\Http\Requests\Tenant;
 
+use App\Models\Tenant;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ShowTenantRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     * The tenant is resolved from the authenticated user's organisation — no route param needed.
-     */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()->can('view', [Tenant::class, $this->route('unit'), $this->route('tenant')]);
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [];

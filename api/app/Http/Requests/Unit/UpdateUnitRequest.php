@@ -33,7 +33,7 @@ class UpdateUnitRequest extends FormRequest
             'owner.id_number'       => ['sometimes', 'nullable', 'string', 'max:50'],
             'owner.address'         => ['sometimes', 'nullable', 'string', 'max:500'],
 
-            // Tenant details
+            // Organization details
             'tenant'                => ['sometimes', 'nullable', 'array'],
             'tenant.full_name'      => ['sometimes', 'nullable', 'string', 'max:255'],
             'tenant.email'          => ['sometimes', 'nullable', 'email', 'max:255'],
@@ -53,7 +53,8 @@ class UpdateUnitRequest extends FormRequest
                 return;
             }
 
-            if ($estate->type === 'sectional_title') {
+            $estateType = $estate->type instanceof \BackedEnum ? $estate->type->value : $estate->type;
+            if ($estateType === 'sectional_title') {
                 if ($this->input('occupancy_type') === 'tenant_occupied') {
                     $v->errors()->add(
                         'occupancy_type',

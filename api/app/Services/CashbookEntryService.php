@@ -15,6 +15,8 @@ use App\Http\Resources\CashbookEntryResources;
 
 class CashbookEntryService extends BaseService
 {
+    protected array $allowedRelationships = ['estate', 'unit', 'invoice', 'chargeType', 'parentEntry', 'childEntries'];
+
     public function __construct(private readonly UnitBalanceService $unitBalance)
     {
         parent::__construct();
@@ -29,7 +31,7 @@ class CashbookEntryService extends BaseService
     public function showCashbookEntries(array $data): CashbookEntryResources
     {
         $user  = Auth::user();
-        $query = CashbookEntry::where('tenant_id', $user->tenant_id)
+        $query = CashbookEntry::where('organization_id', $user->organization_id)
             ->with(['unit', 'invoice']);
 
         if (!empty($data['estate_id'])) {
@@ -88,7 +90,7 @@ class CashbookEntryService extends BaseService
     public function exportCashbookEntries(array $data): \Symfony\Component\HttpFoundation\Response
     {
         $user  = Auth::user();
-        $query = CashbookEntry::where('tenant_id', $user->tenant_id)
+        $query = CashbookEntry::where('organization_id', $user->organization_id)
             ->with(['unit', 'invoice']);
 
         if (!empty($data['estate_id'])) {
@@ -173,7 +175,7 @@ class CashbookEntryService extends BaseService
     public function showCashbookSummary(array $data): array
     {
         $user  = Auth::user();
-        $query = CashbookEntry::where('tenant_id', $user->tenant_id)
+        $query = CashbookEntry::where('organization_id', $user->organization_id)
             ->with(['invoice']);
 
         if (!empty($data['estate_id'])) {
@@ -220,11 +222,11 @@ class CashbookEntryService extends BaseService
 
         if (request()->hasFile('proof_of_payment')) {
             $entryData['proof_of_payment_path'] = request()->file('proof_of_payment')
-                ->store("proof_of_payment/{$user->tenant_id}", 'public');
+                ->store("proof_of_payment/{$user->organization_id}", 'public');
         }
 
         $entry = CashbookEntry::create(array_merge($entryData, [
-            'tenant_id' => $user->tenant_id,
+            'organization_id' => $user->organization_id,
         ]));
 
         // Auto-update invoice status when the entry is created with an invoice_id
@@ -338,7 +340,7 @@ class CashbookEntryService extends BaseService
                 'description'     => $cashbookEntry->description,
                 'amount'          => $outstanding,
                 'notes'           => $cashbookEntry->notes,
-                'tenant_id'       => $cashbookEntry->tenant_id,
+                'organization_id'       => $cashbookEntry->organization_id,
                 'unit_id'         => $unitId,
                 'invoice_id'      => $invoice->id,
                 'charge_type_id'  => $invoice->charge_type_id,
@@ -353,7 +355,7 @@ class CashbookEntryService extends BaseService
                 'description'     => $cashbookEntry->description,
                 'amount'          => $remainder,
                 'notes'           => $cashbookEntry->notes ?? 'Unallocated remainder after allocation to ' . $invoice->invoice_number,
-                'tenant_id'       => $cashbookEntry->tenant_id,
+                'organization_id'       => $cashbookEntry->organization_id,
                 'unit_id'         => $unitId,
                 'invoice_id'      => null,
                 'charge_type_id'  => null,
@@ -557,7 +559,7 @@ class CashbookEntryService extends BaseService
     {
         $user    = Auth::user();
         $entries = CashbookEntry::whereIn('id', $ids)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->get();
 
         $total = $entries->count();

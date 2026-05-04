@@ -11,10 +11,8 @@ class DatabaseSeeder extends Seeder
     {
         // Create the Passport personal access client (required for API token auth).
         // Recreated here so migrate:fresh --seed always leaves the app in a working state.
-        app(ClientRepository::class)->createPersonalAccessClient(
-            null,
-            config('app.name') . ' Personal Access Client',
-            config('app.url')
+        app(ClientRepository::class)->createPersonalAccessGrantClient(
+            config('app.name') . ' Personal Access Client'
         );
 
         // System seeds — always run in every environment
