@@ -68,7 +68,7 @@ jobs:
         working-directory: web
         run: npm run build
         env:
-          VITE_API_URL: /api
+          VITE_API_URL: ''
           VITE_APP_NAME: 'BoldMark PMS'
 
       - name: Prepare test environment

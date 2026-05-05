@@ -10,7 +10,7 @@ RUN npm ci --ignore-scripts
 COPY web/ ./
 
 # Vite reads these at BUILD time — bake them into the JS bundle
-ARG VITE_API_URL=/api
+ARG VITE_API_URL=
 ARG VITE_APP_NAME="BoldMark PMS"
 ARG VITE_PUSHER_APP_KEY
 ARG VITE_PUSHER_APP_CLUSTER=eu
