@@ -122,6 +122,47 @@ function goToChecklist(estate) {
 
 <template>
   <div>
+
+    <!-- ── Phase 2 Overlay ──────────────────────────────────────────────── -->
+    <Teleport to="body">
+    <div class="fixed top-14 left-60 right-0 bottom-0 z-40 backdrop-blur-[2px] bg-white/60 pointer-events-none"></div>
+    <div class="fixed top-14 left-60 right-0 bottom-0 z-50 flex items-center justify-center pointer-events-none">
+      <div class="pointer-events-auto flex flex-col items-center gap-4 rounded-2xl border border-[#e8a040]/40 bg-white/95 px-10 py-8 shadow-2xl text-center max-w-sm">
+        <div class="flex items-center justify-center w-14 h-14 rounded-full bg-[#1a2744]/8 border border-[#1a2744]/15">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-[#1a2744]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <div>
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-[#e8a040]/15 px-3 py-1 text-xs font-semibold text-[#e8a040] border border-[#e8a040]/30 mb-3">
+            Phase 2 Feature
+          </span>
+          <h2 class="font-bold text-lg text-[#1a2744] leading-snug">Compliance Tracker — Coming Soon</h2>
+          <p class="mt-2 text-sm text-slate-500 leading-relaxed">
+            This feature is part of <span class="font-semibold text-[#1a2744]">Phase 2</span> of your Bold Mark Properties system and is currently under development.
+          </p>
+          <ul class="mt-4 space-y-2 text-left">
+            <li class="flex items-start gap-2 text-sm text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 shrink-0 text-[#e8a040]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+              Monitor portfolio-wide compliance progress across all managed estates
+            </li>
+            <li class="flex items-start gap-2 text-sm text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 shrink-0 text-[#e8a040]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+              Track overdue items, completed tasks and compliance status per estate
+            </li>
+            <li class="flex items-start gap-2 text-sm text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 shrink-0 text-[#e8a040]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+              Create checklists from reusable templates and assign them to estates
+            </li>
+            <li class="flex items-start gap-2 text-sm text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 shrink-0 text-[#e8a040]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+              Get instant visibility into which estates are compliant, at risk or not started
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    </Teleport>
     <!-- Page header -->
     <div class="flex items-start justify-between mb-6">
       <div>

@@ -335,8 +335,10 @@ onUnmounted(() => {
         <!-- Slideshow -->
         <div class="relative w-80 h-52 rounded-2xl overflow-hidden mb-8 shadow-2xl">
           <img
-            :src="ESTATE_SLIDES[slideIndex]"
-            :class="['absolute inset-0 w-full h-full object-cover transition-opacity duration-500', slideFading ? 'opacity-0' : 'opacity-100']"
+            v-for="(src, i) in ESTATE_SLIDES"
+            :key="src"
+            :src="src"
+            :class="['absolute inset-0 w-full h-full object-cover transition-opacity duration-500', (i === slideIndex && !slideFading) ? 'opacity-100' : 'opacity-0']"
             alt=""
           />
           <!-- Gradient overlay for dot legibility -->
