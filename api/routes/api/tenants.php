@@ -7,9 +7,9 @@ Route::prefix('estates/{estate}/units/{unit}/tenants')
     ->controller(TenantController::class)
     ->middleware(['auth:api'])
     ->group(function () {
-        Route::get('/', 'showTenants')->name('show.unit.tenants');
+        Route::get('/', 'showTenants')->name('show.unit.organizations');
         Route::post('/', 'createTenant')->name("create.tenant");
-        Route::delete('/', 'deleteTenants')->name('delete.unit.tenants');
+        Route::delete('/', 'deleteTenants')->name('delete.unit.organizations');
 
         // Explicit route model binding applied: AppServiceProvider.php
         Route::prefix('{tenant}')->group(function () {
