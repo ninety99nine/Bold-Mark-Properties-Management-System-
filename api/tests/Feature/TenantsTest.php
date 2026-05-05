@@ -225,7 +225,7 @@ it('searches organizations by full_name / email / phone', function () {
         ->getJson(route('api.v1.show.unit.organizations', [$estate, $unit]) . '?_search=Crystal')
         ->assertOk()
         ->assertJsonPath('meta.total', 1);
-})->skip('Tenant::scopeSearch uses ilike (Postgres-only). Make portable to enable in SQLite tests.');
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ GET /v1/.../organizations/{tenant}  —  show                                ║
@@ -867,22 +867,10 @@ it('clears the lease document via DELETE', function () {
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ Cross-tenant isolation (security gap, characterised)                     ║
+// ║ Cross-tenant isolation                                                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('CHARACTERIZATION: cross-tenant tenant show currently returns 200 (should be 404)', function () {
-    $user        = adminUser();
-    $other       = createTenant();
-    $otherEstate = Estate::factory()->create(['organization_id' => $other->id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $other->id]);
-    $otherTenant = Tenant::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $other->id]);
-
-    $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.tenant', [$otherEstate, $otherUnit, $otherTenant]))
-        ->assertOk();
-});
-
-it('SECURITY: cross-tenant tenant show should return 404', function () {
+it('cross-tenant tenant show returns 404', function () {
     $user        = adminUser();
     $other       = createTenant();
     $otherEstate = Estate::factory()->create(['organization_id' => $other->id]);
@@ -892,4 +880,4 @@ it('SECURITY: cross-tenant tenant show should return 404', function () {
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.tenant', [$otherEstate, $otherUnit, $otherTenant]))
         ->assertNotFound();
-})->skip('SECURITY GAP — TenantPolicy::view returns true; route bindings are not tenant-scoped.');
+});

@@ -31,21 +31,21 @@ class UnitFactory extends Factory
     public function ownerOccupied(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::OwnerOccupied->value,
+            'occupancy_type' => OccupancyType::OWNER_OCCUPIED->value,
         ]);
     }
 
     public function tenantOccupied(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::TenantOccupied->value,
+            'occupancy_type' => OccupancyType::TENANT_OCCUPIED->value,
         ]);
     }
 
     public function vacant(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::Vacant->value,
+            'occupancy_type' => OccupancyType::VACANT->value,
             'rent_amount'    => null,
         ]);
     }
@@ -53,7 +53,7 @@ class UnitFactory extends Factory
     public function suspended(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => UnitStatus::Suspended->value,
+            'status' => UnitStatus::SUSPENDED->value,
         ]);
     }
 

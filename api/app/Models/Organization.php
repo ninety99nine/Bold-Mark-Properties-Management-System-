@@ -56,9 +56,9 @@ class Organization extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('company_name', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('contact_email', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('name', $searchTerm)
+              ->orWhereLike('company_name', $searchTerm)
+              ->orWhereLike('contact_email', $searchTerm);
     }
 
     /**

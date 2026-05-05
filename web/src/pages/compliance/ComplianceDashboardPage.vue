@@ -66,24 +66,21 @@ const yearOptions = computed(() =>
   financialYears.value.map(y => ({ value: y, label: y }))
 )
 
-function statusColor(status) {
-  const map = {
-    compliant: 'text-emerald-600',
-    in_progress: 'text-amber-600',
-    at_risk: 'text-red-600',
-    not_started: 'text-gray-400',
-  }
-  return map[status] || 'text-gray-400'
+function statusColor(estate) {
+  if (estate.overdue_items > 0)        return 'text-red-600'
+  if (estate.status === 'not_started') return 'text-gray-400'
+  return 'text-emerald-600'
+}
+
+function statusAccent(estate) {
+  if (estate.overdue_items > 0)       return 'border-l-red-500'
+  if (estate.status === 'not_started') return 'border-l-gray-300'
+  return 'border-l-emerald-500'
 }
 
 function statusBg(status) {
-  const map = {
-    compliant: 'bg-emerald-50 border-emerald-200',
-    in_progress: 'bg-amber-50 border-amber-200',
-    at_risk: 'bg-red-50 border-red-200',
-    not_started: 'bg-gray-50 border-gray-200',
-  }
-  return map[status] || 'bg-gray-50 border-gray-200'
+  if (status === 'at_risk') return 'bg-red-50/40 border-red-200'
+  return 'bg-white border-border'
 }
 
 function statusLabel(status) {
@@ -101,11 +98,21 @@ function statusBadgeVariant(status) {
   return map[status] || 'default'
 }
 
-function progressBarColor(progress) {
-  if (progress === 100) return 'bg-emerald-500'
-  if (progress >= 50)   return 'bg-amber-500'
-  if (progress > 0)     return 'bg-red-500'
-  return 'bg-gray-300'
+function progressBarColor(estate) {
+  if (estate.overdue_items > 0)        return 'bg-red-500'
+  if (estate.status === 'not_started') return 'bg-gray-300'
+  return 'bg-emerald-500'
+}
+
+function dueDateLabel(dateStr) {
+  if (!dateStr) return null
+  const today = new Date(); today.setHours(0,0,0,0)
+  const due = new Date(dateStr); due.setHours(0,0,0,0)
+  const d = Math.round((due - today) / 86400000)
+  if (d < 0)  return { text: `${Math.abs(d)}d overdue`, cls: 'text-red-600 font-semibold' }
+  if (d === 0) return { text: 'Due today',              cls: 'text-amber-600 font-semibold' }
+  if (d <= 7)  return { text: `Due in ${d}d`,           cls: 'text-amber-600' }
+  return { text: `Due in ${d}d`, cls: 'text-muted-foreground' }
 }
 
 function goToChecklist(estate) {
@@ -114,7 +121,7 @@ function goToChecklist(estate) {
 </script>
 
 <template>
-  <div class="min-h-screen">
+  <div>
     <!-- Page header -->
     <div class="flex items-start justify-between mb-6">
       <div>
@@ -148,16 +155,16 @@ function goToChecklist(estate) {
     </div>
 
     <!-- Filters bar -->
-    <div class="flex flex-wrap items-center gap-3 mb-6">
-      <div class="w-64">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="flex-1 min-w-48">
         <AppInput
           v-model="searchQuery"
-          type="search"
-          placeholder="Search estates..."
+          leading-icon="search"
           size="sm"
+          placeholder="Search estates..."
         />
       </div>
-      <div v-if="yearOptions.length > 1" class="w-44">
+      <div v-if="yearOptions.length > 1" class="w-44 flex-shrink-0">
         <AppSelect
           v-model="selectedYear"
           :options="yearOptions"
@@ -173,8 +180,9 @@ function goToChecklist(estate) {
         :key="estate.checklist_id"
         @click="goToChecklist(estate)"
         :class="[
-          'text-left rounded-xl border p-5 transition-all duration-150 hover:shadow-md hover:border-primary/30 cursor-pointer',
+          'text-left rounded-xl border border-l-4 p-5 transition-all duration-150 hover:shadow-md cursor-pointer',
           statusBg(estate.status),
+          statusAccent(estate),
         ]"
       >
         <!-- Estate header -->
@@ -192,11 +200,11 @@ function goToChecklist(estate) {
         <div class="mb-3">
           <div class="flex items-center justify-between mb-1">
             <span class="text-xs font-medium text-muted-foreground">Progress</span>
-            <span :class="['text-xs font-bold', statusColor(estate.status)]">{{ estate.progress }}%</span>
+            <span :class="['text-xs font-bold', statusColor(estate)]">{{ estate.progress }}%</span>
           </div>
-          <div class="w-full h-2 bg-white/80 rounded-full overflow-hidden">
+          <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
-              :class="['h-full rounded-full transition-all duration-500', progressBarColor(estate.progress)]"
+              :class="['h-full rounded-full transition-all duration-500', progressBarColor(estate)]"
               :style="{ width: estate.progress + '%' }"
             />
           </div>
@@ -211,12 +219,11 @@ function goToChecklist(estate) {
             </svg>
             {{ estate.completed_items }} done
           </span>
-          <span v-if="estate.overdue_items > 0" class="flex items-center gap-1 text-red-600">
+          <span v-if="estate.waived_items > 0" class="flex items-center gap-1">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M12 8v4"/><path d="M12 16h.01"/>
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
             </svg>
-            {{ estate.overdue_items }} overdue
+            {{ estate.waived_items }} waived
           </span>
           <span class="flex items-center gap-1">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5">
@@ -225,6 +232,31 @@ function goToChecklist(estate) {
             </svg>
             {{ estate.total_items }} total
           </span>
+        </div>
+
+        <!-- Up Next hint -->
+        <div v-if="estate.next_item && estate.overdue_items === 0" class="mt-3 pt-3 border-t border-border flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-muted-foreground flex-shrink-0">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span class="flex-1 text-xs text-muted-foreground truncate">{{ estate.next_item.name }}</span>
+          <span v-if="estate.next_item.due_date && dueDateLabel(estate.next_item.due_date)"
+            :class="['text-xs flex-shrink-0', dueDateLabel(estate.next_item.due_date).cls]">
+            {{ dueDateLabel(estate.next_item.due_date).text }}
+          </span>
+        </div>
+
+        <!-- Overdue alert -->
+        <div v-if="estate.overdue_items > 0" class="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-red-700 leading-snug">
+              {{ estate.overdue_items }} overdue item{{ estate.overdue_items !== 1 ? 's' : '' }}
+            </p>
+            <p v-if="estate.next_item" class="text-xs text-red-500 truncate mt-0.5">{{ estate.next_item.name }}</p>
+          </div>
         </div>
       </button>
     </div>

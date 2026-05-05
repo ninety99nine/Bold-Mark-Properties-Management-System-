@@ -51,9 +51,9 @@ class Owner extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('full_name', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('email', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('phone', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('full_name', $searchTerm)
+              ->orWhereLike('email', $searchTerm)
+              ->orWhereLike('phone', $searchTerm);
     }
 
     /**
@@ -85,5 +85,16 @@ class Owner extends Model
     {
         return $this->hasMany(Invoice::class, 'billed_to_id')
                     ->where('billed_to_type', 'owner');
+    }
+
+    public function resolveRouteBinding($value, $field = null): ?self
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return null;
+        }
+        return $this->where($field ?? $this->getRouteKeyName(), $value)
+                    ->where('organization_id', $user->organization_id)
+                    ->first();
     }
 }

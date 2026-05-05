@@ -56,7 +56,7 @@ class DashboardController extends Controller
 
         // Also include the tenant's default country
         $tenant = Organization::find($tenantId);
-        $defaultCountry = $tenant->country;
+        $defaultCountry = $tenant?->country;
 
         return [
             'countries'       => $countries,

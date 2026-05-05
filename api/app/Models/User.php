@@ -66,8 +66,8 @@ class User extends Authenticatable
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('email', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('name', $searchTerm)
+              ->orWhereLike('email', $searchTerm);
     }
 
     /**
@@ -90,5 +90,16 @@ class User extends Authenticatable
         return $this->belongsToMany(Estate::class, 'user_estates')
                     ->using(UserEstate::class)
                     ->withTimestamps();
+    }
+
+    public function resolveRouteBinding($value, $field = null): ?self
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return null;
+        }
+        return $this->where($field ?? $this->getRouteKeyName(), $value)
+                    ->where('organization_id', $user->organization_id)
+                    ->first();
     }
 }

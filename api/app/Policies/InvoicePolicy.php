@@ -89,6 +89,9 @@ class InvoicePolicy extends BasePolicy
      */
     public function restore(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'invoice.delete');
     }
 
@@ -97,6 +100,9 @@ class InvoicePolicy extends BasePolicy
      */
     public function forceDelete(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'invoice.delete');
     }
 }

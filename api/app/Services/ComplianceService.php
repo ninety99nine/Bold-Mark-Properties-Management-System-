@@ -72,12 +72,14 @@ class ComplianceService extends BaseService
         ]);
         $checklist->loadCount(['items', 'completedItems', 'overdueItems']);
 
-        // Compute progress
+        // Compute progress — waived items are excluded from the denominator
         $totalItems = $checklist->items_count;
         $completedItems = $checklist->completed_items_count;
-        $checklist->progress_percentage = $totalItems > 0
-            ? round(($completedItems / $totalItems) * 100)
-            : 0;
+        $waivedItems = $checklist->items->where('status.value', 'waived')->count();
+        $applicableItems = $totalItems - $waivedItems;
+        $checklist->progress_percentage = $applicableItems > 0
+            ? round(($completedItems / $applicableItems) * 100)
+            : ($totalItems > 0 ? 100 : 0);
 
         // Status summary by category
         $statusSummary = [];
@@ -439,8 +441,11 @@ class ComplianceService extends BaseService
 
         $query = ComplianceChecklist::query()
             ->where('organization_id', $tenantId)
-            ->withCount(['items', 'completedItems', 'overdueItems'])
-            ->with(['estate:id,name,address,country,type']);
+            ->withCount(['items', 'completedItems', 'overdueItems', 'waivedItems'])
+            ->with([
+                'estate:id,name,address,country,type',
+                'nextItem:id,compliance_checklist_id,name,due_date,status,priority,category',
+            ]);
 
         // Filter by country
         if (! empty($data['country'])) {
@@ -459,7 +464,9 @@ class ComplianceService extends BaseService
             $total = $checklist->items_count;
             $completed = $checklist->completed_items_count;
             $overdue = $checklist->overdue_items_count;
-            $progress = $total > 0 ? round(($completed / $total) * 100) : 0;
+            $waived = $checklist->waived_items_count;
+            $applicable = $total - $waived;
+            $progress = $applicable > 0 ? round(($completed / $applicable) * 100) : ($total > 0 ? 100 : 0);
 
             return [
                 'checklist_id'     => $checklist->id,
@@ -471,9 +478,16 @@ class ComplianceService extends BaseService
                 'total_items'      => $total,
                 'completed_items'  => $completed,
                 'overdue_items'    => $overdue,
-                'pending_items'    => $total - $completed - $overdue,
+                'waived_items'     => $waived,
+                'pending_items'    => $total - $completed - $overdue - $waived,
                 'progress'         => $progress,
                 'status'           => $this->resolveComplianceStatus($progress, $overdue),
+                'next_item'        => $checklist->nextItem ? [
+                    'name'     => $checklist->nextItem->name,
+                    'due_date' => $checklist->nextItem->due_date?->toDateString(),
+                    'priority' => $checklist->nextItem->priority,
+                    'category' => $checklist->nextItem->category,
+                ] : null,
             ];
         })->sortBy('progress')->values();
 

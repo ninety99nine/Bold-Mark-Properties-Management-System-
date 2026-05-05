@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ComplianceTemplate extends Model
 {
-    use HasUuids;
+    use HasFactory, HasUuids;
 
     /**
      * The attributes that should be cast.
@@ -43,7 +44,7 @@ class ComplianceTemplate extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('name', $searchTerm);
     }
 
     /**

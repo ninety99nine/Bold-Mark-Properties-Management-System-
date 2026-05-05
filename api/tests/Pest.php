@@ -14,14 +14,14 @@ uses(TestCase::class)->in('Unit');
 
 /*
 |--------------------------------------------------------------------------
-| SQLite — register Postgres-equivalent SQL functions
+| SQLite — register Postgres-equivalent SQL functions & operators
 |--------------------------------------------------------------------------
 |
-| Production runs on Postgres which ships GREATEST / LEAST natively. Our
-| test suite uses SQLite (in-memory) which doesn't, so any subquery that
-| relies on them (e.g. unit balance calculations) errors with "no such
-| function: GREATEST". Register them as UDFs once per connection so the
-| service-level SQL is portable for tests.
+| Production runs on Postgres which ships GREATEST / LEAST natively and
+| supports the ilike case-insensitive operator. Our test suite uses SQLite
+| (in-memory) which has none of these. Register UDFs for GREATEST / LEAST
+| and swap the query grammar to rewrite `ilike` → `like` (SQLite LIKE is
+| already case-insensitive for ASCII text, so behaviour is identical).
 */
 uses()->beforeEach(function () {
     static $registeredOnPdoIds = [];
@@ -47,6 +47,25 @@ uses()->beforeEach(function () {
         $args = array_filter($args, fn ($v) => $v !== null);
         return empty($args) ? null : min($args);
     });
+
+    // Rewrite ilike → like at the grammar level so Postgres-style case-insensitive
+    // searches work transparently in the SQLite test environment.
+    $connection->setQueryGrammar(
+        new class($connection) extends \Illuminate\Database\Query\Grammars\SQLiteGrammar {
+            public function __construct(\Illuminate\Database\Connection $conn)
+            {
+                parent::__construct($conn);
+            }
+
+            protected function whereBasic(\Illuminate\Database\Query\Builder $query, $where)
+            {
+                if (strtolower($where['operator']) === 'ilike') {
+                    $where['operator'] = 'like';
+                }
+                return parent::whereBasic($query, $where);
+            }
+        }
+    );
 
     $registeredOnPdoIds[$pdoId] = true;
 })->in('Feature');

@@ -394,7 +394,7 @@ it('does not filter when _date_range=all_time', function () {
 // Search (_search) — TODO when search scope is made portable
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('searches estates by name (Postgres prod / SQLite test divergence)', function () {
+it('searches estates by name', function () {
     $user = adminUser();
     Estate::factory()->create(['organization_id' => $user->organization_id, 'name' => 'Crystal Mews']);
     Estate::factory()->create(['organization_id' => $user->organization_id, 'name' => 'Riverside Park']);
@@ -405,7 +405,7 @@ it('searches estates by name (Postgres prod / SQLite test divergence)', function
 
     expect($resp->json('meta.total'))->toBe(1);
     expect($resp->json('data.0.name'))->toBe('Crystal Mews');
-})->skip('Estate::search scope uses ilike (Postgres-only). SQLite test DB does not understand it. Make scope DB-agnostic to enable.');
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Computed counts & monthly_revenue on the index payload
@@ -1180,67 +1180,32 @@ it('returns 403 when bulk delete estate_ids is an empty array (policy guard)', f
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ Cross-tenant isolation (currently a security gap)                        ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
-//
-// EstatePolicy::view, ::update, ::delete don't check that the target estate
-// belongs to the actor's tenant — and route model binding doesn't tenant-
-// scope either. So a logged-in admin can view/update/delete another tenant's
-// estate by guessing its UUID. The tests below assert the *current* behavior
-// (200) so the suite stays green; a corresponding `->skip()`-ed expectation
-// (commented "should be 404") documents the desired fix.
-
-it('CHARACTERIZATION: cross-tenant show currently returns 200 (should be 404)', function () {
-    $user        = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
-
-    $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.estate', $otherEstate))
-        ->assertOk();
-});
-
-it('SECURITY: cross-tenant show should return 404', function () {
+it('cross-tenant show returns 404', function () {
     $user        = adminUser();
     $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.estate', $otherEstate))
         ->assertNotFound();
-})->skip('SECURITY GAP — EstatePolicy::view / route model binding need tenant scoping.');
-
-it('CHARACTERIZATION: cross-tenant update currently succeeds (should be 404)', function () {
-    $user        = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
-
-    $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.estate', $otherEstate), ['name' => 'Hacked'])
-        ->assertOk();
 });
 
-it('SECURITY: cross-tenant update should return 404', function () {
+it('cross-tenant update returns 404', function () {
     $user        = adminUser();
     $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.estate', $otherEstate), ['name' => 'Hacked'])
         ->assertNotFound();
-})->skip('SECURITY GAP — EstatePolicy::update / route model binding need tenant scoping.');
-
-it('CHARACTERIZATION: cross-tenant single delete currently succeeds (should be 404)', function () {
-    $user        = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
-
-    $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.estate', $otherEstate))
-        ->assertOk();
 });
 
-it('SECURITY: cross-tenant single delete should return 404', function () {
+it('cross-tenant delete returns 404', function () {
     $user        = adminUser();
     $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.estate', $otherEstate))
         ->assertNotFound();
-})->skip('SECURITY GAP — EstatePolicy::delete / route model binding need tenant scoping.');
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ GET /v1/estates/{estate}/tenant-analytics                                ║

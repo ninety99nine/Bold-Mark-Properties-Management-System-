@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\RiskRule;
 use App\Services\RiskRuleService;
 use App\Http\Resources\RiskRuleResources;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Http\Requests\RiskRule\ShowRiskRulesRequest;
 use App\Http\Requests\RiskRule\CreateRiskRuleRequest;
@@ -36,11 +37,11 @@ class RiskRuleController extends Controller
      * Create a new risk rule.
      *
      * @param CreateRiskRuleRequest $request
-     * @return array
+     * @return JsonResponse
      */
-    public function createRiskRule(CreateRiskRuleRequest $request): array
+    public function createRiskRule(CreateRiskRuleRequest $request): JsonResponse
     {
-        return $this->service->createRiskRule($request->validated());
+        return response()->json($this->service->createRiskRule($request->validated()), 201);
     }
 
     /**

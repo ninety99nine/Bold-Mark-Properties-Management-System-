@@ -46,7 +46,7 @@ class RiskRule extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('name', $searchTerm);
     }
 
     /**
@@ -69,5 +69,16 @@ class RiskRule extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function resolveRouteBinding($value, $field = null): ?self
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return null;
+        }
+        return $this->where($field ?? $this->getRouteKeyName(), $value)
+                    ->where('organization_id', $user->organization_id)
+                    ->first();
     }
 }

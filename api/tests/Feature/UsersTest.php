@@ -291,7 +291,7 @@ it('searches users by name / email (Postgres ilike)', function () {
         ->getJson(route('api.v1.show.users') . '?_search=Crystal')
         ->assertOk()
         ->assertJsonPath('meta.total', 1);
-})->skip('User::scopeSearch uses ilike (Postgres-only). Make portable to enable in SQLite tests.');
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ GET /v1/users/summary                                                    ║
@@ -1023,41 +1023,23 @@ it('rejects sync-estates with an unknown (non-existent) estate id', function () 
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ Cross-tenant isolation (security gap, characterised)                     ║
+// ║ Cross-tenant isolation                                                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('CHARACTERIZATION: cross-tenant user show currently returns 200 (should be 404)', function () {
-    $actor      = adminUser();
-    $foreign    = User::factory()->create(['organization_id' => createTenant()->id]);
-
-    $this->actingAs($actor, 'api')
-        ->getJson(route('api.v1.show.user', $foreign))
-        ->assertOk();
-});
-
-it('SECURITY: cross-tenant user show should return 404', function () {
+it('cross-tenant user show returns 404', function () {
     $actor   = adminUser();
     $foreign = User::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($actor, 'api')
         ->getJson(route('api.v1.show.user', $foreign))
         ->assertNotFound();
-})->skip('SECURITY GAP — UserPolicy::view returns true for any user; route binding is not tenant-scoped.');
-
-it('CHARACTERIZATION: cross-tenant user update currently succeeds (should be 404)', function () {
-    $actor   = adminUser();
-    $foreign = User::factory()->create(['organization_id' => createTenant()->id]);
-
-    $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.update.user', $foreign), ['name' => 'Hijacked'])
-        ->assertOk();
 });
 
-it('SECURITY: cross-tenant user update should return 404', function () {
+it('cross-tenant user update returns 404', function () {
     $actor   = adminUser();
     $foreign = User::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($actor, 'api')
         ->putJson(route('api.v1.update.user', $foreign), ['name' => 'Hijacked'])
         ->assertNotFound();
-})->skip('SECURITY GAP — UserPolicy::update lets any super/company admin edit users in other organizations. Route binding is not tenant-scoped.');
+});

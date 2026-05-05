@@ -30,28 +30,28 @@ class EstateFactory extends Factory
     public function sectionalTitle(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => EstateType::SectionalTitle->value,
+            'type' => EstateType::SECTIONAL_TITLE->value,
         ]);
     }
 
     public function residentialRental(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => EstateType::ResidentialRental->value,
+            'type' => EstateType::RESIDENTIAL_RENTAL->value,
         ]);
     }
 
     public function commercialRental(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => EstateType::CommercialRental->value,
+            'type' => EstateType::COMMERCIAL_RENTAL->value,
         ]);
     }
 
     public function mixed(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => EstateType::Mixed->value,
+            'type' => EstateType::MIXED->value,
         ]);
     }
 

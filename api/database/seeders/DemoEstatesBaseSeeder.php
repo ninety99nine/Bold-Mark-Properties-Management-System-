@@ -347,9 +347,9 @@ abstract class DemoEstatesBaseSeeder extends Seeder
             ? $ct->applies_to->value
             : (string) $ct->applies_to;
 
-        if ($appliesTo === 'tenant') {
-            if (! $tenant) return ['tenant', null, null, null];
-            return ['tenant', $tenant->id, $tenant->email, $tenant->full_name];
+        if ($appliesTo === 'organization') {
+            if (! $tenant) return ['organization', null, null, null];
+            return ['organization', $tenant->id, $tenant->email, $tenant->full_name];
         }
 
         if ($appliesTo === 'owner') {
@@ -357,7 +357,7 @@ abstract class DemoEstatesBaseSeeder extends Seeder
         }
 
         if ($unit->occupancy_type->value === 'tenant_occupied' && $tenant) {
-            return ['tenant', $tenant->id, $tenant->email, $tenant->full_name];
+            return ['organization', $tenant->id, $tenant->email, $tenant->full_name];
         }
         return ['owner', $owner->id, $owner->email, $owner->full_name];
     }

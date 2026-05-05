@@ -2,16 +2,18 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ComplianceChecklist extends Model
 {
-    use HasUuids;
+    use HasFactory, HasUuids;
 
     /**
      * The attributes that should be cast.
@@ -44,9 +46,9 @@ class ComplianceChecklist extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('financial_year_label', 'ilike', '%' . $searchTerm . '%')
+        $query->whereLike('financial_year_label', $searchTerm)
               ->orWhereHas('estate', function ($q) use ($searchTerm) {
-                  $q->where('name', 'ilike', '%' . $searchTerm . '%');
+                  $q->whereLike('name', $searchTerm);
               });
     }
 
@@ -91,10 +93,36 @@ class ComplianceChecklist extends Model
     }
 
     /**
-     * Get overdue items only.
+     * Overdue = explicitly marked 'overdue' OR pending/in_progress with a past due_date.
      */
     public function overdueItems(): HasMany
     {
-        return $this->hasMany(ComplianceChecklistItem::class)->where('status', 'overdue');
+        return $this->hasMany(ComplianceChecklistItem::class)
+            ->where(function ($q) {
+                $q->where('status', 'overdue')
+                  ->orWhere(function ($inner) {
+                      $inner->whereIn('status', ['pending', 'in_progress'])
+                            ->whereNotNull('due_date')
+                            ->whereDate('due_date', '<', now()->toDateString());
+                  });
+            });
+    }
+
+    /**
+     * Get waived items only.
+     */
+    public function waivedItems(): HasMany
+    {
+        return $this->hasMany(ComplianceChecklistItem::class)->where('status', 'waived');
+    }
+
+    /**
+     * The earliest incomplete, non-waived item — shown as "Up Next".
+     */
+    public function nextItem(): HasOne
+    {
+        return $this->hasOne(ComplianceChecklistItem::class)
+            ->whereNotIn('status', ['completed', 'waived'])
+            ->orderByRaw("CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, sort_order ASC");
     }
 }

@@ -90,12 +90,14 @@ html {
 
 body {
   margin: 0;
+  overflow: hidden;
   background-color: var(--color-background);
   color: var(--color-foreground);
 }
 
 #app {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ── Interactive Cursor ───────────────────────────────────────────── */

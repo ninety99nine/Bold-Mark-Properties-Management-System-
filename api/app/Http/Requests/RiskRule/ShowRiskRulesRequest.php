@@ -15,7 +15,7 @@ class ShowRiskRulesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'is_active' => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'in:true,false,1,0'],
         ];
     }
 }

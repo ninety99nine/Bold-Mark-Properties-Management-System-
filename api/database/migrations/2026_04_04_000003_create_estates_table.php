@@ -23,7 +23,7 @@ return new class extends Migration
 
             $table->decimal('default_levy_amount', 12, 2)->nullable();
             $table->decimal('default_rent_amount', 12, 2)->nullable();
-            $table->unsignedInteger('billing_day')->default(1);
+            $table->unsignedInteger('billing_day')->default(25);
 
             $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 

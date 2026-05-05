@@ -54,6 +54,20 @@ class AppServiceProvider extends ServiceProvider
         $this->registerPolicies();
         $this->registerRouteModelBindings();
 
+        // Portable case-insensitive LIKE — works on SQLite, MySQL, and PostgreSQL.
+        \Illuminate\Database\Eloquent\Builder::macro('whereLike', function (string $column, string $value) {
+            return $this->whereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+        \Illuminate\Database\Eloquent\Builder::macro('orWhereLike', function (string $column, string $value) {
+            return $this->orWhereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+        \Illuminate\Database\Query\Builder::macro('whereLike', function (string $column, string $value) {
+            return $this->whereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+        \Illuminate\Database\Query\Builder::macro('orWhereLike', function (string $column, string $value) {
+            return $this->orWhereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+
         ResetPassword::createUrlUsing(function ($notifiable, string $token) {
             $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
 

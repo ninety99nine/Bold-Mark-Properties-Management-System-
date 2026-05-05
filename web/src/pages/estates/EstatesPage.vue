@@ -176,11 +176,10 @@ let observer = null
 
 // ── Empty state slideshow ─────────────────────────────────────────────
 const ESTATE_SLIDES = [
-  'https://www.boldmarkprop.co.za/assets/about-building-DYEK3Vx5.jpg',
-  'https://www.boldmarkprop.co.za/assets/rm-1-LRtJHJa7.png',
-  'https://www.boldmarkprop.co.za/assets/townhouses-Cb_xu_iN.jpeg',
-  'https://www.boldmarkprop.co.za/assets/rental-2-no5keSpA.jpg',
-  'https://www.boldmarkprop.co.za/assets/fm-1-B0ILctq2.png',
+  '/estates/property-1.jpg',
+  '/estates/property-2.png',
+  '/estates/property-3.jpeg',
+  '/estates/property-4.jpg',
 ]
 const slideIndex = ref(0)
 const slideFading = ref(false)

@@ -3,13 +3,13 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\TenantController;
 
-Route::prefix('estates/{estate}/units/{unit}/organizations')
+Route::prefix('estates/{estate}/units/{unit}/tenants')
     ->controller(TenantController::class)
     ->middleware(['auth:api'])
     ->group(function () {
-        Route::get('/', 'showTenants')->name('show.unit.organizations');
+        Route::get('/', 'showTenants')->name('show.unit.tenants');
         Route::post('/', 'createTenant')->name("create.tenant");
-        Route::delete('/', 'deleteTenants')->name('delete.unit.organizations');
+        Route::delete('/', 'deleteTenants')->name('delete.unit.tenants');
 
         // Explicit route model binding applied: AppServiceProvider.php
         Route::prefix('{tenant}')->group(function () {

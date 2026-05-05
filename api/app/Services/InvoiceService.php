@@ -79,18 +79,18 @@ class InvoiceService extends BaseService
         }
 
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('invoice_number', 'ilike', $term)
-                  ->orWhereHas('unit', fn($u) => $u->where('unit_number', 'ilike', $term))
-                  ->orWhereHas('chargeType', fn($ct) => $ct->where('name', 'ilike', $term))
-                  ->orWhere(function ($sub) use ($term) {
+            $search = $data['search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('invoice_number', $search)
+                  ->orWhereHas('unit', fn($u) => $u->whereLike('unit_number', $search))
+                  ->orWhereHas('chargeType', fn($ct) => $ct->whereLike('name', $search))
+                  ->orWhere(function ($sub) use ($search) {
                       $sub->where('billed_to_type', 'owner')
-                          ->whereHas('billedToOwner', fn($o) => $o->where('full_name', 'ilike', $term));
+                          ->whereHas('billedToOwner', fn($o) => $o->whereLike('full_name', $search));
                   })
-                  ->orWhere(function ($sub) use ($term) {
+                  ->orWhere(function ($sub) use ($search) {
                       $sub->where('billed_to_type', 'organization')
-                          ->whereHas('billedToUnitTenant', fn($t) => $t->where('full_name', 'ilike', $term));
+                          ->whereHas('billedToUnitTenant', fn($t) => $t->whereLike('full_name', $search));
                   });
             });
         }
@@ -155,18 +155,18 @@ class InvoiceService extends BaseService
             $query->where('billing_period', Carbon::parse($data['billing_period'] . '-01')->format('Y-m-d'));
         }
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('invoice_number', 'ilike', $term)
-                  ->orWhereHas('unit', fn($u) => $u->where('unit_number', 'ilike', $term))
-                  ->orWhereHas('chargeType', fn($ct) => $ct->where('name', 'ilike', $term))
-                  ->orWhere(function ($sub) use ($term) {
+            $search = $data['search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('invoice_number', $search)
+                  ->orWhereHas('unit', fn($u) => $u->whereLike('unit_number', $search))
+                  ->orWhereHas('chargeType', fn($ct) => $ct->whereLike('name', $search))
+                  ->orWhere(function ($sub) use ($search) {
                       $sub->where('billed_to_type', 'owner')
-                          ->whereHas('billedToOwner', fn($o) => $o->where('full_name', 'ilike', $term));
+                          ->whereHas('billedToOwner', fn($o) => $o->whereLike('full_name', $search));
                   })
-                  ->orWhere(function ($sub) use ($term) {
+                  ->orWhere(function ($sub) use ($search) {
                       $sub->where('billed_to_type', 'organization')
-                          ->whereHas('billedToUnitTenant', fn($t) => $t->where('full_name', 'ilike', $term));
+                          ->whereHas('billedToUnitTenant', fn($t) => $t->whereLike('full_name', $search));
                   });
             });
         }
@@ -791,8 +791,7 @@ class InvoiceService extends BaseService
             ->latest('deleted_at');
 
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where('invoice_number', 'ilike', $term);
+            $query->whereLike('invoice_number', $data['search']);
         }
 
         return $this->setQuery($query)->getOutput();

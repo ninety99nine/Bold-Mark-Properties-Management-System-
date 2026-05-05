@@ -122,8 +122,7 @@ class CashbookEntryService extends BaseService
             );
         }
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where('description', 'ilike', $term);
+            $query->whereLike('description', $data['search']);
         }
 
         if (!$this->request->has('_sort')) {

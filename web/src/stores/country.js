@@ -6,11 +6,8 @@ import api from '@/composables/useApi'
  * Country-to-currency mapping (mirrors backend CountryHelper).
  */
 const COUNTRY_MAP = {
-  ZA: { name: 'South Africa',    currencyCode: 'ZAR', symbol: 'R',  flag: '\u{1F1FF}\u{1F1E6}' },
-  BW: { name: 'Botswana',        currencyCode: 'BWP', symbol: 'P',  flag: '\u{1F1E7}\u{1F1FC}' },
-  NA: { name: 'Namibia',         currencyCode: 'NAD', symbol: 'N$', flag: '\u{1F1F3}\u{1F1E6}' },
-  US: { name: 'United States',   currencyCode: 'USD', symbol: '$',  flag: '\u{1F1FA}\u{1F1F8}' },
-  GB: { name: 'United Kingdom',  currencyCode: 'GBP', symbol: '\u{00A3}', flag: '\u{1F1EC}\u{1F1E7}' },
+  ZA: { name: 'South Africa', currencyCode: 'ZAR', symbol: 'R', flag: '\u{1F1FF}\u{1F1E6}' },
+  BW: { name: 'Botswana',     currencyCode: 'BWP', symbol: 'P', flag: '\u{1F1E7}\u{1F1FC}' },
 }
 
 export const useCountryStore = defineStore('country', () => {

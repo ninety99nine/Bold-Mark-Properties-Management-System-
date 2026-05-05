@@ -491,7 +491,7 @@ it('searches across unit_number, address, owner.full_name and owner.email', func
         ->getJson(route('api.v1.show.units', $estate) . '?_search=Crystal')
         ->assertOk()
         ->assertJsonPath('meta.total', 1);
-})->skip('Unit::scopeSearch uses ilike (Postgres-only). Make portable to enable in SQLite tests.');
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // charts payload sanity
@@ -1558,21 +1558,10 @@ it('respects export filters (occupancy_type narrows the dataset)', function () {
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ Cross-estate / cross-tenant isolation (security gap, characterised)      ║
+// ║ Cross-estate / cross-tenant isolation                                    ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('CHARACTERIZATION: cross-estate show currently returns 200 (should be 404)', function () {
-    $user   = adminUser();
-    $right  = makeEstate($user);
-    $wrong  = makeEstate($user);
-    $unit   = makeUnit($right);
-
-    $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit', ['estate' => $wrong, 'unit' => $unit]))
-        ->assertOk();
-});
-
-it('SECURITY: cross-estate show should return 404', function () {
+it('cross-estate unit show returns 404', function () {
     $user   = adminUser();
     $right  = makeEstate($user);
     $wrong  = makeEstate($user);
@@ -1581,23 +1570,13 @@ it('SECURITY: cross-estate show should return 404', function () {
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.unit', ['estate' => $wrong, 'unit' => $unit]))
         ->assertNotFound();
-})->skip('SECURITY GAP — UnitPolicy + service do not verify estate.id === unit.estate_id.');
-
-it('CHARACTERIZATION: cross-tenant unit listing currently returns 200 (should be 404)', function () {
-    $user        = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
-    Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherEstate->organization_id]);
-
-    $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.units', $otherEstate))
-        ->assertOk();
 });
 
-it('SECURITY: cross-tenant unit listing should return 404', function () {
+it('cross-tenant unit listing returns 404', function () {
     $user        = adminUser();
     $otherEstate = Estate::factory()->create(['organization_id' => createTenant()->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.units', $otherEstate))
         ->assertNotFound();
-})->skip('SECURITY GAP — Estate route model binding is not tenant-scoped, so a guessed UUID returns the other tenant\'s data.');
+});

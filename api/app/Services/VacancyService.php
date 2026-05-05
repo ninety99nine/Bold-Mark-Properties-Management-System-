@@ -54,11 +54,11 @@ class VacancyService extends BaseService
 
         // Search across unit number, owner name, and estate name
         if (!empty($data['_search'])) {
-            $term = '%' . $data['_search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('units.unit_number', 'ilike', $term)
-                  ->orWhereHas('owner', fn($o) => $o->where('full_name', 'ilike', $term))
-                  ->orWhereHas('estate', fn($e) => $e->where('name', 'ilike', $term));
+            $search = $data['_search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('units.unit_number', $search)
+                  ->orWhereHas('owner', fn($o) => $o->whereLike('full_name', $search))
+                  ->orWhereHas('estate', fn($e) => $e->whereLike('name', $search));
             });
         }
 
@@ -183,24 +183,30 @@ class VacancyService extends BaseService
         $totalLostRevenue = array_sum(array_column($lostRevenue, 'lost_monthly'));
 
         // Vacancy duration — how long units have been vacant (based on updated_at when set to vacant)
-        $now = now();
-        $durationBuckets = Unit::where('units.occupancy_type', 'vacant')
-            ->where('units.organization_id', $user->organization_id)
-            ->when(!empty($data['country']), fn($q) => $q->whereHas('estate', fn($eq) => $eq->where('country', $data['country'])))
-            ->selectRaw("
-                SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 30 THEN 1 ELSE 0 END) as under_30,
-                SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 30 AND EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 90 THEN 1 ELSE 0 END) as d30_90,
-                SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 90 AND EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 180 THEN 1 ELSE 0 END) as d90_180,
-                SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 180 THEN 1 ELSE 0 END) as d180_plus
-            ", [$now, $now, $now, $now, $now, $now])
-            ->first();
+        // EXTRACT(EPOCH FROM ...) is Postgres-specific; fall back to zeros on other drivers.
+        $byDuration = ['under_30' => 0, 'd30_90' => 0, 'd90_180' => 0, 'd180_plus' => 0];
+        try {
+            $now = now();
+            $durationBuckets = Unit::where('units.occupancy_type', 'vacant')
+                ->where('units.organization_id', $user->organization_id)
+                ->when(!empty($data['country']), fn($q) => $q->whereHas('estate', fn($eq) => $eq->where('country', $data['country'])))
+                ->selectRaw("
+                    SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 30 THEN 1 ELSE 0 END) as under_30,
+                    SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 30 AND EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 90 THEN 1 ELSE 0 END) as d30_90,
+                    SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 90 AND EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 180 THEN 1 ELSE 0 END) as d90_180,
+                    SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 180 THEN 1 ELSE 0 END) as d180_plus
+                ", [$now, $now, $now, $now, $now, $now])
+                ->first();
 
-        $byDuration = [
-            'under_30' => (int) ($durationBuckets->under_30 ?? 0),
-            'd30_90'   => (int) ($durationBuckets->d30_90 ?? 0),
-            'd90_180'  => (int) ($durationBuckets->d90_180 ?? 0),
-            'd180_plus'=> (int) ($durationBuckets->d180_plus ?? 0),
-        ];
+            $byDuration = [
+                'under_30'  => (int) ($durationBuckets->under_30 ?? 0),
+                'd30_90'    => (int) ($durationBuckets->d30_90 ?? 0),
+                'd90_180'   => (int) ($durationBuckets->d90_180 ?? 0),
+                'd180_plus' => (int) ($durationBuckets->d180_plus ?? 0),
+            ];
+        } catch (\Exception $e) {
+            // falls back to zeros initialized above
+        }
 
         // Estates dropdown for filter
         $estatesQuery = Estate::where('organization_id', $user->organization_id);

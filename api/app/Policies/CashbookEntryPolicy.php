@@ -89,6 +89,9 @@ class CashbookEntryPolicy extends BasePolicy
      */
     public function deallocate(User $user, CashbookEntry $entry): bool
     {
+        if ($entry->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 

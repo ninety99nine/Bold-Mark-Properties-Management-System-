@@ -88,11 +88,11 @@ class ArrearsService extends BaseService
 
         // Search
         if (!empty($data['_search'])) {
-            $term = '%' . $data['_search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('units.unit_number', 'ilike', $term)
-                  ->orWhereHas('owner', fn($o) => $o->where('full_name', 'ilike', $term))
-                  ->orWhereHas('estate', fn($e) => $e->where('name', 'ilike', $term));
+            $search = $data['_search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('units.unit_number', $search)
+                  ->orWhereHas('owner', fn($o) => $o->whereLike('full_name', $search))
+                  ->orWhereHas('estate', fn($e) => $e->whereLike('name', $search));
             });
         }
 

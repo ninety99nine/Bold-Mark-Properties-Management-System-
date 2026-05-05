@@ -62,13 +62,12 @@ class Invoice extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $term = '%' . $searchTerm . '%';
         // Also match when the user omits dashes/spaces (e.g. "inv 2025 0005" → "INV-2025-0005")
-        $normalized = '%' . str_replace([' ', '-'], '', $searchTerm) . '%';
+        $normalized = '%' . strtolower(str_replace([' ', '-'], '', $searchTerm)) . '%';
 
-        $query->where(function (Builder $q) use ($term, $normalized) {
-            $q->where('invoice_number', 'ilike', $term)
-              ->orWhereRaw("REPLACE(REPLACE(invoice_number, '-', ''), ' ', '') ilike ?", [$normalized]);
+        $query->where(function (Builder $q) use ($searchTerm, $normalized) {
+            $q->whereLike('invoice_number', $searchTerm)
+              ->orWhereRaw("lower(REPLACE(REPLACE(invoice_number, '-', ''), ' ', '')) like ?", [$normalized]);
         });
     }
 

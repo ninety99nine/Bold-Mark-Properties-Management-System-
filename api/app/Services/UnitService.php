@@ -155,10 +155,10 @@ class UnitService extends BaseService
             }
         }
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('units.unit_number', 'ilike', $term)
-                  ->orWhereHas('owner', fn($o) => $o->where('full_name', 'ilike', $term));
+            $search = $data['search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('units.unit_number', $search)
+                  ->orWhereHas('owner', fn($o) => $o->whereLike('full_name', $search));
             });
         }
         if (!empty($data['date_range'])) {

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ComplianceItemPriority;
 use App\Enums\ComplianceItemStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ComplianceChecklistItem extends Model
 {
-    use HasUuids;
+    use HasFactory, HasUuids;
 
     /**
      * The attributes that should be cast.
@@ -59,8 +60,8 @@ class ComplianceChecklistItem extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('category', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('name', $searchTerm)
+              ->orWhereLike('category', $searchTerm);
     }
 
     /**

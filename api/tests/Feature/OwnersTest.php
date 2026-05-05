@@ -293,7 +293,7 @@ it('searches owners by full_name / email / phone (Postgres ilike)', function () 
         ->getJson(route('api.v1.show.owners') . '?_search=Crystal')
         ->assertOk()
         ->assertJsonPath('meta.total', 1);
-})->skip('Owner::scopeSearch uses ilike (Postgres-only). Make portable to enable in SQLite tests.');
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ GET /v1/owners/{owner}  —  show                                          ║
@@ -660,21 +660,10 @@ it('returns 403 when bulk delete owner_ids is missing or empty (policy guard)', 
 ]);
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ Cross-tenant isolation (security gap, characterised)                     ║
+// ║ Cross-tenant isolation                                                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('CHARACTERIZATION: cross-tenant show currently returns 200 (should be 404)', function () {
-    $user        = adminUser();
-    $other       = createTenant();
-    $otherUnit   = Unit::factory()->create(['estate_id' => Estate::factory()->create(['organization_id' => $other->id])->id, 'organization_id' => $other->id]);
-    $otherOwner  = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $other->id]);
-
-    $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.owner', $otherOwner))
-        ->assertOk();
-});
-
-it('SECURITY: cross-tenant show should return 404', function () {
+it('cross-tenant owner show returns 404', function () {
     $user        = adminUser();
     $other       = createTenant();
     $otherUnit   = Unit::factory()->create(['estate_id' => Estate::factory()->create(['organization_id' => $other->id])->id, 'organization_id' => $other->id]);
@@ -683,20 +672,9 @@ it('SECURITY: cross-tenant show should return 404', function () {
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.owner', $otherOwner))
         ->assertNotFound();
-})->skip('SECURITY GAP — OwnerPolicy::view returns true for any owner; route binding is not tenant-scoped.');
-
-it('CHARACTERIZATION: cross-tenant update currently succeeds (should be 404)', function () {
-    $user        = adminUser();
-    $other       = createTenant();
-    $otherUnit   = Unit::factory()->create(['estate_id' => Estate::factory()->create(['organization_id' => $other->id])->id, 'organization_id' => $other->id]);
-    $otherOwner  = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $other->id]);
-
-    $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.owner', $otherOwner), ['full_name' => 'Hacked'])
-        ->assertOk();
 });
 
-it('SECURITY: cross-tenant update should return 404', function () {
+it('cross-tenant owner update returns 404', function () {
     $user        = adminUser();
     $other       = createTenant();
     $otherUnit   = Unit::factory()->create(['estate_id' => Estate::factory()->create(['organization_id' => $other->id])->id, 'organization_id' => $other->id]);
@@ -705,20 +683,9 @@ it('SECURITY: cross-tenant update should return 404', function () {
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.owner', $otherOwner), ['full_name' => 'Hacked'])
         ->assertNotFound();
-})->skip('SECURITY GAP — OwnerPolicy::update only checks generic permission; route binding is not tenant-scoped.');
-
-it('CHARACTERIZATION: cross-tenant single delete currently succeeds (should be 404)', function () {
-    $user        = adminUser();
-    $other       = createTenant();
-    $otherUnit   = Unit::factory()->create(['estate_id' => Estate::factory()->create(['organization_id' => $other->id])->id, 'organization_id' => $other->id]);
-    $otherOwner  = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $other->id]);
-
-    $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.owner', $otherOwner))
-        ->assertOk();
 });
 
-it('SECURITY: cross-tenant single delete should return 404', function () {
+it('cross-tenant owner delete returns 404', function () {
     $user        = adminUser();
     $other       = createTenant();
     $otherUnit   = Unit::factory()->create(['estate_id' => Estate::factory()->create(['organization_id' => $other->id])->id, 'organization_id' => $other->id]);
@@ -727,4 +694,4 @@ it('SECURITY: cross-tenant single delete should return 404', function () {
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.owner', $otherOwner))
         ->assertNotFound();
-})->skip('SECURITY GAP — OwnerPolicy::delete only checks generic permission; route binding is not tenant-scoped.');
+});

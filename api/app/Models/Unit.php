@@ -57,12 +57,10 @@ class Unit extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $term = '%' . $searchTerm . '%';
-
-        $query->where(function (Builder $q) use ($term) {
-            $q->where('units.unit_number', 'ilike', $term)
-              ->orWhere('units.address', 'ilike', $term)
-              ->orWhereHas('owner', fn (Builder $o) => $o->where('full_name', 'ilike', $term)->orWhere('email', 'ilike', $term));
+        $query->where(function (Builder $q) use ($searchTerm) {
+            $q->whereLike('units.unit_number', $searchTerm)
+              ->orWhereLike('units.address', $searchTerm)
+              ->orWhereHas('owner', fn (Builder $o) => $o->whereLike('full_name', $searchTerm)->orWhereLike('email', $searchTerm));
         });
     }
 
@@ -218,5 +216,23 @@ class Unit extends Model
     public function getEffectiveLevyAmountAttribute(): ?float
     {
         return $this->levy_override ?? $this->estate?->default_levy_amount;
+    }
+
+    public function resolveRouteBinding($value, $field = null): ?self
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return null;
+        }
+
+        $query = $this->where($field ?? $this->getRouteKeyName(), $value)
+                      ->where('organization_id', $user->organization_id);
+
+        $estate = request()->route('estate');
+        if ($estate instanceof Estate) {
+            $query->where('estate_id', $estate->id);
+        }
+
+        return $query->first();
     }
 }

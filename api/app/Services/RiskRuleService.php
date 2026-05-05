@@ -9,6 +9,7 @@ use App\Enums\InvoiceStatus;
 use App\Http\Resources\RiskRuleResource;
 use App\Http\Resources\RiskRuleResources;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class RiskRuleService extends BaseService
 {
@@ -157,8 +158,12 @@ class RiskRuleService extends BaseService
                     ->whereColumn('invoices.unit_id', 'units.id')
                     ->where('invoices.status', InvoiceStatus::OVERDUE),
 
-                // Days since oldest overdue invoice
-                'days_overdue' => Invoice::selectRaw("COALESCE(EXTRACT(DAY FROM NOW() - MIN(invoices.due_date)), 0)")
+                // Days since oldest overdue invoice (Postgres vs SQLite date arithmetic)
+                'days_overdue' => Invoice::selectRaw(
+                    DB::connection()->getDriverName() === 'pgsql'
+                        ? "COALESCE(EXTRACT(DAY FROM NOW() - MIN(invoices.due_date)), 0)"
+                        : "COALESCE(CAST(julianday('now') - julianday(MIN(invoices.due_date)) AS INTEGER), 0)"
+                )
                     ->whereColumn('invoices.unit_id', 'units.id')
                     ->where('invoices.status', InvoiceStatus::OVERDUE),
 

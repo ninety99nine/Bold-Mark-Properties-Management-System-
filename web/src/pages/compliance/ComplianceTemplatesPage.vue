@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/composables/useApi'
 import { useBack } from '@/composables/useBack'
 import AppButton from '@/components/common/AppButton.vue'
@@ -8,6 +9,7 @@ import AppModal from '@/components/common/AppModal.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 
+const router = useRouter()
 const { goBack } = useBack('/compliance')
 
 // ── State ────────────────────────────────────────────────────────────
@@ -54,26 +56,15 @@ function openAdd() {
 }
 
 function openEdit(template) {
-  editingTemplate.value = template
-  form.value = {
-    name: template.name,
-    description: template.description || '',
-    country: template.country,
-    is_default: template.is_default,
-  }
-  showModal.value = true
+  router.push({ name: 'compliance-template-detail', params: { templateId: template.id } })
 }
 
 async function save() {
   saving.value = true
   try {
-    if (editingTemplate.value) {
-      await api.put(`/compliance/templates/${editingTemplate.value.id}`, form.value)
-    } else {
-      await api.post('/compliance/templates', form.value)
-    }
+    const { data } = await api.post('/compliance/templates', form.value)
     showModal.value = false
-    fetchTemplates()
+    router.push({ name: 'compliance-template-detail', params: { templateId: data.data.id } })
   } catch {
     // silent
   } finally {
@@ -98,7 +89,7 @@ function countryLabel(code) {
 </script>
 
 <template>
-  <div class="min-h-screen">
+  <div>
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-2">
@@ -125,7 +116,8 @@ function countryLabel(code) {
       <div
         v-for="template in templates"
         :key="template.id"
-        class="bg-white rounded-xl border border-border p-5 hover:shadow-sm transition-shadow"
+        class="bg-white rounded-xl border border-border p-5 hover:shadow-sm hover:border-primary/20 transition-all cursor-pointer"
+        @click="openEdit(template)"
       >
         <div class="flex items-start justify-between">
           <div class="min-w-0 flex-1">
@@ -142,8 +134,8 @@ function countryLabel(code) {
             </div>
           </div>
           <div class="flex items-center gap-1.5 flex-shrink-0 ml-4">
-            <AppButton variant="ghost" size="sm" @click="openEdit(template)">Edit</AppButton>
-            <AppButton v-if="!template.is_system" variant="danger-ghost" size="sm" @click="deleteTemplate(template)">Delete</AppButton>
+            <AppButton variant="ghost" size="sm" @click.stop="openEdit(template)">Edit</AppButton>
+            <AppButton v-if="!template.is_system" variant="danger-ghost" size="sm" @click.stop="deleteTemplate(template)">Delete</AppButton>
           </div>
         </div>
 
@@ -177,19 +169,17 @@ function countryLabel(code) {
       <AppButton variant="primary" size="sm" @click="openAdd">Create Template</AppButton>
     </div>
 
-    <!-- ── Add/Edit Template Modal ─────────────────────────────────── -->
-    <AppModal :show="showModal" @close="showModal = false" :title="editingTemplate ? 'Edit Template' : 'New Template'" size="md">
+    <!-- ── New Template Modal ──────────────────────────────────────── -->
+    <AppModal :show="showModal" @close="showModal = false" title="New Template" size="sm">
       <div class="space-y-4">
         <AppInput v-model="form.name" label="Template Name" placeholder="e.g. Sectional Title — SA" required />
-        <AppInput v-model="form.description" label="Description" type="textarea" :rows="3" placeholder="Describe what this template covers..." />
+        <AppInput v-model="form.description" label="Description" type="textarea" :rows="2" placeholder="Describe what this template covers..." />
         <AppSelect v-model="form.country" label="Country" :options="COUNTRY_OPTIONS" />
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
           <AppButton variant="ghost" @click="showModal = false">Cancel</AppButton>
-          <AppButton variant="primary" @click="save" :loading="saving">
-            {{ editingTemplate ? 'Save Changes' : 'Create Template' }}
-          </AppButton>
+          <AppButton variant="primary" @click="save" :loading="saving">Create Template</AppButton>
         </div>
       </template>
     </AppModal>

@@ -98,6 +98,11 @@ const routes = [
         name: 'compliance-templates',
         component: () => import('@/pages/compliance/ComplianceTemplatesPage.vue'),
       },
+      {
+        path: 'compliance/templates/:templateId',
+        name: 'compliance-template-detail',
+        component: () => import('@/pages/compliance/ComplianceTemplateDetailPage.vue'),
+      },
 
       {
         path: 'arrears',

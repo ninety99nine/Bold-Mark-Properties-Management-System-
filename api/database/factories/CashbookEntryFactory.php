@@ -32,14 +32,14 @@ class CashbookEntryFactory extends Factory
     public function credit(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => CashbookEntryType::Credit->value,
+            'type' => CashbookEntryType::CREDIT->value,
         ]);
     }
 
     public function debit(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => CashbookEntryType::Debit->value,
+            'type' => CashbookEntryType::DEBIT->value,
         ]);
     }
 

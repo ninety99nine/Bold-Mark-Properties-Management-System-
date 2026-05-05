@@ -2063,6 +2063,86 @@ const tenantArrearsChartOptions = {
       </template><!-- end normal state -->
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Compliance Section                                            -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <div class="rounded-lg border bg-card shadow-sm mt-6">
+      <div class="flex items-center justify-between px-6 pt-5 pb-3">
+        <div>
+          <h3 class="font-body font-semibold text-base text-foreground">Compliance</h3>
+          <p class="text-xs text-muted-foreground mt-0.5">Annual compliance checklists for this estate</p>
+        </div>
+        <AppButton variant="outline" size="sm" @click="showCreateChecklist = true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 mr-1">
+            <path d="M12 5v14"/><path d="M5 12h14"/>
+          </svg>
+          New Checklist
+        </AppButton>
+      </div>
+      <div class="px-6 pb-5">
+        <!-- Loading -->
+        <div v-if="complianceLoading" class="space-y-2">
+          <div v-for="i in 2" :key="i" class="h-16 bg-muted/50 rounded-lg animate-pulse" />
+        </div>
+
+        <!-- Checklists -->
+        <div v-else-if="complianceChecklists.length" class="space-y-2">
+          <router-link
+            v-for="cl in complianceChecklists"
+            :key="cl.id"
+            :to="{ name: 'compliance-checklist', params: { checklistId: cl.id } }"
+            class="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-gray-50 hover:border-primary/20 transition-all group"
+          >
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                FY {{ cl.financial_year_label }}
+              </p>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                {{ cl.completed_items_count || 0 }} of {{ cl.items_count || 0 }} items completed
+                <span v-if="cl.overdue_items_count > 0" class="text-red-600 ml-1">&bull; {{ cl.overdue_items_count }} overdue</span>
+              </p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <div class="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  :class="['h-full rounded-full transition-all', complianceProgressColor(complianceProgress(cl))]"
+                  :style="{ width: complianceProgress(cl) + '%' }"
+                />
+              </div>
+              <span class="text-xs font-semibold w-8 text-right" :class="complianceProgress(cl) === 100 ? 'text-emerald-600' : 'text-muted-foreground'">
+                {{ complianceProgress(cl) }}%
+              </span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </div>
+          </router-link>
+        </div>
+
+        <!-- Empty state -->
+        <div v-else class="text-center py-8">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-10 h-10 text-muted-foreground mx-auto mb-2">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="9" y="3" width="6" height="4" rx="1" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M9 14l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="text-sm text-muted-foreground mb-3">No compliance checklists for this estate yet</p>
+          <AppButton variant="primary" size="sm" @click="showCreateChecklist = true">
+            Create First Checklist
+          </AppButton>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Checklist Modal -->
+    <CreateChecklistModal
+      :show="showCreateChecklist"
+      :estate-id="route.params.id"
+      :estate-name="estate?.name || ''"
+      @close="showCreateChecklist = false"
+      @created="onChecklistCreated"
+    />
+
     <!-- ── Charts: Occupancy Breakdown + Invoice Status ─────────────── -->
     <!-- Skeleton while primary data is still loading -->
     <div v-if="unitsLoading || estateLoading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2300,86 +2380,6 @@ const tenantArrearsChartOptions = {
 
       </div>
     </template>
-
-    <!-- ══════════════════════════════════════════════════════════════ -->
-    <!-- Compliance Section                                            -->
-    <!-- ══════════════════════════════════════════════════════════════ -->
-    <div class="rounded-lg border bg-card shadow-sm mt-6">
-      <div class="flex items-center justify-between px-6 pt-5 pb-3">
-        <div>
-          <h3 class="font-body font-semibold text-base text-foreground">Compliance</h3>
-          <p class="text-xs text-muted-foreground mt-0.5">Annual compliance checklists for this estate</p>
-        </div>
-        <AppButton variant="outline" size="sm" @click="showCreateChecklist = true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 mr-1">
-            <path d="M12 5v14"/><path d="M5 12h14"/>
-          </svg>
-          New Checklist
-        </AppButton>
-      </div>
-      <div class="px-6 pb-5">
-        <!-- Loading -->
-        <div v-if="complianceLoading" class="space-y-2">
-          <div v-for="i in 2" :key="i" class="h-16 bg-muted/50 rounded-lg animate-pulse" />
-        </div>
-
-        <!-- Checklists -->
-        <div v-else-if="complianceChecklists.length" class="space-y-2">
-          <router-link
-            v-for="cl in complianceChecklists"
-            :key="cl.id"
-            :to="{ name: 'compliance-checklist', params: { checklistId: cl.id } }"
-            class="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-gray-50 hover:border-primary/20 transition-all group"
-          >
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                FY {{ cl.financial_year_label }}
-              </p>
-              <p class="text-xs text-muted-foreground mt-0.5">
-                {{ cl.completed_items_count || 0 }} of {{ cl.items_count || 0 }} items completed
-                <span v-if="cl.overdue_items_count > 0" class="text-red-600 ml-1">&bull; {{ cl.overdue_items_count }} overdue</span>
-              </p>
-            </div>
-            <div class="flex items-center gap-3 flex-shrink-0">
-              <div class="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  :class="['h-full rounded-full transition-all', complianceProgressColor(complianceProgress(cl))]"
-                  :style="{ width: complianceProgress(cl) + '%' }"
-                />
-              </div>
-              <span class="text-xs font-semibold w-8 text-right" :class="complianceProgress(cl) === 100 ? 'text-emerald-600' : 'text-muted-foreground'">
-                {{ complianceProgress(cl) }}%
-              </span>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors">
-                <path d="m9 18 6-6-6-6"/>
-              </svg>
-            </div>
-          </router-link>
-        </div>
-
-        <!-- Empty state -->
-        <div v-else class="text-center py-8">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-10 h-10 text-muted-foreground mx-auto mb-2">
-            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="9" y="3" width="6" height="4" rx="1" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M9 14l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <p class="text-sm text-muted-foreground mb-3">No compliance checklists for this estate yet</p>
-          <AppButton variant="primary" size="sm" @click="showCreateChecklist = true">
-            Create First Checklist
-          </AppButton>
-        </div>
-      </div>
-    </div>
-
-    <!-- Create Checklist Modal -->
-    <CreateChecklistModal
-      :show="showCreateChecklist"
-      :estate-id="route.params.id"
-      :estate-name="estate?.name || ''"
-      @close="showCreateChecklist = false"
-      @created="onChecklistCreated"
-    />
 
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Modals                                                        -->

@@ -58,8 +58,8 @@ class Estate extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'ilike', '%' . $searchTerm . '%')
-              ->orWhere('address', 'ilike', '%' . $searchTerm . '%');
+        $query->whereLike('name', $searchTerm)
+              ->orWhereLike('address', $searchTerm);
     }
 
     /**
@@ -173,5 +173,16 @@ class Estate extends Model
         return $this->belongsToMany(User::class, 'user_estates')
                     ->using(UserEstate::class)
                     ->withTimestamps();
+    }
+
+    public function resolveRouteBinding($value, $field = null): ?self
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return null;
+        }
+        return $this->where($field ?? $this->getRouteKeyName(), $value)
+                    ->where('organization_id', $user->organization_id)
+                    ->first();
     }
 }

@@ -1,0 +1,170 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - paragraph [ref=e7]: Bold Mark Properties
+      - paragraph [ref=e8]: Moving People Forward
+    - navigation [ref=e9]:
+      - paragraph [ref=e10]: Menu
+      - link "Home" [ref=e11] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e12]
+        - generic [ref=e15]: Home
+      - button "Portfolio" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - generic [ref=e20]: Portfolio
+        - img [ref=e21]
+      - generic [ref=e23]:
+        - link "Estates" [ref=e24] [cursor=pointer]:
+          - /url: /estates
+          - img [ref=e25]
+          - generic [ref=e30]: Estates
+        - link "Vacancies" [ref=e31] [cursor=pointer]:
+          - /url: /vacancies
+          - img [ref=e32]
+          - generic [ref=e35]: Vacancies
+      - link "Billing" [ref=e36] [cursor=pointer]:
+        - /url: /billing
+        - img [ref=e37]
+        - generic [ref=e40]: Billing
+      - link "Cashbook" [ref=e41] [cursor=pointer]:
+        - /url: /cashbook
+        - img [ref=e42]
+        - generic [ref=e45]: Cashbook
+      - button "Collections" [ref=e46] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e49]: Collections
+        - img [ref=e50]
+      - generic [ref=e52]:
+        - link "Arrears" [ref=e53] [cursor=pointer]:
+          - /url: /arrears
+          - img [ref=e54]
+          - generic [ref=e56]: Arrears
+        - link "Age Analysis" [ref=e57] [cursor=pointer]:
+          - /url: /age-analysis
+          - img [ref=e58]
+          - generic [ref=e61]: Age Analysis
+      - link "Compliance" [ref=e62] [cursor=pointer]:
+        - /url: /compliance
+        - img [ref=e63]
+        - generic [ref=e67]: Compliance
+      - link "Users" [ref=e68] [cursor=pointer]:
+        - /url: /users
+        - img [ref=e69]
+        - generic [ref=e74]: Users
+    - generic [ref=e75]:
+      - link "Settings" [ref=e76] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e77]
+        - generic [ref=e80]: Settings
+      - button "Collapse" [ref=e81] [cursor=pointer]:
+        - img [ref=e82]
+        - generic [ref=e85]: Collapse
+  - generic [ref=e86]:
+    - banner [ref=e87]:
+      - generic [ref=e91]:
+        - img
+        - textbox "Search estates, units, people..." [ref=e92]
+      - generic [ref=e93]:
+        - button [ref=e95] [cursor=pointer]:
+          - img [ref=e96]
+        - button "Justin Company Admin" [ref=e101] [cursor=pointer]:
+          - img [ref=e103]
+          - generic [ref=e106]:
+            - paragraph [ref=e107]: Justin
+            - paragraph [ref=e108]: Company Admin
+          - img [ref=e109]
+    - main [ref=e111]:
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - button "Back to Estates" [ref=e114] [cursor=pointer]:
+            - img [ref=e115]
+          - generic [ref=e120]:
+            - button "Bulk Import" [ref=e121] [cursor=pointer]:
+              - img [ref=e122]
+              - text: Bulk Import
+            - button "Add Unit" [ref=e125] [cursor=pointer]:
+              - img [ref=e126]
+              - text: Add Unit
+            - button "Estate options" [ref=e128] [cursor=pointer]:
+              - img [ref=e129]
+        - generic [ref=e158]:
+          - generic [ref=e159]:
+            - heading "Units" [level=3] [ref=e160]:
+              - img [ref=e161]
+              - text: Units
+            - button "Export" [ref=e165] [cursor=pointer]:
+              - img [ref=e166]
+              - text: Export
+          - generic [ref=e171]:
+            - generic [ref=e172]:
+              - generic [ref=e175]:
+                - img
+                - textbox "Search units..." [ref=e176]
+              - button "Date Range" [ref=e177] [cursor=pointer]:
+                - img [ref=e178]
+                - text: Date Range
+              - button "Filter" [ref=e180] [cursor=pointer]:
+                - img [ref=e181]
+                - text: Filter
+              - button "Sort" [ref=e183] [cursor=pointer]:
+                - img [ref=e184]
+                - text: Sort
+            - generic [ref=e187]:
+              - button "All" [ref=e188] [cursor=pointer]
+              - button "Add View" [ref=e189] [cursor=pointer]:
+                - img [ref=e190]
+                - text: Add View
+          - table [ref=e193]:
+            - rowgroup [ref=e194]:
+              - row "Unit Owner Occupancy Tenant Balance" [ref=e195]:
+                - columnheader [ref=e196]:
+                  - checkbox [ref=e197] [cursor=pointer]
+                - columnheader "Unit" [ref=e198]
+                - columnheader "Owner" [ref=e199]
+                - columnheader "Occupancy" [ref=e200]
+                - columnheader "Tenant" [ref=e201]
+                - columnheader "Balance" [ref=e202]
+                - columnheader [ref=e203]
+            - rowgroup [ref=e204]:
+              - row [ref=e205]:
+                - cell [ref=e206]
+                - cell [ref=e208]
+                - cell [ref=e210]
+                - cell [ref=e213]
+                - cell [ref=e215]
+                - cell [ref=e217]
+              - row [ref=e219]:
+                - cell [ref=e220]
+                - cell [ref=e222]
+                - cell [ref=e224]
+                - cell [ref=e227]
+                - cell [ref=e229]
+                - cell [ref=e231]
+              - row [ref=e233]:
+                - cell [ref=e234]
+                - cell [ref=e236]
+                - cell [ref=e238]
+                - cell [ref=e241]
+                - cell [ref=e243]
+                - cell [ref=e245]
+              - row [ref=e247]:
+                - cell [ref=e248]
+                - cell [ref=e250]
+                - cell [ref=e252]
+                - cell [ref=e255]
+                - cell [ref=e257]
+                - cell [ref=e259]
+              - row [ref=e261]:
+                - cell [ref=e262]
+                - cell [ref=e264]
+                - cell [ref=e266]
+                - cell [ref=e269]
+                - cell [ref=e271]
+                - cell [ref=e273]
+        - generic [ref=e276]:
+          - generic [ref=e277]:
+            - heading "Compliance" [level=3] [ref=e278]
+            - paragraph [ref=e279]: Annual compliance checklists for this estate
+          - button "New Checklist" [ref=e280] [cursor=pointer]:
+            - img [ref=e281]
+            - text: New Checklist
