@@ -6,12 +6,17 @@ use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Laravel\Passport\ClientRepository;
 use Spatie\Permission\Models\Role;
 
 class ProductionSeeder extends Seeder
 {
     public function run(): void
     {
+        app(ClientRepository::class)->createPersonalAccessGrantClient(
+            'BoldMark PMS Personal Access Client'
+        );
+
         $this->call(RolesAndPermissionsSeeder::class);
 
         $org = Organization::firstOrCreate(

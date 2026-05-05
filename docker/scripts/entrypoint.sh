@@ -44,6 +44,13 @@ fi
 chmod 600 /var/www/html/storage/passport/oauth-private.key \
           /var/www/html/storage/passport/oauth-public.key 2>/dev/null || true
 
+# Symlink keys to the default Passport location (storage/oauth-*.key) so
+# Passport finds them without any PASSPORT_PRIVATE_KEY env var needed.
+ln -sf /var/www/html/storage/passport/oauth-private.key \
+       /var/www/html/storage/oauth-private.key 2>/dev/null || true
+ln -sf /var/www/html/storage/passport/oauth-public.key \
+       /var/www/html/storage/oauth-public.key 2>/dev/null || true
+
 echo "── Container ready. Starting PHP-FPM ────────────────────"
 
 # Hand off to the CMD (php-fpm)
