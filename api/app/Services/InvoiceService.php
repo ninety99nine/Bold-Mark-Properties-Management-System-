@@ -370,7 +370,14 @@ class InvoiceService extends BaseService
             ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
-        $billingPeriod = Carbon::parse($data['billing_period'] . '-01');
+        return $this->runBillingForEstate($estate, $data['billing_period'], $isDryRun, $user);
+    }
+
+    public function runBillingForEstate(Estate $estate, string $billingPeriodYearMonth, bool $isDryRun = false, ?\App\Models\User $actor = null): array
+    {
+        $user = $actor ?? Auth::user();
+
+        $billingPeriod = Carbon::parse($billingPeriodYearMonth . '-01');
         $billingPeriodDate = $billingPeriod->format('Y-m-d');
 
         // Load active units with all needed relationships
@@ -384,8 +391,9 @@ class InvoiceService extends BaseService
             ])
             ->get();
 
-        $preview = [];
-        $created = 0;
+        $preview     = [];
+        $created     = 0;
+        $createdIds  = [];
 
         // Get levy and rent system charge types for this estate (from estate's active charge types)
         $estateChargeTypes = $estate->activeChargeTypes;
@@ -508,7 +516,7 @@ class InvoiceService extends BaseService
 
                 if (!$duplicate) {
                     if (!$isDryRun) {
-                        Invoice::create([
+                        $invoice = Invoice::create([
                             'unit_id'            => $unit->id,
                             'charge_type_id'     => $invoiceSpec['charge_type']->id,
                             'billed_to_type'     => $invoiceSpec['billed_to_type'],
@@ -518,11 +526,12 @@ class InvoiceService extends BaseService
                             'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
                             'status'             => InvoiceStatus::UNPAID->value,
                             'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
-                            'organization_id'          => $user->organization_id,
+                            'organization_id'    => $user->organization_id,
                             'issued_by_type'     => 'user',
                             'issued_by_user_id'  => $user->id,
                         ]);
                         $created++;
+                        $createdIds[]             = $invoice->id;
                         $affectedUnits[$unit->id] = $unit;
                     }
                 }
@@ -549,6 +558,7 @@ class InvoiceService extends BaseService
         return [
             'preview'        => $preview,
             'created'        => $created,
+            'created_ids'    => $createdIds,
             'billing_period' => $billingPeriod->format('Y-m'),
             'dry_run'        => $isDryRun,
             'message'        => $isDryRun
