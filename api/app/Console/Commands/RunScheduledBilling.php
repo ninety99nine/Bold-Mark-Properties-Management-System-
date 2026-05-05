@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\SendInvoiceEmail;
 use App\Models\Estate;
+use App\Models\Invoice;
 use App\Models\User;
 use App\Services\InvoiceService;
 use Carbon\Carbon;
@@ -17,7 +18,7 @@ class RunScheduledBilling extends Command
                             {--dry-run : Preview invoices that would be created without saving}
                             {--estate= : Run for a specific estate ID only}';
 
-    protected $description = 'Auto-generate invoices for estates whose billing day falls today, then queue invoice emails.';
+    protected $description = 'Auto-generate invoices for estates due today or missed this month, then queue invoice emails.';
 
     public function __construct(private readonly InvoiceService $invoiceService)
     {
@@ -36,22 +37,28 @@ class RunScheduledBilling extends Command
             $isDryRun ? ' [DRY RUN]' : ''
         ));
 
-        $estates = $this->estatesDueToday($today, $onlyId);
+        $estates = $this->estatesDueForBilling($today, $onlyId);
 
         if ($estates->isEmpty()) {
             $this->info('No estates due for billing today.');
             return self::SUCCESS;
         }
 
-        $this->info("Found {$estates->count()} estate(s) due for billing.");
+        // Separate on-time from catch-up so the log is clear.
+        $onTime  = $estates->filter(fn ($e) => $this->effectiveBillingDay($e, $today) === $today->day);
+        $catchUp = $estates->filter(fn ($e) => $this->effectiveBillingDay($e, $today) !== $today->day);
+
+        $this->info("Found {$estates->count()} estate(s) due for billing "
+            . "(on-time: {$onTime->count()}, catch-up: {$catchUp->count()}).");
 
         $totalInvoices = 0;
         $totalEmails   = 0;
         $errors        = 0;
 
         foreach ($estates as $estate) {
+            $isCatchUp = $this->effectiveBillingDay($estate, $today) !== $today->day;
             try {
-                [$invoices, $emails] = $this->procesEstate($estate, $today, $isDryRun);
+                [$invoices, $emails] = $this->processEstate($estate, $today, $isDryRun, $isCatchUp);
                 $totalInvoices += $invoices;
                 $totalEmails   += $emails;
             } catch (Throwable $e) {
@@ -79,7 +86,7 @@ class RunScheduledBilling extends Command
         return $errors > 0 ? self::FAILURE : self::SUCCESS;
     }
 
-    private function procesEstate(Estate $estate, Carbon $today, bool $isDryRun): array
+    private function processEstate(Estate $estate, Carbon $today, bool $isDryRun, bool $isCatchUp = false): array
     {
         $billingPeriod = $today->format('Y-m');
         $actor         = $this->actorForOrg($estate->organization_id);
@@ -88,7 +95,8 @@ class RunScheduledBilling extends Command
             throw new \RuntimeException("No active admin user found for organization {$estate->organization_id}.");
         }
 
-        $this->line("  → [{$estate->name}] billing period {$billingPeriod}");
+        $tag = $isCatchUp ? '[CATCH-UP]' : '[ON-TIME]';
+        $this->line("  → {$tag} [{$estate->name}] billing period {$billingPeriod}");
 
         $result = $this->invoiceService->runBillingForEstate(
             $estate,
@@ -116,7 +124,16 @@ class RunScheduledBilling extends Command
         return [$created, $emailsQueued];
     }
 
-    private function estatesDueToday(Carbon $today, ?string $onlyId): \Illuminate\Database\Eloquent\Collection
+    /**
+     * Return estates that need billing today:
+     *   1. On-time  — billing_day == today (normal case).
+     *   2. Catch-up — billing_day already passed this month but no invoices
+     *                 were ever created for this period (system was down).
+     *
+     * The duplicate check inside runBillingForEstate guarantees idempotency,
+     * so running catch-up on an estate that already billed is always safe.
+     */
+    private function estatesDueForBilling(Carbon $today, ?string $onlyId): \Illuminate\Support\Collection
     {
         $query = Estate::active()->with('organization');
 
@@ -124,16 +141,37 @@ class RunScheduledBilling extends Command
             return $query->where('id', $onlyId)->get();
         }
 
-        // Collect all active estates and filter in PHP.
-        // billing_day=31 fires on the last day of months with fewer days.
-        return $query->get()->filter(function (Estate $estate) use ($today): bool {
-            $billingDay  = (int) $estate->billing_day;
-            $daysInMonth = $today->daysInMonth;
+        $billingPeriodDate = $today->copy()->startOfMonth()->format('Y-m-d');
 
-            // Normal match OR overflow (e.g. billing_day=31 in a 30-day month → fires on day 30)
-            return $billingDay === $today->day
-                || ($billingDay > $daysInMonth && $today->day === $daysInMonth);
+        return $query->get()->filter(function (Estate $estate) use ($today, $billingPeriodDate): bool {
+            $effective = $this->effectiveBillingDay($estate, $today);
+
+            // Billing day hasn't arrived yet this month — skip entirely.
+            if ($effective > $today->day) {
+                return false;
+            }
+
+            // On-time: billing day is exactly today — always run.
+            if ($effective === $today->day) {
+                return true;
+            }
+
+            // Catch-up: billing day already passed — only run if the period
+            // has no invoices yet (i.e. the system missed the scheduled run).
+            return !Invoice::whereHas(
+                'unit',
+                fn ($q) => $q->where('estate_id', $estate->id)
+            )->where('billing_period', $billingPeriodDate)->exists();
         });
+    }
+
+    /**
+     * Clamp billing_day to the actual number of days in the current month.
+     * e.g. billing_day=31 → 30 in April, 28/29 in February.
+     */
+    private function effectiveBillingDay(Estate $estate, Carbon $today): int
+    {
+        return min((int) $estate->billing_day, $today->daysInMonth);
     }
 
     private function actorForOrg(string $organizationId): ?User
