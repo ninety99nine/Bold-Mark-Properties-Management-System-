@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\EstateType;
 use App\Models\ChargeType;
 use App\Models\Estate;
+use Database\Seeders\DefaultChargeTypesSeeder;
 
 class EstateChargeTypeService
 {
@@ -45,6 +46,12 @@ class EstateChargeTypeService
      */
     public function setupDefaultChargeTypes(Estate $estate): void
     {
+        // Seed charge types for this org if they've never been set up
+        $hasChargeTypes = ChargeType::where('organization_id', $estate->organization_id)->exists();
+        if (!$hasChargeTypes) {
+            (new DefaultChargeTypesSeeder())->seedForTenant($estate->organization_id);
+        }
+
         $estateTypeValue = $estate->type instanceof EstateType
             ? $estate->type->value
             : (string) $estate->type;

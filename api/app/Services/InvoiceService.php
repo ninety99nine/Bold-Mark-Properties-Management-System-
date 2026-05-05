@@ -545,6 +545,53 @@ class InvoiceService extends BaseService
             $this->unitBalance->recalculate($affectedUnit);
         }
 
+        // Send invoice emails to each recipient.
+        if (!$isDryRun && !empty($createdIds)) {
+            $from = config('mail.from.name') . ' <' . config('mail.from.address') . '>';
+
+            $invoicesToSend = Invoice::whereIn('id', $createdIds)
+                ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant'])
+                ->get();
+
+            foreach ($invoicesToSend as $inv) {
+                $billedTo = $inv->billed_to_type->value === BilledToType::OWNER->value
+                    ? $inv->billedToOwner
+                    : $inv->billedToUnitTenant;
+
+                if (!$billedTo || !$billedTo->email) {
+                    continue;
+                }
+
+                try {
+                    $html = view('emails.invoice', [
+                        'invoice'  => $inv,
+                        'billedTo' => $billedTo,
+                    ])->render();
+
+                    $response = Resend::emails()->send([
+                        'from'    => $from,
+                        'to'      => [$billedTo->email],
+                        'subject' => "Invoice {$inv->invoice_number} — {$inv->chargeType->name}",
+                        'html'    => $html,
+                    ]);
+
+                    InvoiceEmailEvent::create([
+                        'invoice_id'      => $inv->id,
+                        'organization_id' => $inv->organization_id,
+                        'event_type'      => 'sent',
+                        'email'           => $billedTo->email,
+                        'resend_email_id' => $response->id ?? null,
+                        'occurred_at'     => now(),
+                    ]);
+
+                    $inv->update(['sent_at' => now()]);
+                } catch (\Exception $e) {
+                    // Log but don't abort the billing run if one email fails
+                    \Log::warning("billing run email failed invoice={$inv->invoice_number}: {$e->getMessage()}");
+                }
+            }
+        }
+
         // Notify all users assigned to this estate about the completed billing run.
         if (!$isDryRun && $created > 0) {
             $usersToNotify = $estate->assignedUsers()->get();

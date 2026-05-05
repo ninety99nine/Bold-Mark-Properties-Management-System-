@@ -262,6 +262,17 @@ const occupancyBadge = computed(() => {
 
 const balance = computed(() => unit.value?.balance ?? 0)
 
+const hasOverdueInvoices = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return invoices.value.some(inv => {
+    if (inv.status === 'paid') return false
+    if (inv.status === 'overdue') return true
+    if (!inv.due_date) return false
+    return new Date(inv.due_date) < today
+  })
+})
+
 // ── Invoice filter + pagination ───────────────────────────────────────
 const INVOICES_PER_PAGE = 5
 const invoiceFilter = ref('all')
@@ -1630,7 +1641,7 @@ async function submitAddPayment() {
                     {{ fmtAmount(balance) }}
                   </p>
                 </div>
-                <div v-if="balance < 0" class="px-3 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-medium">
+                <div v-if="balance < 0 && hasOverdueInvoices" class="px-3 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-medium">
                   In Arrears
                 </div>
               </div>
