@@ -39,6 +39,11 @@ if [ ! -f /var/www/html/storage/passport/oauth-private.key ]; then
     echo "── Passport keys generated ─────────────────────────────"
 fi
 
+# oauth2-server requires key files to be 600/660, not world-readable.
+# The chmod -R 775 above would have widened them — tighten back down.
+chmod 600 /var/www/html/storage/passport/oauth-private.key \
+          /var/www/html/storage/passport/oauth-public.key 2>/dev/null || true
+
 echo "── Container ready. Starting PHP-FPM ────────────────────"
 
 # Hand off to the CMD (php-fpm)
