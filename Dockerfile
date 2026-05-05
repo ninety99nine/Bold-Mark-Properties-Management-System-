@@ -39,7 +39,7 @@ RUN composer install \
 
 # Copy full application code then regenerate autoloader
 COPY api/ ./
-RUN composer dump-autoload --optimize --no-dev
+RUN mkdir -p bootstrap/cache && composer dump-autoload --optimize --no-dev
 
 # ═══════════════════════════════════════════════════════════
 # Stage 3: Production PHP-FPM Image
