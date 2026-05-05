@@ -29,11 +29,13 @@ chmod -R 775 \
 php artisan storage:link --quiet 2>/dev/null || true
 
 # Generate Laravel Passport OAuth keys if they don't yet exist.
-# Keys are stored in a named volume shared by both blue and green slots,
-# so they are generated only once and persist across all deploys.
+# Keys land in storage/passport/ which is a named persistent volume,
+# so they are generated only once and survive all future deploys.
 if [ ! -f /var/www/html/storage/passport/oauth-private.key ]; then
     echo "── Generating Passport OAuth keys (first run) ──────────"
     php artisan passport:keys --force
+    mv -f /var/www/html/storage/oauth-private.key /var/www/html/storage/passport/oauth-private.key 2>/dev/null || true
+    mv -f /var/www/html/storage/oauth-public.key  /var/www/html/storage/passport/oauth-public.key  2>/dev/null || true
     echo "── Passport keys generated ─────────────────────────────"
 fi
 
