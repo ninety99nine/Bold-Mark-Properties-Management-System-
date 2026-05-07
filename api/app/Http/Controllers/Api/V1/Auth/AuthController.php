@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers\Api\V1\Auth;
 
+use App\Enums\LoginFailureReason;
+use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Models\UserLoginLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -14,22 +19,58 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => ['required', 'email'],
+            'email'    => ['required', 'email'],
             'password' => ['required'],
         ]);
 
-        if (! Auth::attempt($request->only('email', 'password'))) {
+        $email    = $request->input('email');
+        $password = $request->input('password');
+
+        $user = User::where('email', $email)->first();
+
+        if (! $user) {
+            $this->logLoginAttempt($request, null, false, LoginFailureReason::USER_NOT_FOUND);
+
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        $user = Auth::user();
+        if (! Hash::check($password, $user->password)) {
+            $this->logLoginAttempt($request, $user, false, LoginFailureReason::WRONG_PASSWORD);
+
+            throw ValidationException::withMessages([
+                'email' => ['The provided credentials are incorrect.'],
+            ]);
+        }
+
+        if ($user->status === UserStatus::INACTIVE) {
+            $this->logLoginAttempt($request, $user, false, LoginFailureReason::ACCOUNT_INACTIVE);
+
+            throw ValidationException::withMessages([
+                'email' => ['The provided credentials are incorrect.'],
+            ]);
+        }
+
+        if ($user->status === UserStatus::INVITED) {
+            $this->logLoginAttempt($request, $user, false, LoginFailureReason::ACCOUNT_INVITED);
+
+            throw ValidationException::withMessages([
+                'email' => ['The provided credentials are incorrect.'],
+            ]);
+        }
+
+        Auth::login($user);
+
+        $user->update(['last_login_at' => now()]);
+
+        $this->logLoginAttempt($request, $user, true, null);
+
         $token = $user->createToken('api-token')->accessToken;
 
         return response()->json([
             'data' => [
-                'user' => $user,
+                'user'  => $user,
                 'token' => $token,
             ],
         ]);
@@ -61,8 +102,8 @@ class AuthController extends Controller
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
-            'token' => ['required'],
-            'email' => ['required', 'email'],
+            'token'    => ['required'],
+            'email'    => ['required', 'email'],
             'password' => ['required', 'min:8', 'confirmed'],
         ]);
 
@@ -85,5 +126,21 @@ class AuthController extends Controller
         }
 
         return response()->json(['message' => __($status)]);
+    }
+
+    private function logLoginAttempt(
+        Request $request,
+        ?User $user,
+        bool $successful,
+        ?LoginFailureReason $reason
+    ): void {
+        UserLoginLog::create([
+            'user_id'          => $user?->id,
+            'email'            => $request->input('email'),
+            'ip_address'       => $request->ip(),
+            'user_agent'       => $request->userAgent(),
+            'login_successful' => $successful,
+            'failure_reason'   => $reason,
+        ]);
     }
 }

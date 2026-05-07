@@ -1,6 +1,9 @@
 <?php
 
+use App\Enums\LoginFailureReason;
+use App\Enums\UserStatus;
 use App\Models\User;
+use App\Models\UserLoginLog;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -840,4 +843,181 @@ it('runs the full forgot-password → reset-password → re-login flow', functio
         'email'    => $user->email,
         'password' => 'brand-new-pw-1',
     ])->assertOk();
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ Login audit logging                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('creates a login log entry with correct fields on successful login', function () {
+    $user = userWithPassword('log@boldmark.test', 'password123');
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'log@boldmark.test',
+        'password' => 'password123',
+    ])->assertOk();
+
+    expect(UserLoginLog::count())->toBe(1);
+
+    $log = UserLoginLog::first();
+    expect($log->user_id)->toBe($user->id);
+    expect($log->email)->toBe('log@boldmark.test');
+    expect($log->login_successful)->toBeTrue();
+    expect($log->failure_reason)->toBeNull();
+});
+
+it('updates last_login_at on successful login', function () {
+    $user = userWithPassword('lastseen@boldmark.test', 'password123');
+
+    expect($user->last_login_at)->toBeNull();
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'lastseen@boldmark.test',
+        'password' => 'password123',
+    ])->assertOk();
+
+    expect($user->fresh()->last_login_at)->not->toBeNull();
+});
+
+it('logs wrong_password failure when the password is incorrect', function () {
+    $user = userWithPassword('passcheck@boldmark.test', 'correct-password');
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'passcheck@boldmark.test',
+        'password' => 'wrong-password',
+    ])->assertUnprocessable();
+
+    $log = UserLoginLog::first();
+    expect($log->user_id)->toBe($user->id);
+    expect($log->login_successful)->toBeFalse();
+    expect($log->failure_reason)->toBe(LoginFailureReason::WRONG_PASSWORD);
+});
+
+it('logs user_not_found with null user_id when the email does not exist', function () {
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'nobody@boldmark.test',
+        'password' => 'password123',
+    ])->assertUnprocessable();
+
+    $log = UserLoginLog::first();
+    expect($log->user_id)->toBeNull();
+    expect($log->email)->toBe('nobody@boldmark.test');
+    expect($log->login_successful)->toBeFalse();
+    expect($log->failure_reason)->toBe(LoginFailureReason::USER_NOT_FOUND);
+});
+
+it('blocks login and logs account_inactive when user status is inactive', function () {
+    $user = userWithPassword('inactive@boldmark.test', 'password123');
+    $user->update(['status' => UserStatus::INACTIVE]);
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'inactive@boldmark.test',
+        'password' => 'password123',
+    ])->assertUnprocessable()->assertJsonValidationErrors(['email']);
+
+    $log = UserLoginLog::first();
+    expect($log->user_id)->toBe($user->id);
+    expect($log->login_successful)->toBeFalse();
+    expect($log->failure_reason)->toBe(LoginFailureReason::ACCOUNT_INACTIVE);
+});
+
+it('blocks login and logs account_invited when user status is invited', function () {
+    $user = userWithPassword('invited@boldmark.test', 'password123');
+    $user->update(['status' => UserStatus::INVITED]);
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'invited@boldmark.test',
+        'password' => 'password123',
+    ])->assertUnprocessable()->assertJsonValidationErrors(['email']);
+
+    $log = UserLoginLog::first();
+    expect($log->user_id)->toBe($user->id);
+    expect($log->login_successful)->toBeFalse();
+    expect($log->failure_reason)->toBe(LoginFailureReason::ACCOUNT_INVITED);
+});
+
+it('captures ip address and user agent in the log entry', function () {
+    userWithPassword('iptest@boldmark.test', 'password123');
+
+    $this->withHeaders(['User-Agent' => 'TestBrowser/1.0'])
+        ->postJson(route('api.v1.auth.login'), [
+            'email'    => 'iptest@boldmark.test',
+            'password' => 'password123',
+        ])->assertOk();
+
+    $log = UserLoginLog::first();
+    expect($log->ip_address)->toBeString();
+    expect($log->user_agent)->toBe('TestBrowser/1.0');
+});
+
+it('logs every attempt — failures and success are all recorded', function () {
+    userWithPassword('multi@boldmark.test', 'password123');
+
+    $this->postJson(route('api.v1.auth.login'), ['email' => 'ghost@boldmark.test', 'password' => 'x'])->assertUnprocessable();
+    $this->postJson(route('api.v1.auth.login'), ['email' => 'multi@boldmark.test', 'password' => 'wrong'])->assertUnprocessable();
+    $this->postJson(route('api.v1.auth.login'), ['email' => 'multi@boldmark.test', 'password' => 'password123'])->assertOk();
+
+    expect(UserLoginLog::count())->toBe(3);
+    expect(UserLoginLog::where('login_successful', true)->count())->toBe(1);
+    expect(UserLoginLog::where('login_successful', false)->count())->toBe(2);
+});
+
+it('prunes old records per user, keeping only the configured limit', function () {
+    config()->set('auth.login_log_per_user_limit', 3);
+
+    $user = userWithPassword('prune@boldmark.test', 'password123');
+
+    for ($i = 0; $i < 3; $i++) {
+        UserLoginLog::create([
+            'user_id'          => $user->id,
+            'email'            => $user->email,
+            'ip_address'       => '127.0.0.1',
+            'user_agent'       => 'test',
+            'login_successful' => true,
+            'failure_reason'   => null,
+        ]);
+    }
+
+    expect(UserLoginLog::where('user_id', $user->id)->count())->toBe(3);
+
+    // 4th insert triggers pruning — still only 3 remain
+    UserLoginLog::create([
+        'user_id'          => $user->id,
+        'email'            => $user->email,
+        'ip_address'       => '127.0.0.1',
+        'user_agent'       => 'test',
+        'login_successful' => true,
+        'failure_reason'   => null,
+    ]);
+
+    expect(UserLoginLog::where('user_id', $user->id)->count())->toBe(3);
+});
+
+it('prunes anonymous login log records beyond the anonymous limit', function () {
+    config()->set('auth.login_log_anonymous_limit', 3);
+
+    for ($i = 0; $i < 3; $i++) {
+        UserLoginLog::create([
+            'user_id'          => null,
+            'email'            => "ghost{$i}@boldmark.test",
+            'ip_address'       => '127.0.0.1',
+            'user_agent'       => 'test',
+            'login_successful' => false,
+            'failure_reason'   => LoginFailureReason::USER_NOT_FOUND,
+        ]);
+    }
+
+    expect(UserLoginLog::whereNull('user_id')->count())->toBe(3);
+
+    // 4th insert should prune back to 3
+    UserLoginLog::create([
+        'user_id'          => null,
+        'email'            => 'ghost4@boldmark.test',
+        'ip_address'       => '127.0.0.1',
+        'user_agent'       => 'test',
+        'login_successful' => false,
+        'failure_reason'   => LoginFailureReason::USER_NOT_FOUND,
+    ]);
+
+    expect(UserLoginLog::whereNull('user_id')->count())->toBe(3);
 });

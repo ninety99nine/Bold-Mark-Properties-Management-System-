@@ -125,4 +125,7 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    'login_log_per_user_limit'  => env('LOGIN_LOG_PER_USER_LIMIT',  100),
+    'login_log_anonymous_limit' => env('LOGIN_LOG_ANONYMOUS_LIMIT', 500),
+
 ];
