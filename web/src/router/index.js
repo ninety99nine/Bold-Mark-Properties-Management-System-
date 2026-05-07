@@ -134,6 +134,11 @@ const routes = [
         name: 'settings',
         component: () => import('@/pages/settings/SettingsPage.vue'),
       },
+      {
+        path: 'settings/login-audit',
+        name: 'login-audit',
+        component: () => import('@/pages/settings/LoginAuditPage.vue'),
+      },
     ],
   },
 

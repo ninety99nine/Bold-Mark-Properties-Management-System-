@@ -61,6 +61,10 @@ const deleteLoading   = ref(false)
 const resetLoading = ref(false)
 const resetSent    = ref(false)
 
+// Login history
+const loginLogs   = ref([])
+const logsLoading = ref(false)
+
 // Toast
 const toastMessage = ref('')
 const toastType    = ref('success')
@@ -103,6 +107,34 @@ function formatDate(str) {
 function formatDateTime(str) {
   if (!str) return '—'
   return new Date(str).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+const FAILURE_REASON_DISPLAY = {
+  user_not_found:   'User Not Found',
+  wrong_password:   'Wrong Password',
+  account_inactive: 'Account Inactive',
+  account_invited:  'Not Activated',
+}
+
+function formatFailureReason(reason) {
+  if (!reason) return '—'
+  return FAILURE_REASON_DISPLAY[reason] ?? reason
+}
+
+function parseAgent(ua) {
+  if (!ua) return '—'
+  let browser = 'Browser'
+  if (ua.includes('Edg/'))     browser = 'Edge'
+  else if (ua.includes('Chrome/'))   browser = 'Chrome'
+  else if (ua.includes('Firefox/'))  browser = 'Firefox'
+  else if (ua.includes('Safari/'))   browser = 'Safari'
+  let os = ''
+  if (ua.includes('Windows'))                     os = 'Windows'
+  else if (ua.includes('Macintosh') || ua.includes('Mac OS')) os = 'macOS'
+  else if (ua.includes('iPhone') || ua.includes('iPad'))      os = 'iOS'
+  else if (ua.includes('Android'))                os = 'Android'
+  else if (ua.includes('Linux'))                  os = 'Linux'
+  return os ? `${browser} / ${os}` : browser
 }
 
 function showToast(msg, type = 'success') {
@@ -196,8 +228,21 @@ async function sendPasswordReset() {
   }
 }
 
+// ─── Login logs ───────────────────────────────────────────────────────────────
+async function loadLoginLogs() {
+  logsLoading.value = true
+  try {
+    const res = await api.get(`/users/${route.params.userId}/login-logs`)
+    loginLogs.value = res.data.data
+  } catch {
+    // non-critical — silently swallow
+  } finally {
+    logsLoading.value = false
+  }
+}
+
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
-onMounted(loadUser)
+onMounted(() => { loadUser(); loadLoginLogs() })
 </script>
 
 <template>
@@ -406,6 +451,62 @@ onMounted(loadUser)
 
         </div>
       </div>
+
+      <!-- ── Login History ──────────────────────────────────────────────── -->
+      <div class="rounded-lg border bg-card shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b">
+          <h2 class="font-semibold text-sm text-foreground">Login History</h2>
+          <span class="text-xs text-muted-foreground">Last 20 attempts</span>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="logsLoading" class="px-4 py-8 text-center text-sm text-muted-foreground animate-pulse">
+          Loading login history…
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="!loginLogs.length" class="px-4 py-8 text-center text-sm text-muted-foreground">
+          No login activity recorded yet.
+        </div>
+
+        <!-- Table -->
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b bg-muted/30">
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Date &amp; Time</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Status</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Reason</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">IP Address</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Device</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="log in loginLogs" :key="log.id" class="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                <td class="px-4 py-2.5 text-foreground whitespace-nowrap">{{ formatDateTime(log.created_at) }}</td>
+                <td class="px-4 py-2.5 whitespace-nowrap">
+                  <span v-if="log.login_successful" class="inline-flex items-center gap-1 text-xs font-medium text-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                      <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+                    </svg>
+                    Success
+                  </span>
+                  <span v-else class="inline-flex items-center gap-1 text-xs font-medium text-danger">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                      <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+                    </svg>
+                    Failed
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-muted-foreground text-xs">{{ formatFailureReason(log.failure_reason) }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground font-mono text-xs whitespace-nowrap">{{ log.ip_address ?? '—' }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{{ parseAgent(log.user_agent) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </template>
 
   </div>

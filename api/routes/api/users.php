@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\V1\LoginLogController;
 use App\Http\Controllers\Api\V1\UserController;
 
 Route::prefix('users')
@@ -19,5 +20,6 @@ Route::prefix('users')
             Route::delete('/', 'deleteUser')->name('delete.user');
             Route::post('/send-password-reset', 'sendPasswordResetLink')->name('send.password.reset');
             Route::put('/estates', 'syncUserEstates')->name('sync.user.estates');
+            Route::get('/login-logs', [LoginLogController::class, 'showUserLoginLogs'])->name('show.user.login.logs');
         });
     });
