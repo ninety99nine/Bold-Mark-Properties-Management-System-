@@ -2802,6 +2802,75 @@ npm run dev
 > Vue static files are baked into the nginx Docker image at build time. Nginx serves `/` from
 > the static files and proxies `/api/*`, `/horizon`, `/webhooks/*` to PHP-FPM.
 
+### SSH Access to Production Server
+
+The production server is a **DigitalOcean Droplet** running Docker Compose.
+
+| Detail | Value |
+|---|---|
+| Host | `157.230.52.245` |
+| User | `root` |
+| Port | `22` |
+| App directory | `/opt/boldmark/` |
+| Local SSH key | `~/.ssh/boldmark_do` (Ed25519, key comment: `boldmark-do`) |
+| GitHub secret | `DO_SSH_KEY` (same private key — written to `~/.ssh/do_key` by CI) |
+| Host alias | Not configured in `~/.ssh/config` — use the full command below |
+
+#### Connect from your local machine
+
+```bash
+ssh -i ~/.ssh/boldmark_do root@157.230.52.245
+```
+
+To add a shortcut alias, append this to `~/.ssh/config`:
+
+```
+Host boldmark-prod
+  HostName 157.230.52.245
+  User root
+  IdentityFile ~/.ssh/boldmark_do
+  IdentitiesOnly yes
+```
+
+Then connect with: `ssh boldmark-prod`
+
+#### Common on-server commands
+
+```bash
+# Navigate to the app directory (always start here)
+cd /opt/boldmark
+
+# View running containers and their status
+docker compose ps
+
+# Tail live app logs
+docker compose logs -f app
+
+# Run a one-off Artisan command inside the app container
+docker compose exec app php artisan <cmd>
+
+# Run pending migrations manually (also runs automatically on every deploy)
+docker compose exec app php artisan migrate --force
+
+# Restart the app container
+docker compose restart app
+
+# View the production .env
+cat /opt/boldmark/.env
+```
+
+#### Note for AI agents
+
+The SSH private key lives at **`~/.ssh/boldmark_do`** on the local machine. Use it directly in Bash tool calls:
+
+```bash
+ssh -i ~/.ssh/boldmark_do root@157.230.52.245 'cd /opt/boldmark && docker compose exec -T app php artisan migrate --force'
+```
+
+The server's host fingerprint is already in `~/.ssh/known_hosts` from prior connections — no interactive prompt will occur. Always pass commands non-interactively via the quoted argument form (`'...'`) rather than opening an interactive session.
+
+Migrations run **automatically** on every deploy via `deploy-do.sh` (step 4/5), so manual SSH is only needed for one-off operations or debugging.
+
 ### Production Deployment — AWS EC2 + Docker
 
 | Layer | Tech | Notes |
