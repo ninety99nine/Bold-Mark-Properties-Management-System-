@@ -58,9 +58,27 @@ docker compose exec -T app bash -c "
 "
 ok "Caches warmed"
 
-# ── 5/5: Start remaining services ────────────────────────────────────
-step "[5/5] Starting nginx, horizon, scheduler..."
-docker compose up -d --force-recreate nginx horizon scheduler
+# ── 5/6: Start nginx first (uses self-signed placeholder if no cert yet) ─
+step "[5/6] Starting nginx..."
+docker compose up -d --force-recreate nginx
+sleep 5
+ok "Nginx started"
+
+# ── 5.5/6: Issue / renew SSL certificate ──────────────────────────────
+step "[5.5/6] SSL certificate (Let's Encrypt)..."
+docker compose run --rm certbot certonly \
+    --webroot -w /var/www/certbot \
+    -d portal.boldmarkprop.co.za \
+    --email ops@boldmarkprop.co.za \
+    --agree-tos --no-eff-email \
+    --keep-until-expiring --quiet 2>&1 || true
+# Reload so nginx picks up the real cert (no-op if nothing changed)
+docker compose exec nginx nginx -s reload 2>/dev/null || true
+ok "SSL certificate ready"
+
+# ── 6/6: Start remaining services ─────────────────────────────────────
+step "[6/6] Starting horizon, scheduler, certbot renewer..."
+docker compose up -d --force-recreate horizon scheduler certbot
 ok "All services running"
 
 # Cleanup old layers
@@ -75,6 +93,6 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  ✅ Deployment complete!"
 echo "  Time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 echo ""
-echo "  App:     http://$PUBLIC_IP"
-echo "  Horizon: http://$PUBLIC_IP/horizon"
+echo "  App:     https://portal.boldmarkprop.co.za"
+echo "  Horizon: https://portal.boldmarkprop.co.za/horizon"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
