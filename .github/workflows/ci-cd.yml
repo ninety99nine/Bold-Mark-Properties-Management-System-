@@ -127,5 +127,8 @@ jobs:
 
       - name: Build images and deploy
         run: |
-          ssh -i ~/.ssh/do_key root@${{ secrets.DO_HOST }} \
+          ssh -i ~/.ssh/do_key \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=10 \
+            root@${{ secrets.DO_HOST }} \
             'chmod +x /opt/boldmark/docker/scripts/*.sh && bash /opt/boldmark/docker/scripts/deploy-do.sh'
