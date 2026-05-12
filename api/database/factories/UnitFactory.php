@@ -19,7 +19,7 @@ class UnitFactory extends Factory
         return [
             'estate_id'      => null,
             'organization_id'      => null,
-            'unit_number'    => strtoupper(fake()->lexify('?')) . fake()->numberBetween(1, 50),
+            'unit_number'    => strtoupper(fake()->lexify('?')) . fake()->unique()->numberBetween(1, 9999),
             'address'        => fake()->streetAddress(),
             'occupancy_type' => fake()->randomElement(OccupancyType::values()),
             'status'         => UnitStatus::ACTIVE->value,
