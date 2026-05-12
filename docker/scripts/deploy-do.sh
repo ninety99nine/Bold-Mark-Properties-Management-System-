@@ -85,6 +85,15 @@ step "[6/6] Starting horizon, scheduler, certbot renewer..."
 docker compose up -d --force-recreate horizon scheduler certbot
 ok "All services running"
 
+# ── SSL auto-renewal pickup ────────────────────────────────────────────
+# Certbot renews the cert automatically every 12h. Nginx must be reloaded
+# to pick up the new cert files. A daily cron at 03:00 ensures this happens
+# within 24h of any renewal, well within the 30-day renewal window.
+echo "0 3 * * * root cd /opt/boldmark && docker compose exec -T nginx nginx -s reload >/dev/null 2>&1" \
+  > /etc/cron.d/boldmark-ssl-reload
+chmod 644 /etc/cron.d/boldmark-ssl-reload
+ok "Daily nginx SSL reload cron installed"
+
 # Cleanup old layers
 docker image prune -f 2>/dev/null || true
 
