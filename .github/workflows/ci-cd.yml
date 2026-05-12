@@ -93,7 +93,7 @@ jobs:
     needs: test
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/phase-2') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     environment: production
 
     steps:

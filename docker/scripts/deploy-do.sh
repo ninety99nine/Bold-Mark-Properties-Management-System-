@@ -66,7 +66,9 @@ ok "Nginx started"
 
 # ── 5.5/6: Issue / renew SSL certificate ──────────────────────────────
 step "[5.5/6] SSL certificate (Let's Encrypt)..."
-docker compose run --rm certbot certonly \
+# --entrypoint certbot overrides the compose service's renewal-loop entrypoint
+# so that certonly actually runs instead of the 12-hour sleep loop.
+timeout 120 docker compose run --rm --entrypoint certbot certbot certonly \
     --webroot -w /var/www/certbot \
     -d portal.boldmarkprop.co.za \
     --email ops@boldmarkprop.co.za \
