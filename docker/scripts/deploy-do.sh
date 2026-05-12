@@ -74,8 +74,10 @@ timeout 120 docker compose run --rm --entrypoint certbot certbot certonly \
     --email ops@boldmarkprop.co.za \
     --agree-tos --no-eff-email \
     --keep-until-expiring --quiet 2>&1 || true
-# Reload so nginx picks up the real cert (no-op if nothing changed)
-docker compose exec nginx nginx -s reload 2>/dev/null || true
+# Restart nginx so the entrypoint re-runs and symlinks /etc/nginx/ssl/ to the real cert.
+# A plain reload is not enough — the entrypoint only runs at container start.
+docker compose up -d --force-recreate nginx
+sleep 5
 ok "SSL certificate ready"
 
 # ── 6/6: Start remaining services ─────────────────────────────────────
