@@ -72,7 +72,8 @@ const summary     = ref({ total: 0, active: 0, invited: 0, inactive: 0, internal
 const loading     = ref(true)
 const activeTab   = ref('all')
 const searchQuery = ref('')
-const openMenuId  = ref(null)
+const openMenuId     = ref(null)
+const menuPosition   = ref({ top: 0, right: 0 })
 
 // Pagination
 const currentPage = ref(1)
@@ -246,7 +247,16 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 // ─── Menu ────────────────────────────────────────────────────────────────────
 function toggleMenu(id, e) {
   e.stopPropagation()
-  openMenuId.value = openMenuId.value === id ? null : id
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    return
+  }
+  const rect = e.currentTarget.getBoundingClientRect()
+  menuPosition.value = {
+    top: rect.bottom + 4,
+    right: window.innerWidth - rect.right,
+  }
+  openMenuId.value = id
 }
 
 // ─── Invite ──────────────────────────────────────────────────────────────────
@@ -685,7 +695,8 @@ function onToolbarUpdate(state) {
                     >
                       <div
                         v-if="openMenuId === user.id"
-                        class="absolute right-0 top-full mt-1 z-20 w-44 rounded-lg border border-border bg-card shadow-lg py-1"
+                        class="fixed z-50 w-44 rounded-lg border border-border bg-card shadow-lg py-1"
+                        :style="{ top: menuPosition.top + 'px', right: menuPosition.right + 'px' }"
                         @click.stop
                       >
                         <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors" @click="goToUser(user)">

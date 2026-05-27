@@ -27,7 +27,7 @@ const navItems = [
     key: 'portfolio',
     children: [
       { name: 'Estates', to: '/estates', icon: 'grid' },
-      { name: 'Vacancies', to: '/vacancies', icon: 'door-open' },
+      { name: 'Vacancies', to: '/vacancies', icon: 'door-open', badge: 'new' },
     ],
   },
   {
@@ -45,7 +45,7 @@ const navItems = [
     icon: 'shield-alert',
     key: 'collections',
     children: [
-      { name: 'Arrears', to: '/arrears', icon: 'alert-circle' },
+      { name: 'Arrears', to: '/arrears', icon: 'alert-circle', badge: 'new' },
       { name: 'Age Analysis', to: '/age-analysis', icon: 'trending-down' },
     ],
   },
@@ -53,6 +53,7 @@ const navItems = [
     name: 'Compliance',
     to: '/compliance',
     icon: 'clipboard-check',
+    badge: 'soon',
   },
   {
     name: 'Users',
@@ -242,7 +243,11 @@ function isParentActive(item) {
                   <polyline points="16 17 22 17 22 11"/>
                 </svg>
 
-                <span>{{ child.name }}</span>
+                <span class="flex-1">{{ child.name }}</span>
+                <span
+                  v-if="child.badge === 'new'"
+                  class="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 leading-none"
+                >New</span>
               </RouterLink>
             </div>
           </Transition>
@@ -301,7 +306,15 @@ function isParentActive(item) {
             <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
           </svg>
 
-          <span v-if="!collapsed">{{ item.name }}</span>
+          <span v-if="!collapsed" class="flex-1">{{ item.name }}</span>
+          <span
+            v-if="!collapsed && item.badge === 'new'"
+            class="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 leading-none"
+          >New</span>
+          <span
+            v-if="!collapsed && item.badge === 'soon'"
+            class="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-white/10 text-white/40 leading-none"
+          >Soon</span>
         </RouterLink>
       </template>
     </nav>

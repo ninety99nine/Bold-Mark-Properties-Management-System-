@@ -48,11 +48,11 @@ abstract class DemoEstatesBaseSeeder extends Seeder
 
     /** Receipt samples cycling — every entry gets its own file copy */
     protected const RECEIPTS = [
-        ['src' => '../samples/receipts/receipt-1.png', 'ext' => 'png'],
-        ['src' => '../samples/receipts/receipt-2.png', 'ext' => 'png'],
-        ['src' => '../samples/receipts/receipt-3.png', 'ext' => 'png'],
-        ['src' => '../samples/receipts/receipt-4.png', 'ext' => 'png'],
-        ['src' => '../samples/receipts/receipt-5.jpg', 'ext' => 'jpg'],
+        ['src' => 'samples/receipts/receipt-1.png', 'ext' => 'png'],
+        ['src' => 'samples/receipts/receipt-2.png', 'ext' => 'png'],
+        ['src' => 'samples/receipts/receipt-3.png', 'ext' => 'png'],
+        ['src' => 'samples/receipts/receipt-4.png', 'ext' => 'png'],
+        ['src' => 'samples/receipts/receipt-5.jpg', 'ext' => 'jpg'],
     ];
 
     /* ------------------------------------------------------------------ */
@@ -218,7 +218,7 @@ abstract class DemoEstatesBaseSeeder extends Seeder
 
     protected function attachLeaseDocument(Tenant $ut): void
     {
-        $srcPath = base_path('../samples/documents/lease-agreement.pdf');
+        $srcPath = base_path('samples/documents/lease-agreement.pdf');
         $destRel = "tenants/{$ut->id}/lease-agreement.pdf";
 
         if (file_exists($srcPath)) {
