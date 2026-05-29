@@ -772,8 +772,8 @@ it('filters data by charge_type code', function () {
     $user   = adminUser();
     $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
-    $levyCt = ChargeType::factory()->create(['organization_id' => $user->organization_id, 'code' => 'LEVY']);
-    $rentCt = ChargeType::factory()->create(['organization_id' => $user->organization_id, 'code' => 'RENT']);
+    $levyCt = ChargeType::factory()->create(['organization_id' => $user->organization_id, 'type' => 'admin_levy']);
+    $rentCt = ChargeType::factory()->create(['organization_id' => $user->organization_id, 'type' => 'rent']);
 
     $unitLevy = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id, 'unit_number' => 'L1']);
     $ownerL   = Owner::factory()->create(['unit_id' => $unitLevy->id, 'organization_id' => $user->organization_id]);

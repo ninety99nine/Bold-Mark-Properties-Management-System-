@@ -102,73 +102,17 @@ it('creates a charge type with valid data', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GENERATOR_FEE',
             'name'         => 'Generator Fee',
             'applies_to'   => 'either',
             'is_recurring' => true,
         ])
         ->assertCreated()
-        ->assertJsonPath('data.code', 'GENERATOR_FEE');
+        ->assertJsonPath('data.name', 'Generator Fee');
 
     $this->assertDatabaseHas('charge_types', [
-        'code'      => 'GENERATOR_FEE',
+        'name'            => 'Generator Fee',
         'organization_id' => $user->organization_id,
     ]);
-});
-
-it('returns 422 when charge type code is missing', function () {
-    $user = adminUser();
-
-    $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
-            'name'         => 'Generator Fee',
-            'applies_to'   => 'either',
-            'is_recurring' => true,
-        ])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['code']);
-});
-
-it('returns 422 when charge type code contains lowercase letters', function () {
-    $user = adminUser();
-
-    $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'generator_fee',
-            'name'         => 'Generator Fee',
-            'applies_to'   => 'either',
-            'is_recurring' => true,
-        ])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['code']);
-});
-
-it('returns 422 when charge type code contains spaces', function () {
-    $user = adminUser();
-
-    $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GENERATOR FEE',
-            'name'         => 'Generator Fee',
-            'applies_to'   => 'either',
-            'is_recurring' => true,
-        ])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['code']);
-});
-
-it('returns 422 when charge type code exceeds 50 characters', function () {
-    $user = adminUser();
-
-    $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => str_repeat('A', 51),
-            'name'         => 'Test',
-            'applies_to'   => 'either',
-            'is_recurring' => true,
-        ])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['code']);
 });
 
 it('returns 422 when charge type name is missing', function () {
@@ -176,7 +120,6 @@ it('returns 422 when charge type name is missing', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GENERATOR_FEE',
             'applies_to'   => 'either',
             'is_recurring' => true,
         ])
@@ -189,7 +132,6 @@ it('returns 422 when charge type name exceeds 255 characters', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GEN_FEE',
             'name'         => str_repeat('x', 256),
             'applies_to'   => 'either',
             'is_recurring' => true,
@@ -203,7 +145,6 @@ it('returns 422 when applies_to is missing', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GENERATOR_FEE',
             'name'         => 'Generator Fee',
             'is_recurring' => true,
         ])
@@ -216,7 +157,6 @@ it('returns 422 when applies_to is invalid', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GENERATOR_FEE',
             'name'         => 'Generator Fee',
             'applies_to'   => 'everyone',
             'is_recurring' => true,
@@ -230,20 +170,18 @@ it('accepts all valid applies_to values', function (string $appliesTo) {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'FEE_' . strtoupper($appliesTo),
             'name'         => 'Fee for ' . $appliesTo,
             'applies_to'   => $appliesTo,
             'is_recurring' => false,
         ])
         ->assertCreated();
-})->with(['owner', 'organization', 'either']);
+})->with(['owner', 'tenant', 'either']);
 
 it('returns 422 when is_recurring is missing', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'       => 'GENERATOR_FEE',
             'name'       => 'Generator Fee',
             'applies_to' => 'either',
         ])
@@ -256,7 +194,6 @@ it('returns 422 when sort_order is less than 1', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GEN_FEE',
             'name'         => 'Generator Fee',
             'applies_to'   => 'either',
             'is_recurring' => true,
@@ -271,7 +208,6 @@ it('allows nullable sort_order to be omitted', function () {
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type'), [
-            'code'         => 'GEN_FEE',
             'name'         => 'Generator Fee',
             'applies_to'   => 'either',
             'is_recurring' => false,
@@ -288,7 +224,6 @@ it('returns estates relationship in charge type create response when requested',
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.charge.type') . '?_relationships=estates', [
-            'code'         => 'GEN_FEE',
             'name'         => 'Generator Fee',
             'applies_to'   => 'either',
             'is_recurring' => false,
@@ -314,16 +249,6 @@ it('updates a charge type with valid data', function () {
         ->assertJsonPath('data.name', 'Updated Name');
 });
 
-it('returns 422 when update code contains invalid characters', function () {
-    $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-
-    $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.charge.type', $chargeType), ['code' => 'invalid-code'])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['code']);
-});
-
 it('returns 422 when update applies_to is invalid', function () {
     $user       = adminUser();
     $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
@@ -332,16 +257,6 @@ it('returns 422 when update applies_to is invalid', function () {
         ->putJson(route('api.v1.update.charge.type', $chargeType), ['applies_to' => 'both'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['applies_to']);
-});
-
-it('returns 422 when update code exceeds 50 characters', function () {
-    $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-
-    $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.charge.type', $chargeType), ['code' => str_repeat('A', 51)])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['code']);
 });
 
 it('returns 404 when updating a charge type from another tenant', function () {

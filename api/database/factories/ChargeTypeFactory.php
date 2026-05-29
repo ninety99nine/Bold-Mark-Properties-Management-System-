@@ -17,15 +17,15 @@ class ChargeTypeFactory extends Factory
     public function definition(): array
     {
         return [
-            'organization_id'    => Organization::factory(),
-            'code'         => 'CHARGE_' . strtoupper(fake()->unique()->lexify('?????')),
-            'name'         => fake()->words(2, true),
-            'description'  => fake()->sentence(),
-            'is_system'    => false,
-            'is_active'    => true,
-            'applies_to'   => fake()->randomElement(ChargeTypeAppliesTo::values()),
-            'is_recurring' => fake()->boolean(),
-            'sort_order'   => fake()->numberBetween(1, 100),
+            'organization_id' => Organization::factory(),
+            'type'            => null,
+            'name'            => fake()->words(2, true),
+            'description'     => fake()->sentence(),
+            'is_system'       => false,
+            'is_active'       => true,
+            'applies_to'      => fake()->randomElement(ChargeTypeAppliesTo::values()),
+            'is_recurring'    => fake()->boolean(),
+            'sort_order'      => fake()->numberBetween(1, 100),
         ];
     }
 
@@ -67,7 +67,7 @@ class ChargeTypeFactory extends Factory
     public function forTenant(): static
     {
         return $this->state(fn (array $attributes) => [
-            'applies_to' => ChargeTypeAppliesTo::Organization->value,
+            'applies_to' => ChargeTypeAppliesTo::Tenant->value,
         ]);
     }
 
