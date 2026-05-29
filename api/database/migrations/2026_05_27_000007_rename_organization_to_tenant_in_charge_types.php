@@ -10,14 +10,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Step 1: expand enum to allow both old and new value
-        DB::statement("ALTER TABLE charge_types MODIFY COLUMN applies_to ENUM('owner', 'organization', 'tenant', 'either') NOT NULL DEFAULT 'either'");
+        $isMySQL = DB::getDriverName() === 'mysql';
 
-        // Step 2: migrate existing data
+        if ($isMySQL) {
+            DB::statement("ALTER TABLE charge_types MODIFY COLUMN applies_to ENUM('owner', 'organization', 'tenant', 'either') NOT NULL DEFAULT 'either'");
+        }
+
         DB::statement("UPDATE charge_types SET applies_to = 'tenant' WHERE applies_to = 'organization'");
 
-        // Step 3: drop the old value from the enum
-        DB::statement("ALTER TABLE charge_types MODIFY COLUMN applies_to ENUM('owner', 'tenant', 'either') NOT NULL DEFAULT 'either'");
+        if ($isMySQL) {
+            DB::statement("ALTER TABLE charge_types MODIFY COLUMN applies_to ENUM('owner', 'tenant', 'either') NOT NULL DEFAULT 'either'");
+        }
     }
 
     /**
@@ -26,6 +29,9 @@ return new class extends Migration
     public function down(): void
     {
         DB::statement("UPDATE charge_types SET applies_to = 'organization' WHERE applies_to = 'tenant'");
-        DB::statement("ALTER TABLE charge_types MODIFY COLUMN applies_to ENUM('owner', 'organization', 'either') NOT NULL DEFAULT 'either'");
+
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE charge_types MODIFY COLUMN applies_to ENUM('owner', 'organization', 'either') NOT NULL DEFAULT 'either'");
+        }
     }
 };
