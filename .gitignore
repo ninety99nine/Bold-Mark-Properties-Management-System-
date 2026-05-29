@@ -49,3 +49,6 @@ scripts/.aws-bootstrap-output.txt
 
 # ----- Docker runtime (server-only, never committed) -----
 .deploy.env
+
+# ----- Playwright MCP session artifacts -----
+.playwright-mcp/

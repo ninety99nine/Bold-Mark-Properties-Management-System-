@@ -9,4 +9,6 @@ Route::prefix('organization')
     ->group(function () {
         Route::get('/', 'showCurrentTenant')->name('show.organization');
         Route::put('/', 'updateCurrentTenant')->name('update.organization');
+        Route::delete('/flush', 'flushCurrentTenant')->name('flush.organization');
+        Route::get('/flush/{jobId}/status', 'flushStatus')->name('flush.organization.status');
     });

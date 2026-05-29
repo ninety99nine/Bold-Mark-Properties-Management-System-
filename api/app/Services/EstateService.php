@@ -111,7 +111,7 @@ class EstateService extends BaseService
         $user = Auth::user();
 
         $estateData = collect($data)
-            ->only(['name', 'address', 'type', 'default_levy_amount', 'default_rent_amount', 'billing_day', 'country', 'currency'])
+            ->only(['name', 'address', 'type', 'admin_fund_amount', 'reserve_fund_amount', 'csos_levy_amount', 'default_rent_amount', 'billing_day', 'payment_terms_days', 'country', 'currency'])
             ->toArray();
 
         $estate = Estate::create(array_merge($estateData, [
@@ -208,16 +208,27 @@ class EstateService extends BaseService
             ->where('type', 'credit')
             ->sum('amount');
 
-        // Monthly revenue: levy (for non-vacant) + rent (for tenant_occupied) across all active units
+        // Monthly revenue: mirrors billing logic exactly.
+        // admin_fund_amount is the total estate levy budget, distributed per unit via PQ or equal-share.
+        // levy_override replaces that unit's share; rent is added for tenant_occupied units.
         $units          = Unit::where('estate_id', $estate->id)->where('status', 'active')
-            ->select(['occupancy_type', 'levy_override', 'rent_amount'])
+            ->select(['occupancy_type', 'levy_override', 'rent_amount', 'pq'])
             ->get();
-        $monthlyRevenue = $units->reduce(function (float $carry, Unit $unit) use ($estate): float {
+        $totalPq        = $units->whereNotNull('pq')->sum('pq');
+        $totalUnitCount = $units->count();
+        $adminBudget    = (float) ($estate->admin_fund_amount ?? 0);
+        $monthlyRevenue = $units->reduce(function (float $carry, Unit $unit) use ($estate, $totalPq, $totalUnitCount, $adminBudget): float {
             $occ = $unit->occupancy_type instanceof \App\Enums\OccupancyType
                 ? $unit->occupancy_type->value
                 : (string) $unit->occupancy_type;
             if ($occ !== 'vacant') {
-                $carry += (float) ($unit->levy_override ?? $estate->default_levy_amount ?? 0);
+                if ($unit->levy_override !== null) {
+                    $carry += (float) $unit->levy_override;
+                } elseif ($adminBudget > 0) {
+                    $carry += ($totalPq > 0 && $unit->pq !== null)
+                        ? round(($unit->pq / $totalPq) * $adminBudget, 2)
+                        : ($totalUnitCount > 0 ? round($adminBudget / $totalUnitCount, 2) : 0);
+                }
             }
             if ($occ === 'tenant_occupied') {
                 $carry += (float) ($unit->rent_amount ?? 0);
@@ -254,7 +265,7 @@ class EstateService extends BaseService
     public function updateEstate(Estate $estate, array $data): array
     {
         $fillable = collect($data)
-            ->only(['name', 'address', 'type', 'default_levy_amount', 'default_rent_amount', 'billing_day', 'is_active', 'country', 'currency'])
+            ->only(['name', 'address', 'type', 'admin_fund_amount', 'reserve_fund_amount', 'csos_levy_amount', 'default_rent_amount', 'billing_day', 'payment_terms_days', 'billing_paused', 'is_active', 'country', 'currency'])
             ->filter(fn($v) => !is_null($v))
             ->toArray();
 

@@ -20,7 +20,7 @@ class EstateFactory extends Factory
             'name'                 => fake()->company() . ' Estate',
             'address'              => fake()->streetAddress(),
             'type'                 => fake()->randomElement(EstateType::values()),
-            'default_levy_amount'  => fake()->randomFloat(2, 500, 5000),
+            'admin_fund_amount'    => fake()->randomFloat(2, 500, 5000),
             'default_rent_amount'  => fake()->randomFloat(2, 1000, 20000),
             'billing_day'          => fake()->numberBetween(1, 28),
             'is_active'            => true,

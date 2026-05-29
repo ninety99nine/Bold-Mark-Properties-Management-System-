@@ -29,7 +29,7 @@ class CreateInvoiceRequest extends FormRequest
             'charge_type_id' => ['required', 'uuid', 'exists:charge_types,id'],
             'billed_to_type' => ['required', Rule::in(BilledToType::values())],
             'billed_to_id'   => ['required', 'uuid'],
-            'amount'         => ['required', 'numeric', 'min:0'],
+            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'billing_period' => ['required', 'date'],
             'due_date'       => ['required', 'date'],
         ];

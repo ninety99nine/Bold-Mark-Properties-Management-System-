@@ -11,11 +11,13 @@ use App\Models\InvoiceEmailEvent;
 use App\Enums\InvoiceStatus;
 use App\Enums\BilledToType;
 use App\Enums\OccupancyType;
+use App\Enums\SystemChargeType;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Jobs\SendInvoiceEmail;
 use Resend\Laravel\Facades\Resend;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\InvoiceResources;
@@ -379,6 +381,7 @@ class InvoiceService extends BaseService
 
         $billingPeriod = Carbon::parse($billingPeriodYearMonth . '-01');
         $billingPeriodDate = $billingPeriod->format('Y-m-d');
+        $paymentTermsDays = $estate->payment_terms_days ?? 7;
 
         // Load active units with all needed relationships
         $units = Unit::where('estate_id', $estate->id)
@@ -395,17 +398,31 @@ class InvoiceService extends BaseService
         $created     = 0;
         $createdIds  = [];
 
-        // Get levy and rent system charge types for this estate (from estate's active charge types)
-        $estateChargeTypes = $estate->activeChargeTypes;
-        $levyChargeType    = $estateChargeTypes->firstWhere('code', 'LEVY');
-        $rentChargeType    = $estateChargeTypes->firstWhere('code', 'RENT');
+        // Get system charge types for this estate (from estate's active charge types)
+        $estateChargeTypes  = $estate->activeChargeTypes;
+        $levyChargeType     = $estateChargeTypes->firstWhere('type', SystemChargeType::ADMIN_LEVY->value);
+        $reserveLevyType    = $estateChargeTypes->firstWhere('type', SystemChargeType::RESERVE_LEVY->value);
+        $csosLevyType       = $estateChargeTypes->firstWhere('type', SystemChargeType::CSOS_LEVY->value);
+        $rentChargeType     = $estateChargeTypes->firstWhere('type', SystemChargeType::RENT->value);
+
+        // Pre-compute PQ totals for the billing run to avoid N+1 queries
+        $totalPq         = $units->whereNotNull('pq')->sum('pq');
+        $adminBudget     = (float) ($estate->admin_fund_amount ?? 0);
+        $reserveBudget   = (float) ($estate->reserve_fund_amount ?? 0);
+        $csosPerUnit     = (float) ($estate->csos_levy_amount ?? 0);
 
         foreach ($units as $unit) {
             $invoicesToCreate = [];
 
-            // 1. Levy invoice → always to owner (if levy charge type is enabled for the estate)
+            // 1a. Admin levy invoice → owner, PQ-based or equal-share fallback
             if ($levyChargeType && $unit->owner) {
-                $levyAmount = $unit->levy_override ?? $estate->default_levy_amount;
+                $levyAmount = $unit->levy_override;
+
+                if ($levyAmount === null && $adminBudget > 0) {
+                    $levyAmount = ($totalPq > 0 && $unit->pq !== null)
+                        ? round(($unit->pq / $totalPq) * $adminBudget, 2)
+                        : ($units->count() > 0 ? round($adminBudget / $units->count(), 2) : 0);
+                }
 
                 if ($levyAmount > 0) {
                     $invoicesToCreate[] = [
@@ -415,9 +432,39 @@ class InvoiceService extends BaseService
                         'recipient_name' => $unit->owner->full_name,
                         'amount'         => $levyAmount,
                         'unit'           => $unit,
-                        'label'          => 'Levy',
+                        'label'          => 'Admin Levy',
                     ];
                 }
+            }
+
+            // 1b. Reserve levy invoice → owner, PQ-based only (no equal-share fallback)
+            if ($reserveLevyType && $unit->owner && $reserveBudget > 0 && $totalPq > 0 && $unit->pq !== null) {
+                $reserveAmount = round(($unit->pq / $totalPq) * $reserveBudget, 2);
+
+                if ($reserveAmount > 0) {
+                    $invoicesToCreate[] = [
+                        'charge_type'    => $reserveLevyType,
+                        'billed_to_type' => BilledToType::OWNER->value,
+                        'billed_to_id'   => $unit->owner->id,
+                        'recipient_name' => $unit->owner->full_name,
+                        'amount'         => $reserveAmount,
+                        'unit'           => $unit,
+                        'label'          => 'Reserve Levy',
+                    ];
+                }
+            }
+
+            // 1c. CSOS levy invoice → owner, flat per-unit amount set on the estate
+            if ($csosLevyType && $unit->owner && $csosPerUnit > 0) {
+                $invoicesToCreate[] = [
+                    'charge_type'    => $csosLevyType,
+                    'billed_to_type' => BilledToType::OWNER->value,
+                    'billed_to_id'   => $unit->owner->id,
+                    'recipient_name' => $unit->owner->full_name,
+                    'amount'         => $csosPerUnit,
+                    'unit'           => $unit,
+                    'label'          => 'CSOS Levy',
+                ];
             }
 
             // 2. Rent invoice → to active tenant if tenant_occupied and rent charge type is active
@@ -523,7 +570,7 @@ class InvoiceService extends BaseService
                             'billed_to_id'       => $invoiceSpec['billed_to_id'],
                             'amount'             => $invoiceSpec['amount'],
                             'billing_period'     => $billingPeriodDate,
-                            'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
+                            'due_date'           => now()->addDays($paymentTermsDays)->format('Y-m-d'),
                             'status'             => InvoiceStatus::UNPAID->value,
                             'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
                             'organization_id'    => $user->organization_id,
@@ -545,50 +592,10 @@ class InvoiceService extends BaseService
             $this->unitBalance->recalculate($affectedUnit);
         }
 
-        // Send invoice emails to each recipient.
+        // Dispatch one job per invoice — rate limiting is enforced globally via RateLimited middleware.
         if (!$isDryRun && !empty($createdIds)) {
-            $from = config('mail.from.name') . ' <' . config('mail.from.address') . '>';
-
-            $invoicesToSend = Invoice::whereIn('id', $createdIds)
-                ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant'])
-                ->get();
-
-            foreach ($invoicesToSend as $inv) {
-                $billedTo = $inv->billed_to_type->value === BilledToType::OWNER->value
-                    ? $inv->billedToOwner
-                    : $inv->billedToUnitTenant;
-
-                if (!$billedTo || !$billedTo->email) {
-                    continue;
-                }
-
-                try {
-                    $html = view('emails.invoice', [
-                        'invoice'  => $inv,
-                        'billedTo' => $billedTo,
-                    ])->render();
-
-                    $response = Resend::emails()->send([
-                        'from'    => $from,
-                        'to'      => [$billedTo->email],
-                        'subject' => "Invoice {$inv->invoice_number} — {$inv->chargeType->name}",
-                        'html'    => $html,
-                    ]);
-
-                    InvoiceEmailEvent::create([
-                        'invoice_id'      => $inv->id,
-                        'organization_id' => $inv->organization_id,
-                        'event_type'      => 'sent',
-                        'email'           => $billedTo->email,
-                        'resend_email_id' => $response->id ?? null,
-                        'occurred_at'     => now(),
-                    ]);
-
-                    $inv->update(['sent_at' => now()]);
-                } catch (\Exception $e) {
-                    // Log but don't abort the billing run if one email fails
-                    \Log::warning("billing run email failed invoice={$inv->invoice_number}: {$e->getMessage()}");
-                }
+            foreach ($createdIds as $invoiceId) {
+                SendInvoiceEmail::dispatch($invoiceId);
             }
         }
 
@@ -693,7 +700,7 @@ class InvoiceService extends BaseService
                 'billed_to_id'       => $billedToId,
                 'amount'             => $data['amount'],
                 'billing_period'     => $billingPeriodDate,
-                'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
+                'due_date'           => now()->addDays(7)->format('Y-m-d'),
                 'status'             => InvoiceStatus::UNPAID->value,
                 'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
                 'organization_id'          => $user->organization_id,
@@ -806,7 +813,10 @@ class InvoiceService extends BaseService
             'occurred_at'     => now(),
         ]);
 
-        $invoice->update(['sent_at' => now()]);
+        $invoice->update([
+            'sent_at'         => now(),
+            'email_failed_at' => null,
+        ]);
 
         return ['message' => 'Invoice sent successfully'];
     }

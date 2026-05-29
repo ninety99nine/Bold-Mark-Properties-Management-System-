@@ -40,17 +40,18 @@ class DashboardController extends Controller
     {
         $tenantId = Auth::user()->organization_id;
 
-        $countryCodes = Estate::where('organization_id', $tenantId)
+        $countsByCcode = Estate::where('organization_id', $tenantId)
             ->whereNotNull('country')
-            ->distinct()
-            ->pluck('country')
+            ->selectRaw('country, count(*) as estate_count')
+            ->groupBy('country')
+            ->pluck('estate_count', 'country')
             ->toArray();
 
         $countries = [];
-        foreach ($countryCodes as $code) {
+        foreach ($countsByCcode as $code => $count) {
             $info = CountryHelper::get($code);
             if ($info) {
-                $countries[] = array_merge(['code' => $code], $info);
+                $countries[] = array_merge(['code' => $code, 'estate_count' => $count], $info);
             }
         }
 

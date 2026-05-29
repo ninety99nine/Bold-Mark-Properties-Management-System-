@@ -232,6 +232,47 @@ class UserService extends BaseService
     }
 
     /**
+     * Change the authenticated user's own password and notify them by email.
+     *
+     * @param array $data  ['current_password', 'password']
+     * @return array
+     */
+    public function changePassword(array $data): array
+    {
+        $user = Auth::user();
+
+        if (!Hash::check($data['current_password'], $user->password)) {
+            return [
+                'success' => false,
+                'message' => 'Current password is incorrect.',
+                'errors'  => ['current_password' => ['Current password is incorrect.']],
+            ];
+        }
+
+        $user->update(['password' => Hash::make($data['password'])]);
+
+        $changedAt = now()->format('d M Y, H:i T');
+
+        try {
+            Mail::send('emails.password-changed', [
+                'name'      => $user->name,
+                'email'     => $user->email,
+                'changedAt' => $changedAt,
+            ], function ($message) use ($user) {
+                $message->to($user->email, $user->name)
+                        ->subject('Your BoldMark PMS password was changed');
+            });
+        } catch (\Exception $e) {
+            logger()->warning('Failed to send password-changed email to ' . $user->email . ': ' . $e->getMessage());
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Password updated successfully.',
+        ];
+    }
+
+    /**
      * Delete a single user.
      *
      * @param User $user

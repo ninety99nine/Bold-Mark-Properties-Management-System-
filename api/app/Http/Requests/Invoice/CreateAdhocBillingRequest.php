@@ -27,7 +27,7 @@ class CreateAdhocBillingRequest extends FormRequest
             'charge_type_id' => ['required', 'uuid', 'exists:charge_types,id'],
             'unit_ids'       => ['sometimes', 'array'],
             'unit_ids.*'     => ['uuid', 'exists:units,id'],
-            'amount'         => ['required', 'numeric', 'min:0'],
+            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'billing_period' => ['required', 'date_format:Y-m'],
         ];
     }

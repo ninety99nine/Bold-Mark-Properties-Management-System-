@@ -7,9 +7,11 @@ use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserLoginLog;
+use App\Models\UserSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
@@ -62,16 +64,39 @@ class AuthController extends Controller
 
         Auth::login($user);
 
-        $user->update(['last_login_at' => now()]);
-
         $this->logLoginAttempt($request, $user, true, null);
 
-        $token = $user->createToken('api-token')->accessToken;
+        // If 2FA is enabled, return a challenge token instead of a full access token
+        if ($user->hasTwoFactorEnabled()) {
+            $challenge = Crypt::encryptString(json_encode([
+                'user_id'    => $user->id,
+                'expires_at' => now()->addMinutes(5)->timestamp,
+            ]));
+
+            return response()->json([
+                'data' => [
+                    'two_factor_required' => true,
+                    'challenge'           => $challenge,
+                ],
+            ]);
+        }
+
+        $user->update(['last_login_at' => now()]);
+
+        $tokenResult = $user->createToken('api-token');
+
+        UserSession::create([
+            'user_id'    => $user->id,
+            'token_id'   => $tokenResult->token->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'created_at' => now(),
+        ]);
 
         return response()->json([
             'data' => [
                 'user'  => $user,
-                'token' => $token,
+                'token' => $tokenResult->accessToken,
             ],
         ]);
     }
@@ -85,7 +110,11 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
+        $tokenId = $request->user()->token()->id;
+
         $request->user()->token()->revoke();
+
+        UserSession::where('token_id', $tokenId)->delete();
 
         return response()->json(['message' => 'Logged out successfully.']);
     }

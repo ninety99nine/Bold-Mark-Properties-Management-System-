@@ -103,7 +103,7 @@ function onToolbarUpdate(state) {
 
 const filterFields = computed(() => {
   const estateOptions = estates.value.map(e => ({ value: e.id, label: e.name }))
-  const chargeOptions = chargeTypes.value.map(ct => ({ value: ct.code, label: ct.name }))
+  const chargeOptions = chargeTypes.value.map(ct => ({ value: ct.id, label: ct.name }))
 
   return [
     { key: 'estate_id', label: 'Estate', options: estateOptions },

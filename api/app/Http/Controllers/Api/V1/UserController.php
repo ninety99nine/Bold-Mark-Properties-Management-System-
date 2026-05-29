@@ -16,6 +16,9 @@ use App\Http\Requests\User\DeleteUserRequest;
 use App\Http\Requests\User\DeleteUsersRequest;
 use App\Http\Requests\User\SendPasswordResetRequest;
 use App\Http\Requests\User\SyncUserEstatesRequest;
+use App\Http\Requests\User\ChangePasswordRequest;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -116,6 +119,25 @@ class UserController extends Controller
     public function sendPasswordResetLink(SendPasswordResetRequest $request, User $user): array
     {
         return $this->service->sendPasswordResetLink($user);
+    }
+
+    /**
+     * Change the authenticated user's own password.
+     *
+     * @param ChangePasswordRequest $request
+     * @return JsonResponse
+     */
+    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    {
+        $result = $this->service->changePassword($request->validated());
+
+        if (!$result['success']) {
+            throw ValidationException::withMessages($result['errors'] ?? [
+                'current_password' => [$result['message']],
+            ]);
+        }
+
+        return response()->json(['message' => $result['message']]);
     }
 
     /**

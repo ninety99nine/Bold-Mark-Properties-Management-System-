@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\EstateType;
+use App\Enums\SystemChargeType;
 use App\Models\ChargeType;
 use App\Models\Estate;
 use Database\Seeders\DefaultChargeTypesSeeder;
@@ -10,31 +11,41 @@ use Database\Seeders\DefaultChargeTypesSeeder;
 class EstateChargeTypeService
 {
     /**
-     * Charge type codes that apply to each estate type.
-     * Used when auto-configuring an estate on creation.
+     * Non-system preset names that apply to each estate type.
+     * System types (admin_levy, reserve_levy, csos_levy, rent) are matched separately by 'type'.
      */
-    protected array $presetsByType = [
+    protected array $presetNamesByType = [
         EstateType::SECTIONAL_TITLE->value => [
-            'LEVY', 'SPECIAL_LEVY',
-            'WATER_RECOVERY', 'ELECTRICITY_RECOVERY', 'GAS_RECOVERY',
-            'SEWERAGE_RECOVERY', 'REFUSE_RECOVERY',
-            'LATE_INTEREST', 'LATE_PENALTY',
-            'INSURANCE_EXCESS', 'PARKING_RENTAL', 'STORAGE_RENTAL',
-            'ACCESS_CARD', 'GYM_ACCESS', 'POOL_ACCESS',
-            'GARDEN_MAINT', 'PET_LEVY', 'SECURITY_CONTRIB', 'LEGAL_RECOVERY',
+            'Special Levy',
+            'Water Recovery', 'Electricity Recovery', 'Gas Recovery',
+            'Sewerage Recovery', 'Refuse Recovery',
+            'Late Payment Interest', 'Late Payment Penalty',
+            'Insurance Excess', 'Parking Rental', 'Storage Rental',
+            'Access Card Fee', 'Gym Access', 'Pool Access',
+            'Garden Maintenance', 'Pet Levy', 'Security Contribution', 'Legal Recovery',
         ],
         EstateType::RESIDENTIAL_RENTAL->value => [
-            'RENT', 'KEY_DEPOSIT', 'DAMAGE_DEPOSIT',
-            'MOVING_IN', 'MOVING_OUT',
-            'LATE_INTEREST', 'LATE_PENALTY',
-            'PARKING_RENTAL', 'PET_LEVY', 'LEGAL_RECOVERY',
+            'Key Deposit', 'Damage Deposit',
+            'Moving-In Fee', 'Moving-Out Fee',
+            'Late Payment Interest', 'Late Payment Penalty',
+            'Parking Rental', 'Pet Levy', 'Legal Recovery',
         ],
         EstateType::COMMERCIAL_RENTAL->value => [
-            'RENT', 'KEY_DEPOSIT', 'DAMAGE_DEPOSIT',
-            'LATE_INTEREST', 'LATE_PENALTY',
-            'PARKING_RENTAL', 'STORAGE_RENTAL', 'LEGAL_RECOVERY',
+            'Key Deposit', 'Damage Deposit',
+            'Late Payment Interest', 'Late Payment Penalty',
+            'Parking Rental', 'Storage Rental', 'Legal Recovery',
         ],
-        EstateType::MIXED->value => [],  // All charge types enabled for mixed
+        EstateType::MIXED->value => [],
+    ];
+
+    /**
+     * System charge type values that apply to each estate type.
+     */
+    protected array $systemTypesByEstateType = [
+        EstateType::SECTIONAL_TITLE->value    => [SystemChargeType::ADMIN_LEVY->value, SystemChargeType::RESERVE_LEVY->value, SystemChargeType::CSOS_LEVY->value],
+        EstateType::RESIDENTIAL_RENTAL->value => [SystemChargeType::RENT->value],
+        EstateType::COMMERCIAL_RENTAL->value  => [SystemChargeType::RENT->value],
+        EstateType::MIXED->value              => [],
     ];
 
     /**
@@ -62,11 +73,15 @@ class EstateChargeTypeService
                 ->where('is_active', true)
                 ->pluck('id');
         } else {
-            $codes = $this->presetsByType[$estateTypeValue] ?? [];
+            $systemTypes = $this->systemTypesByEstateType[$estateTypeValue] ?? [];
+            $presetNames = $this->presetNamesByType[$estateTypeValue] ?? [];
 
             $chargeTypeIds = ChargeType::where('organization_id', $estate->organization_id)
                 ->where('is_active', true)
-                ->whereIn('code', $codes)
+                ->where(function ($q) use ($systemTypes, $presetNames) {
+                    $q->whereIn('type', $systemTypes)
+                      ->orWhereIn('name', $presetNames);
+                })
                 ->pluck('id');
         }
 
@@ -92,7 +107,7 @@ class EstateChargeTypeService
     }
 
     /**
-     * Disable a specific charge type for an estate (without removing the pivot row).
+     * Disable a specific charge type for an estate.
      *
      * @param Estate     $estate
      * @param ChargeType $chargeType

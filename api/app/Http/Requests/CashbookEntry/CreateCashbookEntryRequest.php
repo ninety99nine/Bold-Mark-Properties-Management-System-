@@ -29,7 +29,7 @@ class CreateCashbookEntryRequest extends FormRequest
             'date'        => ['required', 'date'],
             'type'        => ['required', Rule::in(CashbookEntryType::values())],
             'description' => ['required', 'string', 'max:500'],
-            'amount'      => ['required', 'numeric', 'min:0.01'],
+            'amount'      => ['required', 'numeric', 'min:0.01', 'max:9999999999.99'],
             'notes'       => ['nullable', 'string', 'max:1000'],
             'unit_id'          => ['nullable', 'uuid', 'exists:units,id'],
             'invoice_id'       => ['nullable', 'uuid', 'exists:invoices,id'],

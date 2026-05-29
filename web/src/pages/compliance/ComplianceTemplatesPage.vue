@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/composables/useApi'
 import { useBack } from '@/composables/useBack'
+import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppModal from '@/components/common/AppModal.vue'
@@ -11,6 +12,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 
 const router = useRouter()
 const { goBack } = useBack('/compliance')
+const { success, error: toastError } = useToast()
 
 // ── State ────────────────────────────────────────────────────────────
 const loading = ref(true)
@@ -64,9 +66,10 @@ async function save() {
   try {
     const { data } = await api.post('/compliance/templates', form.value)
     showModal.value = false
+    success('Template created successfully.')
     router.push({ name: 'compliance-template-detail', params: { templateId: data.data.id } })
-  } catch {
-    // silent
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
   } finally {
     saving.value = false
   }
@@ -76,9 +79,10 @@ async function deleteTemplate(template) {
   if (!confirm(`Delete template "${template.name}"? This cannot be undone.`)) return
   try {
     await api.delete(`/compliance/templates/${template.id}`)
+    success('Template deleted.')
     fetchTemplates()
-  } catch {
-    // silent
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
   }
 }
 

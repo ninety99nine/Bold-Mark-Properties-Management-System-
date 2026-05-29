@@ -33,7 +33,7 @@ class VacancyService extends BaseService
         // ── Build the query for vacant units across all estates ──────────
         $query = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->with(['owner', 'estate:id,name,type,address,default_levy_amount,default_rent_amount']);
+            ->with(['owner', 'estate:id,name,type,address,admin_fund_amount,default_rent_amount']);
 
         // Filter by country (scoped portfolio)
         if (!empty($data['country'])) {
@@ -165,7 +165,7 @@ class VacancyService extends BaseService
                 estates.id,
                 estates.name,
                 COALESCE(SUM(
-                    COALESCE(units.levy_override, estates.default_levy_amount, 0) +
+                    COALESCE(units.levy_override, estates.admin_fund_amount, 0) +
                     COALESCE(units.rent_amount, estates.default_rent_amount, 0)
                 ), 0) as lost_monthly
             ")

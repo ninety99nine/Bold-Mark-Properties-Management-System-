@@ -19,11 +19,13 @@ class UpdateUnitRequest extends FormRequest
     {
         return [
             'unit_number'           => ['sometimes', 'string', 'max:50'],
+            'section'               => ['sometimes', 'nullable', 'string', 'max:50'],
             'address'               => ['sometimes', 'nullable', 'string', 'max:500'],
+            'pq'                    => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'occupancy_type'        => ['sometimes', Rule::in(OccupancyType::values())],
             'status'                => ['sometimes', Rule::in(UnitStatus::values())],
-            'levy_override'         => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'rent_amount'           => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'levy_override'         => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'rent_amount'           => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
 
             // Owner details
             'owner'                 => ['sometimes', 'array'],
@@ -41,7 +43,7 @@ class UpdateUnitRequest extends FormRequest
             'tenant.id_number'      => ['sometimes', 'nullable', 'string', 'max:50'],
             'tenant.lease_start'    => ['sometimes', 'nullable', 'date'],
             'tenant.lease_end'      => ['sometimes', 'nullable', 'date', 'after:tenant.lease_start'],
-            'tenant.rent_amount'    => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'tenant.rent_amount'    => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
         ];
     }
 

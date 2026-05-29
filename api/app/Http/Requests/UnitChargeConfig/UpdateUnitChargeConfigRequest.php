@@ -16,7 +16,7 @@ class UpdateUnitChargeConfigRequest extends FormRequest
     {
         return [
             'charge_type_id' => ['sometimes', 'uuid', 'exists:charge_types,id'],
-            'amount'         => ['sometimes', 'numeric', 'min:0'],
+            'amount'         => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
             'is_active'      => ['sometimes', 'boolean'],
         ];
     }

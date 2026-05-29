@@ -10,10 +10,8 @@ class EstateResource extends JsonResource
     private function computeMonthlyRevenue(): float
     {
         $type        = $this->type instanceof \BackedEnum ? $this->type->value : (string) $this->type;
-        $unitCount   = (int) ($this->units_count ?? 0);
-        $defaultLevy = (float) ($this->default_levy_amount ?? 0);
+        $levyRevenue = (float) ($this->admin_fund_amount ?? 0) + (float) ($this->reserve_fund_amount ?? 0);
         $rentRevenue = (float) ($this->units_sum_rent_amount ?? 0);
-        $levyRevenue = $unitCount * $defaultLevy;
 
         return match ($type) {
             'sectional_title'    => $levyRevenue,
@@ -36,12 +34,19 @@ class EstateResource extends JsonResource
             'name'                 => $this->name,
             'address'              => $this->address,
             'type'                 => $this->type instanceof \BackedEnum ? $this->type->value : $this->type,
-            'default_levy_amount'  => $this->default_levy_amount,
+            'admin_fund_amount'    => $this->admin_fund_amount,
+            'reserve_fund_amount'  => $this->reserve_fund_amount,
+            'csos_levy_amount'     => $this->csos_levy_amount,
             'default_rent_amount'  => $this->default_rent_amount,
             'billing_day'          => $this->billing_day,
-            'country'              => $this->country,
-            'currency'             => $this->currency,
-            'is_active'            => (bool) $this->is_active,
+            'payment_terms_days'   => $this->payment_terms_days,
+            'billing_paused'       => (bool) $this->billing_paused,
+            'country'                   => $this->country,
+            'currency'                  => $this->currency,
+            'registration_number'       => $this->registration_number,
+            'csos_registration_number'  => $this->csos_registration_number,
+            'income_tax_number'         => $this->income_tax_number,
+            'is_active'                 => (bool) $this->is_active,
             'created_at'           => $this->created_at?->toDateTimeString(),
             'updated_at'           => $this->updated_at?->toDateTimeString(),
 

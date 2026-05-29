@@ -135,7 +135,7 @@ class RunScheduledBilling extends Command
      */
     private function estatesDueForBilling(Carbon $today, ?string $onlyId): \Illuminate\Support\Collection
     {
-        $query = Estate::active()->with('organization');
+        $query = Estate::active()->where('billing_paused', false)->with('organization');
 
         if ($onlyId) {
             return $query->where('id', $onlyId)->get();

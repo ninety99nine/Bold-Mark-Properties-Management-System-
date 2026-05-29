@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/composables/useApi.js'
+import { useToast } from '@/composables/useToast'
 import AppButton    from '@/components/common/AppButton.vue'
 import AppBadge     from '@/components/common/AppBadge.vue'
 import AppStatCard  from '@/components/common/AppStatCard.vue'
@@ -104,9 +105,7 @@ const estatesUser       = ref(null)
 const selectedEstateIds = ref([])
 const allEstates        = ref([])
 
-// Resend / password reset feedback
-const toastMessage = ref('')
-const toastType    = ref('success')
+const { success: toastSuccess, error: toastError } = useToast()
 
 // ─── Computed ────────────────────────────────────────────────────────────────
 const tabs = computed(() => [
@@ -191,9 +190,8 @@ function formatDate(str) {
 }
 
 function showToast(msg, type = 'success') {
-  toastMessage.value = msg
-  toastType.value = type
-  setTimeout(() => { toastMessage.value = '' }, 4000)
+  if (type === 'error') toastError(msg)
+  else toastSuccess(msg)
 }
 
 // ─── API calls ───────────────────────────────────────────────────────────────
@@ -454,26 +452,6 @@ function onToolbarUpdate(state) {
 <template>
   <div>
   <div class="space-y-6 pb-8">
-
-    <!-- ── Toast ───────────────────────────────────────────────────────────── -->
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 -translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2"
-    >
-      <div
-        v-if="toastMessage"
-        :class="[
-          'fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-lg shadow-lg text-sm font-medium',
-          toastType === 'error' ? 'bg-danger text-white' : 'bg-success text-white',
-        ]"
-      >
-        {{ toastMessage }}
-      </div>
-    </Transition>
 
     <!-- ── Page header ─────────────────────────────────────────────────────── -->
     <div class="flex items-center justify-between">

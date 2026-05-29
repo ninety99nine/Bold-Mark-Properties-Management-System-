@@ -73,4 +73,14 @@ class OrganizationPolicy extends BasePolicy
     {
         return false;
     }
+
+    /**
+     * Determine whether the user can flush all data within the tenant.
+     * Company-admins may flush their own tenant. Super-admins handled by before().
+     */
+    public function flush(User $user, Organization $tenant): bool
+    {
+        return $this->authService->isTenantAdmin($user)
+            && (string) $user->organization_id === (string) $tenant->id;
+    }
 }

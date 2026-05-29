@@ -64,6 +64,7 @@ export const useCountryStore = defineStore('country', () => {
         flag: c.flag || COUNTRY_MAP[c.code]?.flag || '',
         currencyCode: c.currency_code || COUNTRY_MAP[c.code]?.currencyCode,
         symbol: c.currency_symbol || COUNTRY_MAP[c.code]?.symbol,
+        estateCount: c.estate_count ?? 0,
       }))
       defaultCountry.value = data.default_country || null
       loaded.value = true
@@ -85,11 +86,12 @@ export const useCountryStore = defineStore('country', () => {
    * e.g. formatCurrency(50000) → 'R\u00a050\u00a0000' or 'P\u00a050\u00a0000'
    */
   function formatCurrency(amount) {
-    if (amount == null) return `${currencySymbol.value}\u00a00`
-    const num = Math.round(Number(amount))
-    if (isNaN(num)) return `${currencySymbol.value}\u00a00`
-    const formatted = num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
-    return `${currencySymbol.value}\u00a0${formatted}`
+    if (amount == null) return `${currencySymbol.value}\u00a00.00`
+    const num = Number(amount)
+    if (isNaN(num)) return `${currencySymbol.value}\u00a00.00`
+    const [intPart, decPart] = num.toFixed(2).split('.')
+    const formatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+    return `${currencySymbol.value}\u00a0${formatted}.${decPart}`
   }
 
   /**

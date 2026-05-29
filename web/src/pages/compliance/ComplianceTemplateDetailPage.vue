@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/composables/useApi'
 import { useBack } from '@/composables/useBack'
+import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppModal from '@/components/common/AppModal.vue'
@@ -11,6 +12,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 
 const route = useRoute()
 const { goBack } = useBack('/compliance/templates')
+const { success } = useToast()
 
 // ── State ────────────────────────────────────────────────────────────
 const loading = ref(true)
@@ -224,6 +226,7 @@ async function saveTemplate() {
     template.value = data.data
     localItems.value = (data.data.items || []).map((item, i) => ({ ...item, _key: i }))
     isDirty.value = false
+    success('Template saved successfully.')
   } catch {
     // silent
   } finally {
@@ -253,6 +256,7 @@ async function saveMetadata() {
     const { data } = await api.put(`/compliance/templates/${template.value.id}`, metaForm.value)
     template.value = { ...template.value, ...data.data }
     showMetaModal.value = false
+    success('Template settings updated.')
   } catch {
     // silent
   } finally {

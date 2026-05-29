@@ -28,7 +28,8 @@ class Invoice extends Model
         'amount'         => 'float',
         'billing_period' => 'date',
         'due_date'       => 'date',
-        'sent_at'        => 'datetime',
+        'sent_at'          => 'datetime',
+        'email_failed_at'  => 'datetime',
     ];
 
     /**
@@ -45,6 +46,7 @@ class Invoice extends Model
         'billing_period',
         'due_date',
         'sent_at',
+        'email_failed_at',
         'issued_by_type',
         'issued_by_user_id',
         'unit_id',

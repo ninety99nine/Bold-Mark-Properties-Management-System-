@@ -1,11 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import AppModal from '@/components/common/AppModal.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
+
+const { success } = useToast()
 
 const props = defineProps({
   show: Boolean,
@@ -104,6 +107,7 @@ async function submit() {
     if (!payload.notes) delete payload.notes
 
     const { data } = await api.post('/compliance/checklists', payload)
+    success('Compliance checklist created.')
     emit('created', data.data)
     emit('close')
   } catch (err) {

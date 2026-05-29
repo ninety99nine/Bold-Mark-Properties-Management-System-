@@ -19,11 +19,13 @@ class CreateUnitRequest extends FormRequest
     {
         return [
             'unit_number'           => ['required', 'string', 'max:50'],
+            'section'               => ['nullable', 'string', 'max:50'],
             'address'               => ['nullable', 'string', 'max:500'],
+            'pq'                    => ['nullable', 'numeric', 'min:0', 'max:100'],
             'occupancy_type'        => ['required', Rule::in(OccupancyType::values())],
             'status'                => ['sometimes', Rule::in(UnitStatus::values())],
-            'levy_override'         => ['nullable', 'numeric', 'min:0'],
-            'rent_amount'           => ['nullable', 'numeric', 'min:0'],
+            'levy_override'         => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'rent_amount'           => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
 
             // Owner details — always required
             'owner'                 => ['required', 'array'],
@@ -41,7 +43,7 @@ class CreateUnitRequest extends FormRequest
             'tenant.id_number'      => ['nullable', 'string', 'max:50'],
             'tenant.lease_start'    => ['nullable', 'date'],
             'tenant.lease_end'      => ['nullable', 'date', 'after:tenant.lease_start'],
-            'tenant.rent_amount'    => ['nullable', 'numeric', 'min:0'],
+            'tenant.rent_amount'    => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
         ];
     }
 

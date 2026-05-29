@@ -25,6 +25,7 @@ class Unit extends Model
     protected $casts = [
         'occupancy_type'  => OccupancyType::class,
         'status'          => UnitStatus::class,
+        'pq'              => 'float',
         'levy_override'   => 'float',
         'rent_amount'     => 'float',
         'balance'         => 'float',
@@ -37,7 +38,9 @@ class Unit extends Model
      */
     protected $fillable = [
         'unit_number',
+        'section',
         'address',
+        'pq',
         'occupancy_type',
         'status',
         'levy_override',
@@ -209,13 +212,46 @@ class Unit extends Model
     }
 
     /**
-     * Get the effective levy amount: override if set, otherwise estate default.
+     * Get the effective admin levy amount for this unit using PQ formula.
+     * Falls back to equal-share division, then levy_override if set.
      *
      * @return float|null
      */
     public function getEffectiveLevyAmountAttribute(): ?float
     {
-        return $this->levy_override ?? $this->estate?->default_levy_amount;
+        if ($this->levy_override !== null) {
+            return $this->levy_override;
+        }
+
+        if ($this->pq !== null && $this->relationLoaded('estate') && $this->estate !== null) {
+            $totalPq = $this->estate->units()->whereNotNull('pq')->sum('pq');
+            $budget  = (float) ($this->estate->admin_fund_amount ?? 0);
+            if ($totalPq > 0 && $budget > 0) {
+                return round(($this->pq / $totalPq) * $budget, 2);
+            }
+        }
+
+        $unitCount = $this->estate?->units()->count() ?? 1;
+
+        return $unitCount > 0 ? round(((float) ($this->estate?->admin_fund_amount ?? 0)) / $unitCount, 2) : null;
+    }
+
+    /**
+     * Get the effective reserve levy amount using PQ formula.
+     *
+     * @return float|null
+     */
+    public function getEffectiveReserveLevyAttribute(): ?float
+    {
+        if ($this->pq !== null && $this->relationLoaded('estate') && $this->estate !== null) {
+            $totalPq = $this->estate->units()->whereNotNull('pq')->sum('pq');
+            $budget  = (float) ($this->estate->reserve_fund_amount ?? 0);
+            if ($totalPq > 0 && $budget > 0) {
+                return round(($this->pq / $totalPq) * $budget, 2);
+            }
+        }
+
+        return null;
     }
 
     public function resolveRouteBinding($value, $field = null): ?self

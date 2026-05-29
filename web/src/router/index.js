@@ -131,13 +131,12 @@ const routes = [
       },
       {
         path: 'settings',
-        name: 'settings',
-        component: () => import('@/pages/settings/SettingsPage.vue'),
+        redirect: '/settings/profile',
       },
       {
-        path: 'settings/login-audit',
-        name: 'login-audit',
-        component: () => import('@/pages/settings/LoginAuditPage.vue'),
+        path: 'settings/:tab',
+        name: 'settings',
+        component: () => import('@/pages/settings/SettingsPage.vue'),
       },
     ],
   },

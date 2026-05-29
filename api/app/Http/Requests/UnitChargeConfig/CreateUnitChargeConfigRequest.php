@@ -16,7 +16,7 @@ class CreateUnitChargeConfigRequest extends FormRequest
     {
         return [
             'charge_type_id' => ['required', 'uuid', 'exists:charge_types,id'],
-            'amount'         => ['required', 'numeric', 'min:0'],
+            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'is_active'      => ['sometimes', 'boolean'],
         ];
     }

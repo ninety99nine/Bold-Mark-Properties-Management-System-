@@ -18,7 +18,9 @@ class UnitResource extends JsonResource
             'estate_id'        => $this->estate_id,
             'organization_id'        => $this->organization_id,
             'unit_number'      => $this->unit_number,
+            'section'          => $this->section,
             'address'          => $this->address,
+            'pq'               => $this->pq,
             'occupancy_type'   => $this->occupancy_type instanceof \BackedEnum ? $this->occupancy_type->value : $this->occupancy_type,
             'status'           => $this->status instanceof \BackedEnum ? $this->status->value : $this->status,
             'levy_override'    => $this->levy_override,
@@ -26,7 +28,8 @@ class UnitResource extends JsonResource
             'created_at'       => $this->created_at?->toDateTimeString(),
             'updated_at'       => $this->updated_at?->toDateTimeString(),
 
-            'effective_levy_amount' => $this->effective_levy_amount,
+            'effective_levy_amount'   => $this->effective_levy_amount,
+            'effective_reserve_levy'  => $this->effective_reserve_levy,
 
             // outstanding_amount = net owed on non-paid invoices (gross minus partial payments).
             // unallocated_credits = cashbook credits not yet matched to any invoice.

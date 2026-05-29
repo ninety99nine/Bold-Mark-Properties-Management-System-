@@ -12,6 +12,7 @@ Route::prefix('users')
         Route::get('/summary', 'showUsersSummary')->name('show.users.summary');
         Route::post('/', 'inviteUser')->name('invite.user');
         Route::delete('/', 'deleteUsers')->name('delete.users');
+        Route::put('/me/password', 'changePassword')->name('change.password');
 
         // Explicit route model binding applied: AppServiceProvider.php
         Route::prefix('{user}')->group(function () {

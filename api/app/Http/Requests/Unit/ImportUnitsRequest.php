@@ -15,11 +15,13 @@ class ImportUnitsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'rows'            => ['required', 'array', 'min:1'],
-            'rows.*.unit_number'    => ['required', 'string'],
-            'rows.*.occupancy_type' => ['required', 'string', 'in:owner_occupied,tenant_occupied,vacant'],
-            'rows.*.owner_full_name'=> ['required', 'string'],
-            'rows.*.owner_email'    => ['required', 'email'],
+            'rows'                      => ['required', 'array', 'min:1'],
+            'rows.*.unit_number'        => ['required', 'string'],
+            'rows.*.section'            => ['sometimes', 'nullable', 'string'],
+            'rows.*.address'            => ['sometimes', 'nullable', 'string'],
+            'rows.*.occupancy_type'     => ['required', 'string', 'in:owner_occupied,tenant_occupied,vacant'],
+            'rows.*.owner_full_name'    => ['required', 'string'],
+            'rows.*.owner_email'        => ['required', 'email'],
         ];
     }
 

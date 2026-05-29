@@ -20,11 +20,17 @@ class CreateEstateRequest extends FormRequest
             'name'                 => ['required', 'string', 'max:255'],
             'type'                 => ['required', Rule::in(EstateType::values())],
             'address'              => ['nullable', 'string', 'max:500'],
-            'default_levy_amount'  => ['nullable', 'numeric', 'min:0'],
-            'default_rent_amount'  => ['nullable', 'numeric', 'min:0'],
+            'admin_fund_amount'    => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'reserve_fund_amount'  => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'csos_levy_amount'     => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
+            'default_rent_amount'  => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
             'billing_day'          => ['nullable', 'integer', 'min:1', 'max:28'],
-            'country'              => ['nullable', 'string', 'max:3'],
-            'currency'             => ['nullable', 'string', 'max:3'],
+            'payment_terms_days'   => ['nullable', 'integer', 'min:1', 'max:365'],
+            'country'                   => ['nullable', 'string', 'max:3'],
+            'currency'                  => ['nullable', 'string', 'max:3'],
+            'registration_number'       => ['nullable', 'string', 'max:100'],
+            'csos_registration_number'  => ['nullable', 'string', 'max:100'],
+            'income_tax_number'         => ['nullable', 'string', 'max:100'],
         ];
     }
 

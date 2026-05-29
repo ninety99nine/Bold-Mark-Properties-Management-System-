@@ -492,14 +492,19 @@ onUnmounted(() => {
             >
               <span class="text-base leading-none">{{ c.flag }}</span>
               <span class="flex-1">{{ c.name }}</span>
-              <svg
-                v-if="c.code === countryStore.activeCountry"
-                xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                class="w-3.5 h-3.5 text-primary shrink-0"
-              >
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
+              <span class="w-[20px] text-center text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
+                {{ c.estateCount }}
+              </span>
+              <span class="w-3.5 shrink-0 flex items-center justify-center">
+                <svg
+                  v-if="c.code === countryStore.activeCountry"
+                  xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                  class="w-3.5 h-3.5 text-primary"
+                >
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
             </button>
           </div>
         </Transition>
@@ -617,10 +622,10 @@ onUnmounted(() => {
           <!-- Name + role -->
           <div class="text-left">
             <p class="text-sm font-medium text-foreground leading-tight">
-              {{ auth.user?.name?.split(' ')[0] || 'Justin' }}
+              {{ auth.user?.name?.split(' ')[0] }}
             </p>
             <p class="text-[11px] text-muted-foreground leading-tight">
-              {{ auth.user?.role_name || 'Company Admin' }}
+              {{ auth.user?.roles?.[0]?.name?.replace(/-/g, ' ')?.replace(/\b\w/g, c => c.toUpperCase()) }}
             </p>
           </div>
           <!-- Chevron -->

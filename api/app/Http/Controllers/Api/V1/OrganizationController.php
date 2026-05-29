@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\FlushOrganizationJob;
+use App\Models\FlushJob;
 use App\Services\OrganizationService;
 use App\Http\Resources\OrganizationResource;
+use App\Http\Requests\Organization\FlushOrganizationRequest;
 use App\Http\Requests\Organization\ShowOrganizationRequest;
 use App\Http\Requests\Organization\UpdateOrganizationRequest;
 use Illuminate\Http\Request;
@@ -20,9 +23,6 @@ class OrganizationController extends Controller
 
     /**
      * Return the authenticated user's tenant (company settings).
-     *
-     * @param Request $request
-     * @return OrganizationResource
      */
     public function showCurrentTenant(Request $request): OrganizationResource
     {
@@ -33,14 +33,66 @@ class OrganizationController extends Controller
 
     /**
      * Update the authenticated user's tenant company settings and branding.
-     *
-     * @param UpdateOrganizationRequest $request
-     * @return array
      */
     public function updateCurrentTenant(UpdateOrganizationRequest $request): array
     {
         $tenant = $request->user()->organization;
 
         return $this->service->updateTenant($tenant, $request->validated());
+    }
+
+    /**
+     * Dispatch a background job to flush selected data categories.
+     * Returns a job ID for progress polling.
+     */
+    public function flushCurrentTenant(FlushOrganizationRequest $request): array
+    {
+        $tenant = $request->user()->organization;
+
+        $this->authorize('flush', $tenant);
+
+        $validated = $request->validated();
+
+        // Strip display-only targets that are handled internally (compliance_checklists via estates)
+        $targets = array_values(array_filter(
+            $validated['targets'],
+            fn($t) => $t !== 'compliance_checklists'
+        ));
+
+        $steps = FlushOrganizationJob::buildSteps($targets);
+
+        $flushJob = FlushJob::create([
+            'organization_id' => $tenant->id,
+            'status'          => 'dispatched',
+            'steps'           => $steps,
+        ]);
+
+        FlushOrganizationJob::dispatch(
+            $flushJob->id,
+            $tenant->id,
+            $targets,
+            $validated['keep_user_ids'] ?? [],
+        );
+
+        return [
+            'job_id'  => $flushJob->id,
+            'message' => 'Flush job dispatched.',
+        ];
+    }
+
+    /**
+     * Return the current progress of a flush job.
+     */
+    public function flushStatus(Request $request, string $jobId): array
+    {
+        $flushJob = FlushJob::where('id', $jobId)
+            ->where('organization_id', $request->user()->organization_id)
+            ->firstOrFail();
+
+        return [
+            'status' => $flushJob->status,
+            'steps'  => $flushJob->steps,
+            'error'  => $flushJob->error,
+        ];
     }
 }

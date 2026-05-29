@@ -26,7 +26,7 @@ class UpdateInvoiceRequest extends FormRequest
         return [
             'status'         => ['sometimes', Rule::in(InvoiceStatus::values())],
             'due_date'       => ['sometimes', 'date'],
-            'amount'         => ['sometimes', 'numeric', 'min:0'],
+            'amount'         => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
             'billing_period' => ['sometimes', 'date'],
         ];
     }

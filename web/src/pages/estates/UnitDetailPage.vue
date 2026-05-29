@@ -11,10 +11,12 @@ import AppInput      from '@/components/common/AppInput.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import { useBack } from '@/composables/useBack.js'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
 const countryStore = useCountryStore()
+const { success, error: toastError } = useToast()
 
 const estateId = computed(() => route.params.estateId)
 const unitId   = computed(() => route.params.unitId)
@@ -359,14 +361,14 @@ const chargeConfigDisplay = computed(() => {
   if (!unit.value) return []
   const items = []
   if (unit.value.effective_levy_amount) {
-    items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, configured: true })
+    items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, configured: true, deletable: false })
   }
   if (unit.value.occupancy_type === 'tenant_occupied' && unit.value.rent_amount) {
-    items.push({ name: 'Rent', amount: unit.value.rent_amount, configured: true })
+    items.push({ name: 'Rent', amount: unit.value.rent_amount, configured: true, deletable: false })
   }
   ;(unit.value.charge_configs ?? []).forEach(cfg => {
     if (cfg.is_active && cfg.charge_type) {
-      items.push({ name: cfg.charge_type.name, amount: cfg.amount, configured: true })
+      items.push({ name: cfg.charge_type.name, amount: cfg.amount, configured: true, id: cfg.id, deletable: true })
     }
   })
   return items
@@ -453,23 +455,23 @@ const filteredChargeConfigDisplay = computed(() => {
   const items = []
   if (activeTab.value === 'owner') {
     if (unit.value.effective_levy_amount) {
-      items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, configured: true })
+      items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, configured: true, deletable: false })
     }
     ;(unit.value.charge_configs ?? []).forEach(cfg => {
       if (cfg.is_active && cfg.charge_type) {
         const a = cfg.charge_type.applies_to
         if (a === 'owner' || a === 'either') {
-          items.push({ name: cfg.charge_type.name, amount: cfg.amount, configured: true })
+          items.push({ name: cfg.charge_type.name, amount: cfg.amount, configured: true, id: cfg.id, deletable: true })
         }
       }
     })
   } else if (activeTab.value === 'tenant') {
     if (unit.value.occupancy_type === 'tenant_occupied' && unit.value.rent_amount) {
-      items.push({ name: 'Rent', amount: unit.value.rent_amount, configured: true })
+      items.push({ name: 'Rent', amount: unit.value.rent_amount, configured: true, deletable: false })
     }
     ;(unit.value.charge_configs ?? []).forEach(cfg => {
       if (cfg.is_active && cfg.charge_type && cfg.charge_type.applies_to === 'tenant') {
-        items.push({ name: cfg.charge_type.name, amount: cfg.amount, configured: true })
+        items.push({ name: cfg.charge_type.name, amount: cfg.amount, configured: true, id: cfg.id, deletable: true })
       }
     })
   }
@@ -504,8 +506,11 @@ async function reinstateTenant(t) {
   reinstatingId.value = t.id
   try {
     await api.post(`/estates/${estateId.value}/units/${unitId.value}/tenants/${t.id}/reinstate`)
+    success('Tenant reinstated successfully.')
     await Promise.all([fetchAll(), fetchActivities()])
-  } catch { /* ignore */ } finally {
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
+  } finally {
     reinstatingId.value = null
   }
 }
@@ -583,9 +588,10 @@ async function saveEditMoveOut() {
       move_out_notes:  editMoveOutForm.value.notes  || null,
     })
     showEditMoveOut.value = false
+    success('Move-out details updated.')
     await Promise.all([fetchAll(), fetchActivities()])
-  } catch {
-    // silently ignore
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
   } finally {
     editMoveOutSaving.value = false
   }
@@ -602,9 +608,10 @@ async function confirmMoveOut() {
       move_out_notes:  moveOutForm.value.notes  || null,
     })
     showMoveOut.value = false
+    success('Tenant moved out successfully.')
     await Promise.all([fetchAll(), fetchActivities()])
-  } catch {
-    // silently ignore for now
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
   } finally {
     moveOutSaving.value = false
   }
@@ -623,9 +630,10 @@ async function confirmMoveIn() {
     })
     showMoveIn.value = false
     moveInForm.value = { name: '', email: '', phone: '', rent: '', leaseStart: '', leaseEnd: '' }
+    success('Tenant moved in successfully.')
     await Promise.all([fetchAll(), fetchActivities()])
-  } catch {
-    // silently ignore for now
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
   } finally {
     moveInSaving.value = false
   }
@@ -693,6 +701,7 @@ async function sendEmail() {
       body:            messageForm.value.body,
     })
     showSendMessage.value = false
+    success('Email sent successfully.')
   } catch (e) {
     messageError.value = e?.response?.data?.message ?? 'Failed to send email. Please try again.'
   } finally {
@@ -707,6 +716,8 @@ const leaseFileEdit   = ref(null)   // File selected in the edit modal
 const leaseFileEditInput = ref(null) // Hidden <input type="file"> ref
 const editForm        = ref({
   unitNumber:   '',
+  section:      '',
+  pq:           '',
   occupancy:    'owner_occupied',
   levyOverride: '',
   owner:        { name: '', email: '', phone: '', idNumber: '' },
@@ -720,8 +731,10 @@ function openEditUnit() {
   leaseFileEdit.value = null
   editForm.value = {
     unitNumber:   u.unit_number,
+    section:      u.section ?? '',
+    pq:           u.pq != null ? String(u.pq) : '',
     occupancy:    u.occupancy_type ?? 'owner_occupied',
-    levyOverride: u.levy_override  ?? '',
+    levyOverride: u.levy_override  != null ? String(u.levy_override) : '',
     owner: {
       name:     u.owner?.full_name ?? '',
       email:    u.owner?.email     ?? '',
@@ -758,8 +771,11 @@ async function uploadLeaseFromCard(event) {
       fd,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
+    success('Lease document uploaded.')
     await fetchAll()
-  } catch { /* ignore */ } finally {
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
+  } finally {
     leaseCardUploading.value = false
     event.target.value = ''
   }
@@ -772,8 +788,11 @@ async function deleteLeaseFromCard() {
     await api.delete(
       `/estates/${estateId.value}/units/${unitId.value}/tenants/${unit.value.current_tenant.id}/lease-document`
     )
+    success('Lease document removed.')
     await fetchAll()
-  } catch { /* ignore */ } finally {
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
+  } finally {
     leaseCardDeleting.value = false
   }
 }
@@ -849,9 +868,9 @@ function autoFillAmount(chargeTypeId) {
   if (!unit.value || !chargeTypeId) { createInvoiceForm.value.amount = ''; return }
   const ct = chargeTypes.value.find(c => c.id === chargeTypeId)
   if (!ct) { createInvoiceForm.value.amount = ''; return }
-  if (ct.code === 'LEVY') {
+  if (ct.type === 'admin_levy') {
     createInvoiceForm.value.amount = unit.value.effective_levy_amount ?? ''
-  } else if (ct.code === 'RENT') {
+  } else if (ct.type === 'rent') {
     createInvoiceForm.value.amount = unit.value.rent_amount ?? ''
   } else {
     const config = (unit.value.charge_configs ?? []).find(c => c.charge_type_id === chargeTypeId)
@@ -916,6 +935,7 @@ async function submitCreateInvoice() {
       due_date:       f.dueDate,
     })
     showCreateInvoice.value = false
+    success('Invoice created successfully.')
     await fetchAll()
   } catch (e) {
     createInvoiceError.value = e?.response?.data?.message ?? 'Failed to create invoice.'
@@ -931,6 +951,8 @@ async function saveEditUnit() {
       unit_number:    editForm.value.unitNumber   || undefined,
       occupancy_type: editForm.value.occupancy    || undefined,
       levy_override:  editForm.value.levyOverride !== '' ? Number(editForm.value.levyOverride) : undefined,
+      ...(editForm.value.section !== '' && { section: editForm.value.section || null }),
+      ...(editForm.value.pq     !== '' && { pq:      parseFloat(editForm.value.pq) || null }),
       owner: {
         full_name:  editForm.value.owner.name,
         email:      editForm.value.owner.email,
@@ -970,11 +992,149 @@ async function saveEditUnit() {
     }
 
     showEditUnit.value = false
+    success('Unit updated successfully.')
     await Promise.all([fetchAll(), fetchActivities()])
-  } catch {
-    // silently ignore for now
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Something went wrong.')
   } finally {
     editSaving.value = false
+  }
+}
+
+// ── Add/Remove Charge Config ──────────────────────────────────────────
+const showAddCharge    = ref(false)
+const addChargeSaving  = ref(false)
+const addChargeError   = ref(null)
+const addChargeTarget  = ref('owner') // 'owner' | 'tenant'
+const addChargeForm    = ref({ chargeTypeId: '', amount: '' })
+
+// Owner section: levy + owner + either configs
+const ownerChargesDisplay = computed(() => {
+  if (!unit.value) return []
+  const items = []
+  if (unit.value.effective_levy_amount) {
+    items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, deletable: false })
+  }
+  ;(unit.value.charge_configs ?? []).forEach(cfg => {
+    if (cfg.is_active && cfg.charge_type) {
+      const a = cfg.charge_type.applies_to
+      if (a === 'owner' || a === 'either') {
+        items.push({ name: cfg.charge_type.name, amount: cfg.amount, id: cfg.id, deletable: true })
+      }
+    }
+  })
+  return items
+})
+
+// Tenant section: rent + tenant-only configs
+const tenantChargesDisplay = computed(() => {
+  if (!unit.value) return []
+  const items = []
+  if (unit.value.occupancy_type === 'tenant_occupied' && unit.value.rent_amount) {
+    items.push({ name: 'Rent', amount: unit.value.rent_amount, deletable: false })
+  }
+  ;(unit.value.charge_configs ?? []).forEach(cfg => {
+    if (cfg.is_active && cfg.charge_type && cfg.charge_type.applies_to === 'tenant') {
+      items.push({ name: cfg.charge_type.name, amount: cfg.amount, id: cfg.id, deletable: true })
+    }
+  })
+  return items
+})
+
+const addChargeTypeOptions = computed(() => {
+  const assigned = new Set((unit.value?.charge_configs ?? []).map(c => c.charge_type_id))
+  return chargeTypes.value
+    .filter(ct => {
+      if (!ct.is_active || ct.is_system || !ct.is_recurring || assigned.has(ct.id)) return false
+      if (addChargeTarget.value === 'owner')  return ct.applies_to === 'owner' || ct.applies_to === 'either'
+      if (addChargeTarget.value === 'tenant') return ct.applies_to === 'tenant'
+      return false
+    })
+    .map(ct => ({ value: ct.id, label: ct.name }))
+})
+
+async function openAddCharge(target) {
+  addChargeTarget.value = target
+  addChargeError.value  = null
+  addChargeForm.value   = { chargeTypeId: '', amount: '' }
+  if (!chargeTypes.value.length) {
+    try {
+      const res = await api.get('/charge-types', { params: { is_active: true, _per_page: 100 } })
+      chargeTypes.value = res.data.data ?? []
+    } catch { /* ignore */ }
+  }
+  showAddCharge.value = true
+}
+
+async function submitAddCharge() {
+  addChargeError.value = null
+  const f = addChargeForm.value
+  if (!f.chargeTypeId || !f.amount) return
+  addChargeSaving.value = true
+  try {
+    await api.post(`/estates/${estateId.value}/units/${unitId.value}/charge-configs`, {
+      charge_type_id: f.chargeTypeId,
+      amount: parseFloat(f.amount),
+      is_active: true,
+    })
+    showAddCharge.value = false
+    success('Charge added.')
+    await fetchAll()
+  } catch (e) {
+    addChargeError.value = e?.response?.data?.message ?? 'Failed to add charge.'
+  } finally {
+    addChargeSaving.value = false
+  }
+}
+
+async function removeChargeConfig(configId) {
+  try {
+    await api.delete(`/estates/${estateId.value}/units/${unitId.value}/charge-configs/${configId}`)
+    success('Charge removed.')
+    await fetchAll()
+  } catch (e) {
+    toastError(e?.response?.data?.message ?? 'Failed to remove charge.')
+  }
+}
+
+// Quick-create a charge type inline from the Add Charge modal
+const showQuickCreate      = ref(false)
+const quickCreateSaving    = ref(false)
+const quickCreateError     = ref(null)
+const quickCreateForm      = ref({ name: '', description: '' })
+
+function openQuickCreate() {
+  quickCreateError.value           = null
+  quickCreateForm.value            = { name: '', description: '' }
+  addChargeForm.value.chargeTypeId = ''
+  showQuickCreate.value            = true
+}
+
+function cancelQuickCreate() {
+  showQuickCreate.value = false
+}
+
+async function submitQuickCreate() {
+  quickCreateError.value = null
+  if (!quickCreateForm.value.name.trim()) return
+  quickCreateSaving.value = true
+  try {
+    const res = await api.post('/charge-types', {
+      name:         quickCreateForm.value.name.trim(),
+      description:  quickCreateForm.value.description.trim() || null,
+      applies_to:   addChargeTarget.value,
+      is_recurring: true,
+      is_active:    true,
+    })
+    const created = res.data.data ?? res.data
+    chargeTypes.value.push(created)
+    addChargeForm.value.chargeTypeId = created.id
+    showQuickCreate.value = false
+    success(`"${created.name}" created and selected.`)
+  } catch (e) {
+    quickCreateError.value = e?.response?.data?.message ?? 'Failed to create charge type.'
+  } finally {
+    quickCreateSaving.value = false
   }
 }
 
@@ -1199,6 +1359,7 @@ async function submitAddPayment() {
     await api.post('/cashbook', fd)
     showAddPayment.value     = false
     proofOfPaymentFile.value = null
+    success('Payment recorded successfully.')
     await fetchAll()
   } catch (err) {
     addPaymentError.value = err?.response?.data?.message ?? 'Failed to record payment. Please try again.'
@@ -1606,22 +1767,97 @@ async function submitAddPayment() {
 
           <!-- Charge Configuration card -->
           <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div class="flex flex-col space-y-1.5 p-6 pb-2">
+            <div class="p-6 pb-3">
               <h3 class="tracking-tight font-body font-semibold text-base">Monthly Charges</h3>
             </div>
-            <div class="p-6 pt-0">
-              <div v-if="filteredChargeConfigDisplay.length > 0" class="space-y-2">
-                <div
-                  v-for="(charge, i) in filteredChargeConfigDisplay"
-                  :key="charge.name"
-                  class="flex items-center justify-between py-2"
-                  :class="i < filteredChargeConfigDisplay.length - 1 ? 'border-b border-border' : ''"
-                >
-                  <span class="text-sm text-foreground">{{ charge.name }}</span>
-                  <span class="text-sm font-medium text-foreground">{{ fmtAmount(charge.amount) }}</span>
+            <div class="px-6 pb-6 space-y-5">
+
+              <!-- Owner charges section (hidden in Tenant tab) -->
+              <div v-if="activeTab !== 'tenant'">
+                <div class="flex items-center justify-between mb-2">
+                  <p v-if="unit.occupancy_type === 'tenant_occupied' && activeTab === 'combined'" class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Owner</p>
+                  <span v-else />
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors"
+                    @click="openAddCharge('owner')"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add
+                  </button>
                 </div>
+                <div v-if="ownerChargesDisplay.length > 0">
+                  <div
+                    v-for="(charge, i) in ownerChargesDisplay"
+                    :key="charge.id ?? charge.name"
+                    class="group flex items-center justify-between py-2"
+                    :class="i < ownerChargesDisplay.length - 1 ? 'border-b border-border' : ''"
+                  >
+                    <span class="text-sm text-foreground">{{ charge.name }}</span>
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-sm font-medium text-foreground">{{ fmtAmount(charge.amount) }}</span>
+                      <button
+                        v-if="charge.deletable"
+                        type="button"
+                        class="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-all"
+                        title="Remove charge"
+                        @click="removeChargeConfig(charge.id)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                      <span v-else class="w-[21px]" />
+                    </div>
+                  </div>
+                </div>
+                <p v-else class="text-sm text-muted-foreground py-1">No owner charges</p>
               </div>
-              <p v-else class="text-sm text-muted-foreground text-center py-4">No charges configured</p>
+
+              <!-- Divider — only in combined tab on tenant-occupied unit -->
+              <div
+                v-if="unit.occupancy_type === 'tenant_occupied' && activeTab === 'combined'"
+                class="border-t border-border"
+              />
+
+              <!-- Tenant charges section (only for tenant-occupied, hidden in Owner tab) -->
+              <div v-if="unit.occupancy_type === 'tenant_occupied' && activeTab !== 'owner'">
+                <div class="flex items-center justify-between mb-2">
+                  <p v-if="activeTab === 'combined'" class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tenant</p>
+                  <span v-else />
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors"
+                    @click="openAddCharge('tenant')"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add
+                  </button>
+                </div>
+                <div v-if="tenantChargesDisplay.length > 0">
+                  <div
+                    v-for="(charge, i) in tenantChargesDisplay"
+                    :key="charge.id ?? charge.name"
+                    class="group flex items-center justify-between py-2"
+                    :class="i < tenantChargesDisplay.length - 1 ? 'border-b border-border' : ''"
+                  >
+                    <span class="text-sm text-foreground">{{ charge.name }}</span>
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-sm font-medium text-foreground">{{ fmtAmount(charge.amount) }}</span>
+                      <button
+                        v-if="charge.deletable"
+                        type="button"
+                        class="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-all"
+                        title="Remove charge"
+                        @click="removeChargeConfig(charge.id)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                      <span v-else class="w-[21px]" />
+                    </div>
+                  </div>
+                </div>
+                <p v-else class="text-sm text-muted-foreground py-1">No tenant charges</p>
+              </div>
+
             </div>
           </div>
 
@@ -2243,14 +2479,18 @@ async function submitAddPayment() {
     <AppModal :show="showEditUnit" :title="`Edit Unit ${editForm.unitNumber}`" size="md" @close="showEditUnit = false">
       <div class="space-y-4">
 
-        <!-- Unit Number + Occupancy Type -->
+        <!-- Unit Number + Section -->
         <div class="grid grid-cols-2 gap-4">
           <AppInput v-model="editForm.unitNumber" label="Unit Number" required />
-          <AppSelect v-model="editForm.occupancy" label="Occupancy Type" :options="occupancyOptions" required />
+          <AppInput v-model="editForm.section"    label="Section"     placeholder="e.g. A" />
         </div>
+        <AppSelect v-model="editForm.occupancy" label="Occupancy Type" :options="occupancyOptions" required />
 
-        <!-- Levy Override -->
-        <AppInput v-model="editForm.levyOverride" label="Levy Override" type="number" placeholder="Use default levy" />
+        <!-- PQ + Levy Override (sectional title / mixed only) -->
+        <div v-if="['sectional_title', 'mixed'].includes(estateType)" class="grid grid-cols-2 gap-4">
+          <AppInput v-model="editForm.pq"           label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" :min="0" :max="100" />
+          <AppInput v-model="editForm.levyOverride" label="Levy Override"             type="number" placeholder="Use default levy" :min="0" :max="9999999999.99" />
+        </div>
 
         <!-- Owner Details -->
         <div class="border-t border-border pt-4">
@@ -2291,7 +2531,7 @@ async function submitAddPayment() {
               <AppInput v-model="editForm.tenant.name"       label="Full Name"   size="sm" placeholder="Tenant name" required />
               <AppInput v-model="editForm.tenant.email"      label="Email"       size="sm" type="email" placeholder="Email address" required />
               <AppInput v-model="editForm.tenant.phone"      label="Phone"       size="sm" placeholder="+27 ..." />
-              <AppInput v-model="editForm.tenant.rent"       label="Rent Amount" size="sm" type="number" placeholder="Monthly rent" required />
+              <AppInput v-model="editForm.tenant.rent"       label="Rent Amount" size="sm" type="number" placeholder="Monthly rent" required :min="0" :max="9999999999.99" />
               <AppDatePicker v-model="editForm.tenant.leaseStart" label="Lease Start" placeholder="Select date..." required />
               <AppDatePicker v-model="editForm.tenant.leaseEnd" label="Lease End" placeholder="Select date..." />
             </div>
@@ -2401,6 +2641,8 @@ async function submitAddPayment() {
             type="number"
             placeholder="0.00"
             required
+            :min="0"
+            :max="9999999999.99"
           />
         </div>
 
@@ -2423,6 +2665,95 @@ async function submitAddPayment() {
           @click="submitCreateInvoice"
         >
           {{ createInvoiceSaving ? 'Creating…' : 'Create Invoice' }}
+        </AppButton>
+      </template>
+    </AppModal>
+
+    <!-- ── Add Charge Config modal ───────────────────────────────────── -->
+    <AppModal
+      :show="showAddCharge"
+      :title="addChargeTarget === 'owner' ? 'Add Owner Charge' : 'Add Tenant Charge'"
+      size="sm"
+      @close="showAddCharge = false; showQuickCreate = false"
+    >
+      <div class="space-y-4">
+
+        <AppAlert v-if="addChargeError" variant="danger">{{ addChargeError }}</AppAlert>
+
+        <!-- Charge type select + create link -->
+        <div>
+          <AppSelect
+            v-model="addChargeForm.chargeTypeId"
+            label="Charge Type"
+            :options="addChargeTypeOptions"
+            placeholder="Select charge type..."
+            required
+          />
+          <button
+            v-if="!showQuickCreate"
+            type="button"
+            class="mt-1.5 text-xs text-primary hover:underline"
+            @click="openQuickCreate"
+          >
+            + Create new charge type
+          </button>
+        </div>
+
+        <!-- Quick-create inline form -->
+        <div v-if="showQuickCreate" class="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Charge Type</p>
+          <AppAlert v-if="quickCreateError" variant="danger">{{ quickCreateError }}</AppAlert>
+          <AppInput
+            v-model="quickCreateForm.name"
+            label="Name"
+            placeholder="e.g. Cleaning Fee"
+            required
+          />
+          <AppInput
+            v-model="quickCreateForm.description"
+            label="Description"
+            type="textarea"
+            :rows="2"
+            placeholder="Optional description..."
+          />
+          <p class="text-xs text-muted-foreground">
+            Will be created as a recurring {{ addChargeTarget }} charge type.
+          </p>
+          <div class="flex gap-2 justify-end">
+            <AppButton variant="outline" size="sm" :disabled="quickCreateSaving" @click="cancelQuickCreate">Cancel</AppButton>
+            <AppButton
+              variant="primary"
+              size="sm"
+              :disabled="quickCreateSaving || !quickCreateForm.name.trim()"
+              :loading="quickCreateSaving"
+              @click="submitQuickCreate"
+            >
+              {{ quickCreateSaving ? 'Creating…' : 'Create & Select' }}
+            </AppButton>
+          </div>
+        </div>
+
+        <AppInput
+          v-model="addChargeForm.amount"
+          label="Amount"
+          type="number"
+          placeholder="0.00"
+          required
+          :min="0"
+          :max="9999999999.99"
+        />
+
+      </div>
+
+      <template #footer>
+        <AppButton variant="outline" :disabled="addChargeSaving" @click="showAddCharge = false; showQuickCreate = false">Cancel</AppButton>
+        <AppButton
+          variant="primary"
+          :disabled="addChargeSaving || !addChargeForm.chargeTypeId || !addChargeForm.amount"
+          :loading="addChargeSaving"
+          @click="submitAddCharge"
+        >
+          {{ addChargeSaving ? 'Adding…' : 'Add Charge' }}
         </AppButton>
       </template>
     </AppModal>
@@ -2511,7 +2842,7 @@ async function submitAddPayment() {
         <AppInput v-model="moveInForm.name"       label="Full Name"    placeholder="Tenant name" required />
         <AppInput v-model="moveInForm.email"      label="Email"        type="email" placeholder="Email address" required />
         <AppInput v-model="moveInForm.phone"      label="Phone"        placeholder="+27 ..." />
-        <AppInput v-model="moveInForm.rent"       label="Monthly Rent" type="number" placeholder="e.g. 9500" required />
+        <AppInput v-model="moveInForm.rent"       label="Monthly Rent" type="number" placeholder="e.g. 9500" required :min="0" :max="9999999999.99" />
         <AppDatePicker v-model="moveInForm.leaseStart" label="Lease Start" placeholder="Select date..." required />
         <AppDatePicker v-model="moveInForm.leaseEnd" label="Lease End" placeholder="Select date..." />
       </div>
@@ -2685,7 +3016,7 @@ async function submitAddPayment() {
         />
         <AppDatePicker v-model="addPaymentForm.date" label="Payment Date" placeholder="Select date" />
         <AppInput v-model="addPaymentForm.description" label="Description" placeholder="e.g. Water Recovery — April 2026" />
-        <AppInput v-model="addPaymentForm.amount" label="Amount" type="number" placeholder="0.00" />
+        <AppInput v-model="addPaymentForm.amount" label="Amount" type="number" placeholder="0.00" :min="0" :max="9999999999.99" />
         <AppInput
           v-model="addPaymentForm.notes"
           label="Notes (optional)"
@@ -2740,7 +3071,7 @@ async function submitAddPayment() {
           <span>{{ addPaymentForm.description }}</span>
         </div>
         <AppDatePicker v-model="addPaymentForm.date" label="Payment Date" placeholder="Select date" />
-        <AppInput v-model="addPaymentForm.amount" label="Amount" type="number" placeholder="0.00" />
+        <AppInput v-model="addPaymentForm.amount" label="Amount" type="number" placeholder="0.00" :min="0" :max="9999999999.99" />
         <!-- Proof of Payment -->
         <div>
           <label class="block text-sm font-medium text-foreground mb-1.5">

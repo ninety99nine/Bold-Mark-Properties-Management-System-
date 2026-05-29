@@ -60,7 +60,7 @@ class ChargeTypeService extends BaseService
         $user = Auth::user();
 
         $chargeType = ChargeType::create(array_merge(
-            collect($data)->only(['code', 'name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])->toArray(),
+            collect($data)->only(['name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])->toArray(),
             [
                 'organization_id' => $user->organization_id,
                 'is_system' => false,
@@ -130,7 +130,7 @@ class ChargeTypeService extends BaseService
                 ->toArray();
         } else {
             $updateData = collect($data)
-                ->only(['name', 'code', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])
+                ->only(['name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray();
         }

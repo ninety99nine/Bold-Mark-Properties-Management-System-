@@ -19,11 +19,18 @@ class UpdateEstateRequest extends FormRequest
             'name'                 => ['sometimes', 'string', 'max:255'],
             'type'                 => ['sometimes', Rule::in(EstateType::values())],
             'address'              => ['sometimes', 'nullable', 'string', 'max:500'],
-            'default_levy_amount'  => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'default_rent_amount'  => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'admin_fund_amount'    => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'reserve_fund_amount'  => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'csos_levy_amount'     => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:99999999.99'],
+            'default_rent_amount'  => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
             'billing_day'          => ['sometimes', 'nullable', 'integer', 'min:1', 'max:28'],
-            'country'              => ['sometimes', 'nullable', 'string', 'max:3'],
-            'currency'             => ['sometimes', 'nullable', 'string', 'max:3'],
+            'payment_terms_days'   => ['sometimes', 'integer', 'min:1', 'max:365'],
+            'billing_paused'       => ['sometimes', 'boolean'],
+            'country'                   => ['sometimes', 'nullable', 'string', 'max:3'],
+            'currency'                  => ['sometimes', 'nullable', 'string', 'max:3'],
+            'registration_number'       => ['sometimes', 'nullable', 'string', 'max:100'],
+            'csos_registration_number'  => ['sometimes', 'nullable', 'string', 'max:100'],
+            'income_tax_number'         => ['sometimes', 'nullable', 'string', 'max:100'],
         ];
     }
 

@@ -25,9 +25,13 @@ class Estate extends Model
     protected $casts = [
         'type'                 => EstateType::class,
         'is_active'            => 'boolean',
-        'default_levy_amount'  => 'float',
+        'admin_fund_amount'    => 'float',
+        'reserve_fund_amount'  => 'float',
+        'csos_levy_amount'     => 'float',
         'default_rent_amount'  => 'float',
         'billing_day'          => 'integer',
+        'payment_terms_days'   => 'integer',
+        'billing_paused'       => 'boolean',
     ];
 
     /**
@@ -40,11 +44,18 @@ class Estate extends Model
         'address',
         'type',
         'is_active',
-        'default_levy_amount',
+        'admin_fund_amount',
+        'reserve_fund_amount',
+        'csos_levy_amount',
         'default_rent_amount',
         'billing_day',
+        'payment_terms_days',
+        'billing_paused',
         'country',
         'currency',
+        'registration_number',
+        'csos_registration_number',
+        'income_tax_number',
         'organization_id',
     ];
 

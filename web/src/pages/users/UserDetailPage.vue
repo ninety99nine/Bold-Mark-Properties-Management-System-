@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/composables/useApi.js'
+import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge  from '@/components/common/AppBadge.vue'
 import AppModal  from '@/components/common/AppModal.vue'
@@ -65,9 +66,7 @@ const resetSent    = ref(false)
 const loginLogs   = ref([])
 const logsLoading = ref(false)
 
-// Toast
-const toastMessage = ref('')
-const toastType    = ref('success')
+const { success: toastSuccess, error: toastError } = useToast()
 
 // ─── Computed ─────────────────────────────────────────────────────────────────
 const roleSlug = computed(() => user.value?.roles?.[0]?.name ?? '')
@@ -138,9 +137,8 @@ function parseAgent(ua) {
 }
 
 function showToast(msg, type = 'success') {
-  toastMessage.value = msg
-  toastType.value    = type
-  setTimeout(() => { toastMessage.value = '' }, 4000)
+  if (type === 'error') toastError(msg)
+  else toastSuccess(msg)
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -247,23 +245,6 @@ onMounted(() => { loadUser(); loadLoginLogs() })
 
 <template>
   <div class="space-y-6 pb-8">
-
-    <!-- ── Toast ──────────────────────────────────────────────────────────── -->
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 -translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2"
-    >
-      <div
-        v-if="toastMessage"
-        :class="['fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-lg shadow-lg text-sm font-medium', toastType === 'error' ? 'bg-danger text-white' : 'bg-success text-white']"
-      >
-        {{ toastMessage }}
-      </div>
-    </Transition>
 
     <!-- ── Loading skeleton ───────────────────────────────────────────────── -->
     <template v-if="loading">

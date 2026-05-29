@@ -5,7 +5,7 @@ namespace App\Enums;
 enum ChargeTypeAppliesTo: string
 {
     case OWNER  = 'owner';
-    case TENANT = 'organization';
+    case TENANT = 'tenant';
     case EITHER = 'either';
 
     /**

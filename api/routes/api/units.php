@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\UnitController;
+use App\Http\Controllers\Api\V1\UnitPqController;
 
 Route::prefix('estates/{estate}/units')
     ->controller(UnitController::class)
@@ -16,6 +17,11 @@ Route::prefix('estates/{estate}/units')
         Route::get('/bulk-import/template', 'downloadImportTemplate')->name('bulk.import.template');
         Route::post('/bulk-import/parse', 'parseImportFile')->name('bulk.import.parse');
         Route::post('/bulk-import', 'bulkImportUnits')->name('bulk.import.units');
+
+        // PQ (Participation Quota) batch export/import
+        Route::get('/pq/export', [UnitPqController::class, 'export'])->name('pq.export');
+        Route::post('/pq/parse', [UnitPqController::class, 'parse'])->name('pq.parse');
+        Route::post('/pq/import', [UnitPqController::class, 'import'])->name('pq.import');
 
         // Explicit route model binding applied: AppServiceProvider.php
         Route::prefix('{unit}')->group(function () {

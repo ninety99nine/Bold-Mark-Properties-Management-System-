@@ -11,11 +11,13 @@ import AppInvoiceSelect from '@/components/common/AppInvoiceSelect.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
 import { useBack } from '@/composables/useBack.js'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
 const { goBack } = useBack({ name: 'age-analysis' })
 const countryStore = useCountryStore()
+const { success } = useToast()
 
 // ── State ─────────────────────────────────────────────────────────────
 const loading         = ref(true)
@@ -184,7 +186,7 @@ const ownerUnits = computed(() => {
     unitNumber:  u.unit_number,
     estateId:    u.estate_id,
     estateName:  u.estate?.name ?? '',
-    monthlyLevy: u.levy_override ?? u.estate?.default_levy_amount ?? null,
+    monthlyLevy: u.levy_override ?? u.estate?.admin_fund_amount ?? null,
     occupancy:   u.occupancy_type,
   }]
 })
@@ -335,6 +337,7 @@ async function savePayment() {
     await api.post('/cashbook', fd)
     showAddPayment.value     = false
     proofOfPaymentFile.value = null
+    success('Payment recorded successfully.')
     await fetchOwner()
   } catch (err) {
     paymentError2.value = err?.response?.data?.message ?? 'Failed to record payment. Please try again.'
@@ -428,6 +431,7 @@ async function saveEditOwner() {
     const { data } = await api.put(`/owners/${route.params.ownerId}`, editOwnerForm.value)
     owner.value = { ...owner.value, ...(data.data ?? data) }
     showEditOwner.value = false
+    success('Owner details updated.')
   } catch (err) {
     editOwnerError.value = err?.response?.data?.message ?? 'Failed to save changes. Please try again.'
   } finally {
@@ -963,7 +967,7 @@ async function saveEditOwner() {
         <AppDatePicker v-model="paymentForm.date" placeholder="Select date..." />
       </div>
       <AppInput v-model="paymentForm.description" label="Description" placeholder="e.g. EFT – M NDABA LEVY APR" />
-      <AppInput v-model="paymentForm.amount" label="Amount (R)" type="number" placeholder="0.00" />
+      <AppInput v-model="paymentForm.amount" label="Amount (R)" type="number" placeholder="0.00" :min="0" :max="9999999999.99" />
 
       <div>
         <label class="text-sm font-medium text-foreground mb-1.5 block">Allocate to Invoice</label>

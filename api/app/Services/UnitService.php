@@ -44,7 +44,7 @@ class UnitService extends BaseService
     public function showUnits(Estate $estate, array $data): UnitResources
     {
         $query = Unit::where('units.estate_id', $estate->id)
-            ->with(['owner', 'currentTenant'])
+            ->with(['owner', 'currentTenant', 'estate'])
             ->withCount(['tenants as total_tenants_count']);
 
         // --- Filters ---
@@ -101,7 +101,7 @@ class UnitService extends BaseService
 
         // Default sort when no _sort param is sent
         if (!request()->has('_sort')) {
-            $query->orderBy('units.unit_number', 'asc');
+            $query->orderByRaw("CASE WHEN REGEXP_REPLACE(units.unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(units.unit_number, '[^0-9]', ''), '') AS UNSIGNED), units.unit_number");
         }
 
         // Run the filter/search/sort pipeline manually so we can snapshot filtered
@@ -172,7 +172,7 @@ class UnitService extends BaseService
         }
 
         if (!$this->request->has('_sort')) {
-            $query->orderBy('units.unit_number', 'asc');
+            $query->orderByRaw("CASE WHEN REGEXP_REPLACE(units.unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(units.unit_number, '[^0-9]', ''), '') AS UNSIGNED), units.unit_number");
         }
 
         $this->setQuery($query);
@@ -364,7 +364,9 @@ class UnitService extends BaseService
 
         switch ($field) {
             case 'unit_number':
-                $this->query->orderBy('units.unit_number', $direction);
+                $this->query->orderByRaw(
+                    "CASE WHEN REGEXP_REPLACE(units.unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(units.unit_number, '[^0-9]', ''), '') AS UNSIGNED) {$direction}, units.unit_number {$direction}"
+                );
                 break;
 
             case 'owner_name':
@@ -403,7 +405,7 @@ class UnitService extends BaseService
         $user = Auth::user();
 
         $unitData = collect($data)
-            ->only(['unit_number', 'address', 'occupancy_type', 'status', 'levy_override', 'rent_amount'])
+            ->only(['unit_number', 'section', 'address', 'pq', 'occupancy_type', 'status', 'levy_override', 'rent_amount'])
             ->toArray();
 
         $unit = Unit::create(array_merge($unitData, [
@@ -524,7 +526,9 @@ class UnitService extends BaseService
 
         $beforeUnit = [
             'unit_number'    => $unit->unit_number,
+            'section'        => $unit->section,
             'occupancy_type' => $unit->occupancy_type?->value ?? (string) $unit->occupancy_type,
+            'pq'             => $unit->pq,
             'levy_override'  => $unit->levy_override,
             'rent_amount'    => $unit->rent_amount,
             'address'        => $unit->address,
@@ -548,7 +552,7 @@ class UnitService extends BaseService
 
         // ── Apply updates ────────────────────────────────────────────────
         $unitData = collect($data)
-            ->only(['unit_number', 'address', 'occupancy_type', 'status', 'levy_override', 'rent_amount'])
+            ->only(['unit_number', 'section', 'address', 'pq', 'occupancy_type', 'status', 'levy_override', 'rent_amount'])
             ->filter(fn($v) => !is_null($v))
             ->toArray();
 
@@ -618,7 +622,9 @@ class UnitService extends BaseService
      */
     private const UNIT_FIELD_LABELS = [
         'unit_number'    => 'Unit Number',
+        'section'        => 'Section',
         'occupancy_type' => 'Occupancy Type',
+        'pq'             => 'PQ',
         'levy_override'  => 'Levy Override',
         'rent_amount'    => 'Rent Amount',
         'address'        => 'Address',
@@ -707,7 +713,9 @@ class UnitService extends BaseService
         // ── Unit fields diff ─────────────────────────────────────────────
         $afterUnit = [
             'unit_number'    => $unit->unit_number,
+            'section'        => $unit->section,
             'occupancy_type' => $unit->occupancy_type?->value ?? (string) $unit->occupancy_type,
+            'pq'             => $unit->pq,
             'levy_override'  => $unit->levy_override,
             'rent_amount'    => $unit->rent_amount,
             'address'        => $unit->address,
@@ -848,6 +856,8 @@ class UnitService extends BaseService
     {
         $headers = [
             'unit_number',
+            'section',
+            'address',
             'occupancy_type',
             'levy_override',
             'rent_amount',
@@ -865,6 +875,8 @@ class UnitService extends BaseService
 
         $example = [
             'A01',
+            'A',
+            '123 Main Street, Gaborone',
             'owner_occupied',
             '',
             '',
@@ -1082,7 +1094,8 @@ class UnitService extends BaseService
                 'estate_id'      => $estate->id,
                 'organization_id'      => $tenantId,
                 'unit_number'    => $unitNumber,
-                'address'        => trim($row['address'] ?? ''),
+                'section'        => trim($row['section'] ?? '') ?: null,
+                'address'        => trim($row['address'] ?? '') ?: null,
                 'occupancy_type' => $occupancyType,
                 'status'         => 'active',
                 'levy_override'  => ($row['levy_override'] ?? '') !== '' ? (float) $row['levy_override'] : null,

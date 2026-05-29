@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import AppModal        from '@/components/common/AppModal.vue'
 import AppInput        from '@/components/common/AppInput.vue'
 import AppButton       from '@/components/common/AppButton.vue'
@@ -12,6 +13,7 @@ import { useCountryStore } from '@/stores/country'
 const router = useRouter()
 const route  = useRoute()
 const countryStore = useCountryStore()
+const { success, error: toastError } = useToast()
 
 // ── Helpers ───────────────────────────────────────────────────────────
 function formatCurrency(amount) {
@@ -32,10 +34,10 @@ function typeConfig(type) {
 
 function estateFinancials(estate) {
   const items = []
-  const { type, default_levy_amount, default_rent_amount, monthly_revenue } = estate
+  const { type, admin_fund_amount, default_rent_amount, monthly_revenue } = estate
 
   if (type === 'sectional_title' || type === 'mixed') {
-    if (default_levy_amount) items.push({ label: 'Default Levy', value: formatCurrency(default_levy_amount) })
+    if (admin_fund_amount) items.push({ label: 'Admin Fund', value: formatCurrency(admin_fund_amount) })
   }
   if (type !== 'sectional_title') {
     if (default_rent_amount) items.push({ label: 'Default Rent', value: formatCurrency(default_rent_amount) })
@@ -218,14 +220,19 @@ watch(sentinelRef, (el) => {
 const showAddModal = ref(false)
 const addLoading = ref(false)
 const addError = ref('')
+const addStep = ref(1)
 
 const addForm = ref({
   name: '',
   type: '',
   address: '',
   country: '',
-  defaultLevy: '',
+  adminFund: '',
+  reserveFund: '',
+  csosLevy: '',
   defaultRent: '',
+  billingDay: '1',
+  paymentTermsDays: '30',
 })
 
 const estateTypeOptions = [
@@ -250,8 +257,14 @@ const addFormCurrencySymbol = computed(() => {
 })
 
 function resetAddForm() {
-  addForm.value = { name: '', type: '', address: '', country: countryStore.activeCountry || '', defaultLevy: '', defaultRent: '' }
+  addForm.value = { name: '', type: '', address: '', country: countryStore.activeCountry || '', adminFund: '', reserveFund: '', csosLevy: '', defaultRent: '', billingDay: '1', paymentTermsDays: '30' }
   addError.value = ''
+  addStep.value = 1
+}
+
+function goToStep2() {
+  if (!addForm.value.name || !addForm.value.type || !addForm.value.country) return
+  addStep.value = 2
 }
 
 async function submitAddEstate() {
@@ -263,9 +276,13 @@ async function submitAddEstate() {
       name:    addForm.value.name,
       type:    addForm.value.type,
     }
-    if (addForm.value.address)     payload.address              = addForm.value.address
-    if (addForm.value.defaultLevy) payload.default_levy_amount = Number(addForm.value.defaultLevy)
-    if (addForm.value.defaultRent) payload.default_rent_amount = Number(addForm.value.defaultRent)
+    if (addForm.value.address)          payload.address              = addForm.value.address
+    if (addForm.value.adminFund)        payload.admin_fund_amount    = Number(addForm.value.adminFund)
+    if (addForm.value.reserveFund)      payload.reserve_fund_amount  = Number(addForm.value.reserveFund)
+    if (addForm.value.csosLevy)         payload.csos_levy_amount     = Number(addForm.value.csosLevy)
+    if (addForm.value.defaultRent)      payload.default_rent_amount  = Number(addForm.value.defaultRent)
+    if (addForm.value.billingDay)       payload.billing_day          = Number(addForm.value.billingDay)
+    if (addForm.value.paymentTermsDays) payload.payment_terms_days   = Number(addForm.value.paymentTermsDays)
     // Set country + auto-derive currency
     const estateCountry = addForm.value.country || countryStore.activeCountry
     if (estateCountry) {
@@ -278,6 +295,7 @@ async function submitAddEstate() {
     resetAddForm()
     currentPage.value = 1
     await Promise.all([fetchEstates(true), fetchSummary()])
+    success('Estate created successfully.')
   } catch (e) {
     addError.value = e.response?.data?.message || 'Failed to create estate. Please try again.'
   } finally {
@@ -518,6 +536,14 @@ onUnmounted(() => {
                 <span class="text-sm font-medium text-foreground">{{ fin.value }}</span>
               </div>
             </div>
+
+            <!-- Billing paused indicator -->
+            <div v-if="estate.billing_paused && estate.billing_day" class="mt-3 pt-3 border-t border-border flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0">
+                <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+              </svg>
+              <span class="text-[11px] font-medium text-accent">Billing paused</span>
+            </div>
           </div>
         </div>
 
@@ -588,44 +614,97 @@ onUnmounted(() => {
     <!-- ── Add New Estate modal ───────────────────────────────────── -->
     <AppModal title="Add New Estate" size="md" :show="showAddModal" @close="showAddModal = false; resetAddForm()">
 
-      <div class="space-y-4">
+      <!-- Step indicator -->
+      <div class="flex items-center gap-3 mb-5 pb-5 border-b border-border">
+        <div class="flex items-center gap-2">
+          <span :class="['w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors', addStep === 1 ? 'bg-primary text-white' : 'bg-success text-white']">
+            <svg v-if="addStep > 1" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span v-else>1</span>
+          </span>
+          <span :class="['text-xs font-medium', addStep === 1 ? 'text-foreground' : 'text-muted-foreground']">Basic Info</span>
+        </div>
+        <div class="flex-1 h-px bg-border"></div>
+        <div class="flex items-center gap-2">
+          <span :class="['w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors', addStep === 2 ? 'bg-primary text-white' : 'bg-muted text-muted-foreground']">2</span>
+          <span :class="['text-xs font-medium', addStep === 2 ? 'text-foreground' : 'text-muted-foreground']">Financial Settings</span>
+        </div>
+      </div>
 
-        <AppInput
-          label="Estate Name"
-          v-model="addForm.name"
-          placeholder="e.g. Crystal Mews Body Corporate"
-          required
-        />
+      <!-- Step 1: Basic Info -->
+      <div v-if="addStep === 1" class="space-y-4">
 
-        <AppSelect
-          v-model="addForm.type"
-          label="Estate Type"
-          :options="estateTypeOptions"
-          placeholder="Select type..."
-          required
-        />
+        <div class="grid grid-cols-2 gap-4">
+          <div class="col-span-2">
+            <AppInput
+              label="Estate Name"
+              v-model="addForm.name"
+              placeholder="e.g. Crystal Mews Body Corporate"
+              required
+            />
+          </div>
+          <AppSelect
+            v-model="addForm.type"
+            label="Estate Type"
+            :options="estateTypeOptions"
+            placeholder="Select type..."
+            required
+          />
+          <AppSelect
+            v-model="addForm.country"
+            label="Country"
+            :options="countryOptions"
+            placeholder="Select country..."
+            required
+          />
+          <div class="col-span-2">
+            <AppInput
+              label="Address"
+              v-model="addForm.address"
+              placeholder="Full street address"
+            />
+          </div>
+        </div>
 
-        <AppInput
-          label="Address"
-          v-model="addForm.address"
-          placeholder="Full street address"
-        />
+      </div>
 
-        <AppSelect
-          v-model="addForm.country"
-          label="Country"
-          :options="countryOptions"
-          placeholder="Select country..."
-        />
+      <!-- Step 2: Financial Settings -->
+      <div v-if="addStep === 2" class="space-y-4">
 
-        <AppInput
-          v-if="showLevy"
-          label="Default Levy Amount"
-          type="number"
-          v-model="addForm.defaultLevy"
-          placeholder="0.00"
-          :prefix="addFormCurrencySymbol"
-        />
+        <template v-if="showLevy">
+          <div class="grid grid-cols-2 gap-4">
+            <AppInput
+              label="Admin Fund Budget"
+              type="number"
+              v-model="addForm.adminFund"
+              placeholder="0.00"
+              :prefix="addFormCurrencySymbol"
+              hint="Monthly admin levy budget"
+              :min="0"
+              :max="9999999999.99"
+            />
+            <AppInput
+              label="Reserve Fund Budget"
+              type="number"
+              v-model="addForm.reserveFund"
+              placeholder="0.00"
+              :prefix="addFormCurrencySymbol"
+              hint="Monthly reserve fund (STSM Act)"
+              :min="0"
+              :max="9999999999.99"
+            />
+          </div>
+          <AppInput
+            v-if="addForm.country === 'ZA'"
+            label="CSOS Levy (per unit)"
+            type="number"
+            v-model="addForm.csosLevy"
+            placeholder="0.00"
+            :prefix="addFormCurrencySymbol"
+            hint="Flat monthly CSOS government levy charged per unit"
+            :min="0"
+            :max="99999999.99"
+          />
+        </template>
 
         <AppInput
           v-if="showRent"
@@ -634,7 +713,36 @@ onUnmounted(() => {
           v-model="addForm.defaultRent"
           placeholder="0.00"
           :prefix="addFormCurrencySymbol"
+          hint="Default monthly rent applied to new units"
+          :min="0"
+          :max="9999999999.99"
         />
+
+        <div v-if="!showLevy && !showRent" class="py-2 text-center text-sm text-muted-foreground">
+          No levy or rent amounts needed for this estate type.
+        </div>
+
+        <!-- Billing settings — always shown -->
+        <div class="grid grid-cols-2 gap-4 pt-1">
+          <AppInput
+            label="Billing Day"
+            type="number"
+            v-model="addForm.billingDay"
+            placeholder="1"
+            :min="1"
+            :max="28"
+            hint="Day of month invoices are generated (1–28)"
+          />
+          <AppInput
+            label="Payment Terms (days)"
+            type="number"
+            v-model="addForm.paymentTermsDays"
+            placeholder="30"
+            :min="1"
+            :max="365"
+            hint="Days before invoice becomes overdue"
+          />
+        </div>
 
         <!-- Error -->
         <p v-if="addError" class="text-sm text-danger">{{ addError }}</p>
@@ -642,10 +750,22 @@ onUnmounted(() => {
       </div>
 
       <template #footer>
-        <AppButton variant="outline" @click="showAddModal = false; resetAddForm()">Cancel</AppButton>
-        <AppButton variant="primary" :disabled="addLoading || !addForm.name || !addForm.type" @click="submitAddEstate">
-          {{ addLoading ? 'Creating…' : 'Create Estate' }}
-        </AppButton>
+        <template v-if="addStep === 1">
+          <AppButton variant="outline" @click="showAddModal = false; resetAddForm()">Cancel</AppButton>
+          <AppButton variant="primary" :disabled="!addForm.name || !addForm.type || !addForm.country" @click="goToStep2">
+            Next
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </AppButton>
+        </template>
+        <template v-else>
+          <AppButton variant="outline" @click="addStep = 1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            Back
+          </AppButton>
+          <AppButton variant="primary" :disabled="addLoading" @click="submitAddEstate">
+            {{ addLoading ? 'Creating…' : 'Create Estate' }}
+          </AppButton>
+        </template>
       </template>
 
     </AppModal>

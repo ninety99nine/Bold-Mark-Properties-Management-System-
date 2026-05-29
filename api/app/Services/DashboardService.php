@@ -111,7 +111,7 @@ class DashboardService
         $recentInvoices = Invoice::where('invoices.organization_id', $tenantId)
             ->when($country, fn($q) => $q->whereHas('unit.estate', fn($eq) => $eq->where('country', $country)))
             ->with(['unit', 'chargeType', 'billedToOwner', 'billedToUnitTenant'])
-            ->latest()
+            ->latest('id')
             ->take(10)
             ->get()
             ->map(fn($invoice) => [
@@ -142,6 +142,7 @@ class DashboardService
                 'units as tenant_occupied_count' => fn($q) => $q->where('occupancy_type', 'tenant_occupied'),
                 'units as vacant_count'          => fn($q) => $q->where('occupancy_type', 'vacant'),
             ])
+            ->latest()
             ->get()
             ->map(fn($estate) => [
                 'id'                    => $estate->id,

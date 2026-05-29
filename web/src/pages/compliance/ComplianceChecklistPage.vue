@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/composables/useApi'
 import { useCountryStore } from '@/stores/country'
 import { useBack } from '@/composables/useBack'
+import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import AppModal from '@/components/common/AppModal.vue'
@@ -16,6 +17,7 @@ const route = useRoute()
 const router = useRouter()
 const countryStore = useCountryStore()
 const { goBack } = useBack('/compliance')
+const { success } = useToast()
 
 // ── State ────────────────────────────────────────────────────────────
 const loading = ref(true)
@@ -342,6 +344,7 @@ async function markStatus(item, status) {
 
   try {
     await api.put(`/compliance/checklists/${checklist.value.id}/items/${item.id}`, { status })
+    success('Item status updated.')
     fetchChecklist()
   } catch {
     // silent
@@ -356,6 +359,7 @@ async function confirmComplete() {
       completion_notes: completionNotes.value || null,
     })
     showCompleteModal.value = false
+    success('Item marked as completed.')
     fetchChecklist()
   } catch {
     // silent
@@ -393,6 +397,7 @@ async function saveItem() {
       await api.post(`/compliance/checklists/${checklist.value.id}/items`, itemForm.value)
     }
     showItemModal.value = false
+    success(editingItem.value ? 'Item updated.' : 'Item added.')
     fetchChecklist()
   } catch {
     // silent
@@ -407,6 +412,7 @@ function deleteItem(item) {
     body: `"${item.name}" will be permanently removed from this checklist.`,
     onConfirm: async () => {
       await api.delete(`/compliance/checklists/${checklist.value.id}/items/${item.id}`)
+      success('Item deleted.')
       fetchChecklist()
     },
   })
@@ -440,6 +446,7 @@ async function uploadAttachments(item, files) {
     const form = new FormData()
     files.forEach(f => form.append('attachments[]', f))
     await api.post(`/compliance/checklists/${checklist.value.id}/items/${item.id}/attachments`, form)
+    success('Attachment uploaded.')
     fetchChecklist()
   } catch {
     // silent
@@ -474,6 +481,7 @@ function deleteAttachment(item, attachment) {
     confirmLabel: 'Remove',
     onConfirm: async () => {
       await api.delete(`/compliance/checklists/${checklist.value.id}/items/${item.id}/attachments/${attachment.id}`)
+      success('Attachment removed.')
       fetchChecklist()
     },
   })

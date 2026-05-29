@@ -12,12 +12,18 @@ const tenant = useOrganizationStore()
 const router = useRouter()
 const route = useRoute()
 
-const email = ref('')
-const password = ref('')
+const email       = ref('')
+const password    = ref('')
 const showPassword = ref(false)
-const error = ref('')
-const loading = ref(false)
-const mounted = ref(false)
+const error       = ref('')
+const loading     = ref(false)
+const mounted     = ref(false)
+
+// 2FA challenge state
+const twoFactorCode    = ref('')
+const twoFaError       = ref('')
+const twoFaLoading     = ref(false)
+const showTwoFa        = ref(false)
 
 onMounted(() => {
   requestAnimationFrame(() => {
@@ -26,16 +32,40 @@ onMounted(() => {
 })
 
 async function handleLogin() {
-  error.value = ''
+  error.value   = ''
   loading.value = true
   try {
-    await auth.login(email.value, password.value)
-    router.push(route.query.redirect || '/dashboard')
+    const result = await auth.login(email.value, password.value)
+    if (result.two_factor_required) {
+      showTwoFa.value = true
+    } else {
+      router.push(route.query.redirect || '/dashboard')
+    }
   } catch (e) {
     error.value = e.response?.data?.message || 'The email or password you entered is incorrect.'
   } finally {
     loading.value = false
   }
+}
+
+async function handleTwoFactor() {
+  twoFaError.value   = ''
+  twoFaLoading.value = true
+  try {
+    await auth.loginWithTwoFactor(twoFactorCode.value)
+    router.push(route.query.redirect || '/dashboard')
+  } catch (e) {
+    twoFaError.value = e.response?.data?.message || 'Invalid code. Please try again.'
+  } finally {
+    twoFaLoading.value = false
+  }
+}
+
+function cancelTwoFactor() {
+  showTwoFa.value   = false
+  twoFactorCode.value = ''
+  twoFaError.value    = ''
+  auth.cancelTwoFactor()
 }
 </script>
 
@@ -110,8 +140,36 @@ async function handleLogin() {
           <p class="text-muted-fg text-sm">Sign in to your management portal</p>
         </div>
 
+        <!-- 2FA Challenge -->
+        <div v-if="showTwoFa" class="space-y-5">
+          <div class="p-4 rounded-lg border bg-amber-50 border-amber-200">
+            <p class="text-sm font-semibold text-amber-900 mb-1">Two-Factor Authentication</p>
+            <p class="text-xs text-amber-700">Open your authenticator app and enter the 6-digit code.</p>
+          </div>
+          <AppInput
+            v-model="twoFactorCode"
+            label="Authentication Code"
+            placeholder="000000"
+            inputmode="numeric"
+            maxlength="6"
+            autofocus
+          />
+          <Transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0 -translate-y-1" enter-to-class="opacity-100 translate-y-0">
+            <div v-if="twoFaError" class="flex items-start gap-2.5 px-4 py-3 rounded border text-sm" style="background-color:#FFF5F5;border-color:#F75A68;color:#C01C2C;">
+              <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              {{ twoFaError }}
+            </div>
+          </Transition>
+          <AppButton type="button" variant="primary" size="lg" :loading="twoFaLoading" full @click="handleTwoFactor">
+            {{ twoFaLoading ? 'Verifying…' : 'Verify Code' }}
+          </AppButton>
+          <button type="button" class="w-full text-center text-xs text-muted-fg hover:underline mt-2" @click="cancelTwoFactor">
+            ← Back to login
+          </button>
+        </div>
+
         <!-- Form -->
-        <form @submit.prevent="handleLogin" class="space-y-5">
+        <form v-if="!showTwoFa" @submit.prevent="handleLogin" class="space-y-5">
           <AppInput
             id="email"
             v-model="email"

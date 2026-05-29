@@ -655,6 +655,8 @@ onMounted(fetchEvaluation)
                   :prefix="cond.type === 'overdue_amount' ? countryStore.currencySymbol : undefined"
                   :suffix="cond.type === 'arrears_rate' ? '%' : undefined"
                   placeholder="0"
+                  :min="0"
+                  :max="cond.type === 'arrears_rate' ? 100 : 9999999999.99"
                 />
               </div>
               <AppButton

@@ -11,10 +11,12 @@ import AppDatePicker    from '@/components/common/AppDatePicker.vue'
 import AppBadge        from '@/components/common/AppBadge.vue'
 import { useBack } from '@/composables/useBack.js'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
 const countryStore = useCountryStore()
+const { success } = useToast()
 
 const estateId = computed(() => route.params.estateId)
 const unitId   = computed(() => route.params.unitId)
@@ -326,6 +328,7 @@ async function savePayment() {
     await api.post('/cashbook', fd)
     showAddPayment.value     = false
     proofOfPaymentFile.value = null
+    success('Payment recorded successfully.')
     await fetchData()
   } catch (err) {
     paymentError.value = err?.response?.data?.message ?? 'Failed to record payment. Please try again.'
@@ -367,6 +370,7 @@ async function saveInvoice() {
       due_date:       invoiceForm.value.dueDate,
     })
     showCreateInvoice.value = false
+    success('Invoice created successfully.')
     await fetchData()
   } catch (err) {
     invoiceError.value = err?.response?.data?.message ?? 'Failed to create invoice. Please try again.'
@@ -410,6 +414,7 @@ async function uploadLeaseFile(file) {
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
     tenant.value = { ...tenant.value, lease_document_url: data.data.lease_document_url, lease_document_name: data.data.lease_document_name }
+    success('Lease document uploaded.')
   } catch (err) {
     leaseDocError.value = err?.response?.data?.message ?? 'Upload failed. Please try again.'
   } finally {
@@ -458,6 +463,7 @@ async function doDeleteLeaseDocument() {
       `/estates/${estateId.value}/units/${unitId.value}/tenants/${tenantId.value}/lease-document`
     )
     tenant.value = { ...tenant.value, lease_document_url: null, lease_document_name: null }
+    success('Lease document removed.')
   } catch (err) {
     leaseDocError.value = err?.response?.data?.message ?? 'Delete failed. Please try again.'
   } finally {
@@ -597,6 +603,7 @@ async function saveEditTenant() {
     )
     tenant.value = { ...tenant.value, ...(data.data ?? data) }
     showEditTenant.value = false
+    success('Tenant details updated.')
   } catch (err) {
     editTenantError.value = err?.response?.data?.message ?? 'Failed to save changes. Please try again.'
   } finally {
@@ -1213,7 +1220,7 @@ async function saveEditTenant() {
         <AppDatePicker v-model="paymentForm.date" placeholder="Select date..." />
       </div>
       <AppInput v-model="paymentForm.description" label="Description" placeholder="e.g. EFT – R NAIDOO RENT APR" />
-      <AppInput v-model="paymentForm.amount" label="Amount (R)" type="number" placeholder="0.00" />
+      <AppInput v-model="paymentForm.amount" label="Amount (R)" type="number" placeholder="0.00" :min="0" :max="9999999999.99" />
       <div>
         <label class="text-sm font-medium text-foreground mb-1.5 block">Allocate to Invoice</label>
         <AppInvoiceSelect v-model="paymentForm.invoiceId" :unit-id="unitId" placeholder="Select invoice..." />
@@ -1346,7 +1353,7 @@ async function saveEditTenant() {
 
       <!-- Amount + Due Date side by side -->
       <div class="grid grid-cols-2 gap-4">
-        <AppInput v-model="invoiceForm.amount" label="Amount (R)" type="number" placeholder="0.00" required />
+        <AppInput v-model="invoiceForm.amount" label="Amount (R)" type="number" placeholder="0.00" required :min="0" :max="9999999999.99" />
         <AppDatePicker v-model="invoiceForm.dueDate" label="Due Date" placeholder="Select due date..." required />
       </div>
 
@@ -1393,7 +1400,7 @@ async function saveEditTenant() {
         </div>
       </div>
 
-      <AppInput v-model="editTenantForm.rent_amount" label="Monthly Rent" type="number" placeholder="0.00" :prefix="countryStore.currencySymbol" />
+      <AppInput v-model="editTenantForm.rent_amount" label="Monthly Rent" type="number" placeholder="0.00" :prefix="countryStore.currencySymbol" :min="0" :max="9999999999.99" />
     </div>
 
     <template #footer>

@@ -58,21 +58,21 @@
         <p class="text-sm font-medium text-[#1E2740] mb-3">2. Upload your completed file</p>
 
         <!-- Empty state: drop zone -->
-        <div
+        <label
           v-if="!selectedFile"
-          class="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer"
+          for="bulk-units-file-input"
+          class="block border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer"
           :class="isDragOver ? 'border-[#D89B4B] bg-amber-50' : 'border-[#DCDEE8] hover:border-[#1F3A5C]'"
           @dragover.prevent="isDragOver = true"
           @dragleave.prevent="isDragOver = false"
           @drop.prevent="handleDrop"
-          @click="fileInputRef?.click()"
         >
           <svg class="w-10 h-10 mx-auto text-[#717B99] mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
           <p class="text-sm text-[#1E2740] font-medium mb-1">Drop your file here or click to browse</p>
           <p class="text-xs text-[#717B99]">Supports .csv, .xlsx (max 5MB)</p>
-        </div>
+        </label>
 
         <!-- File attached state -->
         <div
@@ -106,6 +106,7 @@
         </div>
 
         <input
+          id="bulk-units-file-input"
           ref="fileInputRef"
           type="file"
           accept=".csv,.xlsx,.xls"
@@ -313,22 +314,17 @@
         <p class="text-sm text-[#717B99] mt-1">{{ importResult?.message }}</p>
       </div>
 
-      <div class="grid grid-cols-3 gap-3 mb-5">
-        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50">
+      <div v-if="importResult?.duplicates || importResult?.error_count" class="flex gap-3 mb-5">
+        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50 flex-1">
           <p class="text-2xl font-bold text-[#22c55e]">{{ importResult?.imported ?? 0 }}</p>
           <p class="text-xs text-[#717B99] mt-1">Imported</p>
         </div>
-        <div class="border border-[#D89B4B] rounded p-3 text-center bg-amber-50">
-          <p class="text-2xl font-bold text-[#D89B4B]">{{ importResult?.duplicates ?? 0 }}</p>
+        <div v-if="importResult?.duplicates" class="border border-[#D89B4B] rounded p-3 text-center bg-amber-50 flex-1">
+          <p class="text-2xl font-bold text-[#D89B4B]">{{ importResult.duplicates }}</p>
           <p class="text-xs text-[#717B99] mt-1">Duplicates skipped</p>
         </div>
-        <div
-          class="border rounded p-3 text-center"
-          :class="importResult?.error_count ? 'border-[#F75A68] bg-red-50' : 'border-[#DCDEE8]'"
-        >
-          <p class="text-2xl font-bold" :class="importResult?.error_count ? 'text-[#F75A68]' : 'text-[#717B99]'">
-            {{ importResult?.error_count ?? 0 }}
-          </p>
+        <div v-if="importResult?.error_count" class="border border-[#F75A68] rounded p-3 text-center bg-red-50 flex-1">
+          <p class="text-2xl font-bold text-[#F75A68]">{{ importResult.error_count }}</p>
           <p class="text-xs text-[#717B99] mt-1">Errors</p>
         </div>
       </div>
@@ -426,6 +422,8 @@ const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 const ALL_FIELDS = [
   { key: 'unit_number',        label: 'Unit Number',        required: true },
+  { key: 'section',            label: 'Section',            required: false },
+  { key: 'address',            label: 'Unit Address',       required: false },
   { key: 'occupancy_type',     label: 'Occupancy Type',     required: true },
   { key: 'levy_override',      label: 'Levy Override',      required: false },
   { key: 'rent_amount',        label: 'Rent Amount',        required: false },
@@ -494,45 +492,45 @@ function buildExampleRows(): Record<string, string>[] {
     // Sectional title only has owner_occupied and vacant — tenant details are added separately after import
     return [
       // Row 1: fully complete, owner_occupied, custom levy override
-      { unit_number: 'A01', occupancy_type: 'owner_occupied', levy_override: '3000', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg' },
+      { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '3000', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg' },
       // Row 2: owner_occupied, uses estate default levy, partial info
-      { unit_number: 'A02', occupancy_type: 'owner_occupied', levy_override: '', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '' },
+      { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'owner_occupied', levy_override: '', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '' },
       // Row 3: vacant unit, levy override set, minimal info
-      { unit_number: 'B01', occupancy_type: 'vacant', levy_override: '2850', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '' },
+      { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '2850', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '' },
       // Row 4: vacant, only required fields
-      { unit_number: 'B02', occupancy_type: 'vacant', levy_override: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '' },
+      { unit_number: 'B02', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '' },
       // Row 5: fully complete, owner_occupied with custom levy
-      { unit_number: 'C01', occupancy_type: 'owner_occupied', levy_override: '2850', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton' },
+      { unit_number: 'C01', section: 'C', address: 'Unit C01, 8 Linden Drive, Sandton', occupancy_type: 'owner_occupied', levy_override: '2850', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton' },
     ]
   }
 
   if (type === 'residential_rental' || type === 'commercial_rental') {
     return [
       // Row 1: fully complete, tenant_occupied, all tenant details
-      { unit_number: '101', occupancy_type: 'tenant_occupied', rent_amount: '9500', owner_full_name: 'Peter Johnson', owner_id_number: '7801015800082', owner_email: 'peter@example.com', owner_phone: '+27 82 111 2233', owner_address: '5 Park Lane, Cape Town', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
+      { unit_number: '101', section: '', address: 'Unit 101, 5 Park Lane, Cape Town', occupancy_type: 'tenant_occupied', rent_amount: '9500', owner_full_name: 'Peter Johnson', owner_id_number: '7801015800082', owner_email: 'peter@example.com', owner_phone: '+27 82 111 2233', owner_address: '5 Park Lane, Cape Town', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
       // Row 2: tenant_occupied, partial tenant info, no lease end
-      { unit_number: '102', occupancy_type: 'tenant_occupied', rent_amount: '8500', owner_full_name: 'Susan van der Berg', owner_id_number: '', owner_email: 'susan@example.com', owner_phone: '+27 83 333 4455', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
+      { unit_number: '102', section: '', address: '', occupancy_type: 'tenant_occupied', rent_amount: '8500', owner_full_name: 'Susan van der Berg', owner_id_number: '', owner_email: 'susan@example.com', owner_phone: '+27 83 333 4455', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
       // Row 3: vacant, only owner details (no tenant)
-      { unit_number: '103', occupancy_type: 'vacant', rent_amount: '7500', owner_full_name: 'Anele Zulu', owner_id_number: '', owner_email: 'anele@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+      { unit_number: '103', section: '', address: '', occupancy_type: 'vacant', rent_amount: '7500', owner_full_name: 'Anele Zulu', owner_id_number: '', owner_email: 'anele@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
       // Row 4: tenant_occupied, fully complete
-      { unit_number: '201', occupancy_type: 'tenant_occupied', rent_amount: '12000', owner_full_name: 'Raj Patel', owner_id_number: '8503026200089', owner_email: 'raj@example.com', owner_phone: '+27 79 444 5566', owner_address: '22 Business Park, Sandton', tenant_full_name: 'Nomsa Khumalo', tenant_email: 'nomsa@example.com', tenant_phone: '+27 65 555 6677', tenant_lease_start: '2026-01-01', tenant_lease_end: '2026-12-31' },
+      { unit_number: '201', section: '', address: 'Unit 201, 22 Business Park, Sandton', occupancy_type: 'tenant_occupied', rent_amount: '12000', owner_full_name: 'Raj Patel', owner_id_number: '8503026200089', owner_email: 'raj@example.com', owner_phone: '+27 79 444 5566', owner_address: '22 Business Park, Sandton', tenant_full_name: 'Nomsa Khumalo', tenant_email: 'nomsa@example.com', tenant_phone: '+27 65 555 6677', tenant_lease_start: '2026-01-01', tenant_lease_end: '2026-12-31' },
       // Row 5: tenant_occupied, minimal tenant info
-      { unit_number: '202', occupancy_type: 'tenant_occupied', rent_amount: '10500', owner_full_name: 'David Botha', owner_id_number: '', owner_email: 'david@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Rachel Naidoo', tenant_email: 'rachel@example.com', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+      { unit_number: '202', section: '', address: '', occupancy_type: 'tenant_occupied', rent_amount: '10500', owner_full_name: 'David Botha', owner_id_number: '', owner_email: 'david@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Rachel Naidoo', tenant_email: 'rachel@example.com', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
     ]
   }
 
   // mixed or unknown: all fields
   return [
     // Row 1: sectional-title-style, owner_occupied with levy, no tenant
-    { unit_number: 'A01', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+    { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
     // Row 2: tenant_occupied, both levy and rent, full tenant info
-    { unit_number: 'A02', occupancy_type: 'tenant_occupied', levy_override: '2850', rent_amount: '9500', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
+    { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'tenant_occupied', levy_override: '2850', rent_amount: '9500', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
     // Row 3: tenant_occupied, rental only (no levy override), partial tenant
-    { unit_number: 'B01', occupancy_type: 'tenant_occupied', levy_override: '', rent_amount: '8000', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
+    { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'tenant_occupied', levy_override: '', rent_amount: '8000', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
     // Row 4: vacant, levy only, no tenant
-    { unit_number: 'B02', occupancy_type: 'vacant', levy_override: '3000', rent_amount: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+    { unit_number: 'B02', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '3000', rent_amount: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
     // Row 5: owner_occupied, fully complete, no tenant
-    { unit_number: 'C01', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+    { unit_number: 'C01', section: 'C', address: 'Unit C01, 8 Linden Drive, Sandton', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
   ]
 }
 
@@ -588,6 +586,16 @@ const paginatedPreviewRows = computed(() =>
 )
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a   = Object.assign(document.createElement('a'), { href: url, download: filename })
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem('auth_token')
@@ -683,19 +691,13 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
         .map(row => row.map(escape).join(','))
         .join('\r\n')
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = `${filename}.csv`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      triggerDownload(
+        new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
+        `${filename}.csv`
+      )
     } else {
       const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
 
-      // Style header row bold (SheetJS community edition — basic cell metadata only)
       const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1')
       for (let c = range.s.c; c <= range.e.c; c++) {
         const cellAddr = XLSX.utils.encode_cell({ r: 0, c })
@@ -704,7 +706,6 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
         }
       }
 
-      // Auto-fit column widths based on content
       ws['!cols'] = headers.map((h, i) => {
         const maxLen = Math.max(
           h.length,
@@ -715,7 +716,11 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
 
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Units Import')
-      XLSX.writeFile(wb, `${filename}.xlsx`)
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      triggerDownload(
+        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `${filename}.xlsx`
+      )
     }
   } catch (e) {
     console.error('Template download failed:', e)

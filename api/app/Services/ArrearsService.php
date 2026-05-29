@@ -28,7 +28,7 @@ class ArrearsService extends BaseService
      *   _date_range_end   → Y-m-d
      *   estate_id         → filter to a specific estate
      *   estate_type       → sectional_title | residential_rental | commercial_rental | mixed
-     *   charge_type       → filter by charge type code (LEVY, RENT, etc.)
+     *   charge_type       → filter by charge type id
      *   _per_page         → pagination size (default 15)
      *
      * @param array $data
@@ -45,7 +45,7 @@ class ArrearsService extends BaseService
             ->whereHas('invoices', function ($q) use ($data) {
                 $q->where('status', InvoiceStatus::OVERDUE);
                 if (!empty($data['charge_type'])) {
-                    $q->whereHas('chargeType', fn($ct) => $ct->where('code', $data['charge_type']));
+                    $q->where('charge_type_id', $data['charge_type']);
                 }
             });
 
@@ -181,13 +181,12 @@ class ArrearsService extends BaseService
         $chargeTypes = DB::table('charge_types')
             ->where('organization_id', $tenantId)
             ->where('is_active', true)
-            ->select('id', 'code', 'name')
+            ->select('id', 'name')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
             ->map(fn ($ct) => [
                 'id'   => $ct->id,
-                'code' => $ct->code,
                 'name' => $ct->name,
             ])
             ->toArray();

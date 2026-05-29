@@ -10,11 +10,13 @@ import api from '@/composables/useApi.js'
 import { useBack } from '@/composables/useBack.js'
 import AllocationModal from '@/components/common/AllocationModal.vue'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const route  = useRoute()
 const router = useRouter()
 const { goBack } = useBack('/cashbook')
 const countryStore = useCountryStore()
+const { success, error: toastError } = useToast()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const entry   = ref(null)
@@ -101,11 +103,11 @@ function onFileChange(e) {
 async function handleProofFile(file) {
   const allowed = ['application/pdf', 'image/jpeg', 'image/png']
   if (!allowed.includes(file.type)) {
-    alert('Only PDF, JPG, and PNG files are supported.')
+    toastError('Only PDF, JPG, and PNG files are supported.')
     return
   }
   if (file.size > 10 * 1024 * 1024) {
-    alert('File must be under 10 MB.')
+    toastError('File must be under 10 MB.')
     return
   }
   proofUploading.value = true
@@ -116,8 +118,9 @@ async function handleProofFile(file) {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     entry.value = res.data.data
+    success('Proof of payment uploaded.')
   } catch (e) {
-    alert(e.response?.data?.message ?? 'Upload failed. Please try again.')
+    toastError(e.response?.data?.message ?? 'Upload failed. Please try again.')
   } finally {
     proofUploading.value = false
   }
@@ -129,8 +132,9 @@ async function removeProof() {
   try {
     await api.delete(`/cashbook/${route.params.entryId}/proof-of-payment`)
     entry.value = { ...entry.value, proof_of_payment_url: null }
+    success('Proof of payment removed.')
   } catch (e) {
-    alert(e.response?.data?.message ?? 'Delete failed.')
+    toastError(e.response?.data?.message ?? 'Delete failed.')
   } finally {
     proofDeleting.value = false
   }
@@ -229,6 +233,7 @@ async function saveEdit() {
     })
     await fetchEntry()
     editMode.value = false
+    success('Entry updated successfully.')
   } catch (e) {
     editError.value = e.response?.data?.message ?? 'Failed to save changes.'
   } finally {
@@ -391,6 +396,8 @@ async function saveEdit() {
                     type="number"
                     placeholder="0.00"
                     :prefix="countryStore.currencySymbol"
+                    :min="0.01"
+                    :max="9999999999.99"
                   />
                   <div class="col-span-2">
                     <AppInput

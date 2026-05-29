@@ -32,6 +32,8 @@ class User extends Authenticatable
         'status',
         'last_login_at',
         'organization_id',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
     ];
 
     /**
@@ -42,7 +44,11 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
     ];
+
+    protected $appends = ['two_factor_enabled'];
 
     /**
      * The attributes that should be cast.
@@ -50,11 +56,27 @@ class User extends Authenticatable
      * @var array
      */
     protected $casts = [
-        'email_verified_at' => 'datetime',
-        'last_login_at'     => 'datetime',
-        'password'          => 'hashed',
-        'status'            => UserStatus::class,
+        'email_verified_at'       => 'datetime',
+        'last_login_at'           => 'datetime',
+        'two_factor_confirmed_at' => 'datetime',
+        'password'                => 'hashed',
+        'status'                  => UserStatus::class,
     ];
+
+    public function hasTwoFactorEnabled(): bool
+    {
+        return !is_null($this->two_factor_secret) && !is_null($this->two_factor_confirmed_at);
+    }
+
+    public function getTwoFactorEnabledAttribute(): bool
+    {
+        return $this->hasTwoFactorEnabled();
+    }
+
+    public function sessions(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(UserSession::class);
+    }
 
     /**
      * Scope a query by search term.

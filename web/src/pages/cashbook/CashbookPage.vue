@@ -25,8 +25,10 @@ import AppTableToolbar  from '@/components/common/AppTableToolbar.vue'
 import AppExportModal   from '@/components/common/AppExportModal.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const countryStore = useCountryStore()
+const { success } = useToast()
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend)
 
@@ -330,6 +332,7 @@ async function handleAddEntry() {
     })
     showAddEntry.value = false
     newEntry.value = { estate_id: '', date: '', type: 'credit', description: '', amount: '', unit_id: '', notes: '' }
+    success('Entry added successfully.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ } finally {
     submittingEntry.value = false
@@ -349,30 +352,10 @@ const submittingAllocate      = ref(false)
 
 // ── Smart invoice scoring ─────────────────────────────────────────────────
 const CHARGE_KEYWORDS = {
-  LEVY:                   ['levy'],
-  RENT:                   ['rent'],
-  SPECIAL_LEVY:           ['special'],
-  WATER_RECOVERY:         ['water'],
-  ELECTRICITY_RECOVERY:   ['electricity', 'elec'],
-  GAS_RECOVERY:           ['gas'],
-  SEWERAGE_RECOVERY:      ['sewerage', 'sewer'],
-  REFUSE_RECOVERY:        ['refuse', 'waste'],
-  LATE_INTEREST:          ['interest'],
-  LATE_PENALTY:           ['penalty', 'fine'],
-  INSURANCE_EXCESS:       ['insurance', 'excess'],
-  DAMAGE_DEPOSIT:         ['damage', 'deposit'],
-  KEY_DEPOSIT:            ['key'],
-  PARKING_RENTAL:         ['parking'],
-  STORAGE_RENTAL:         ['storage'],
-  MOVING_IN:              ['moving'],
-  MOVING_OUT:             ['moving'],
-  ACCESS_CARD:            ['access', 'card', 'remote'],
-  GYM_ACCESS:             ['gym'],
-  POOL_ACCESS:            ['pool'],
-  GARDEN_MAINT:           ['garden'],
-  PET_LEVY:               ['pet'],
-  SECURITY_CONTRIB:       ['security'],
-  LEGAL_RECOVERY:         ['legal', 'attorney'],
+  admin_levy:   ['levy', 'admin'],
+  reserve_levy: ['reserve', 'levy'],
+  csos_levy:    ['csos'],
+  rent:         ['rent'],
 }
 
 const MONTH_ABBREVS = {
@@ -388,9 +371,9 @@ function scoreInvoice(inv, entry) {
   const outstanding = parseFloat(inv.outstanding ?? inv.amount) || 0
 
   // 1. Charge type keyword match (highest weight — most predictive)
-  const code     = inv.charge_type?.code ?? ''
-  const typeName = (inv.charge_type?.name ?? '').toLowerCase()
-  const kws      = CHARGE_KEYWORDS[code] ?? [typeName]
+  const chargeTypeKey = inv.charge_type?.type ?? ''
+  const typeName      = (inv.charge_type?.name ?? '').toLowerCase()
+  const kws           = CHARGE_KEYWORDS[chargeTypeKey] ?? [typeName]
   for (const kw of kws) {
     if (desc.includes(kw)) { score += 30; break }
   }
@@ -484,6 +467,7 @@ async function handleAllocate() {
     })
     showAllocate.value    = false
     allocatingEntry.value = null
+    success('Payment allocated successfully.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ } finally {
     submittingAllocate.value = false
@@ -494,6 +478,7 @@ async function handleAllocate() {
 async function handleAutoAllocate() {
   try {
     await api.post('/cashbook/auto-allocate')
+    success('Auto-allocation completed.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ }
 }
@@ -1048,6 +1033,8 @@ const hasAllocationData = computed(() => allCount.value > 0)
             placeholder="0.00"
             required
             :prefix="countryStore.currencySymbol"
+            :min="0.01"
+            :max="9999999999.99"
           />
           <div>
             <label class="block text-sm font-medium text-foreground mb-1.5">

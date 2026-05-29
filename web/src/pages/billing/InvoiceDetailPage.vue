@@ -11,11 +11,13 @@ import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import api from '@/composables/useApi'
 import { useBack } from '@/composables/useBack.js'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const route  = useRoute()
 const router = useRouter()
 const { goBack } = useBack('/billing')
 const countryStore = useCountryStore()
+const { success } = useToast()
 
 const invoice       = ref(null)
 const loading       = ref(true)
@@ -44,6 +46,7 @@ async function changeStatus(newStatus) {
   try {
     await api.put(`/invoices/${route.params.invoiceId}`, { status: newStatus })
     await fetchInvoice()
+    success('Invoice status updated.')
   } catch {
     // silent
   } finally {
@@ -83,6 +86,7 @@ async function submitEdit() {
     }
     await api.put(`/invoices/${route.params.invoiceId}`, payload)
     showEditModal.value = false
+    success('Invoice updated successfully.')
     await fetchInvoice()
   } catch (err) {
     editError.value = err.response?.data?.message ?? 'Failed to save changes. Please try again.'
@@ -106,6 +110,7 @@ async function restoreInvoice() {
   restoring.value = true
   try {
     await api.post(`/invoices/${route.params.invoiceId}/restore`)
+    success('Invoice restored successfully.')
     await fetchInvoice()   // reload — deleted_at will now be null, banners hide
   } catch {
     /* ignore — unlikely to fail */
@@ -229,6 +234,12 @@ function getEmailEvent(type) {
 const sentEvent      = computed(() => getEmailEvent('sent'))
 const deliveredEvent = computed(() => getEmailEvent('delivered'))
 const openedEvent    = computed(() => getEmailEvent('opened'))
+
+const emailFailed      = computed(() => !!invoice.value?.email_failed_at)
+const failedEmailEvent = computed(() =>
+  invoice.value?.email_events?.find(e => e.event_type === 'delivery_failed') ?? null
+)
+const failedEmailReason = computed(() => failedEmailEvent.value?.metadata?.reason ?? null)
 
 const timeToOpen = computed(() => {
   if (!deliveredEvent.value || !openedEvent.value) return null
@@ -644,6 +655,16 @@ async function submitRemovePayment() {
     <!-- ── Invoice content ─────────────────────────────────────────────── -->
     <template v-else-if="invoice">
 
+      <!-- Email failed banner -->
+      <div v-if="emailFailed && !invoice.deleted_at" class="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+        <div>
+          <span class="font-medium">Email delivery failed</span> — all retry attempts were exhausted and this invoice was not delivered to the recipient.
+          Use the <strong>Retry Send</strong> button to attempt again.
+          <span v-if="failedEmailReason" class="block mt-1 text-destructive/70 text-xs">Reason: {{ failedEmailReason }}</span>
+        </div>
+      </div>
+
       <!-- Deleted banner -->
       <div v-if="invoice.deleted_at" class="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -777,7 +798,7 @@ async function submitRemovePayment() {
           <!-- Resend Email (hidden for deleted invoices) -->
           <AppButton
             v-if="!invoice.deleted_at"
-            variant="outline"
+            :variant="emailFailed ? 'danger-ghost' : 'outline'"
             :disabled="resending"
             @click="resendInvoice"
           >
@@ -791,12 +812,17 @@ async function submitRemovePayment() {
               stroke-linecap="round" stroke-linejoin="round" class="text-success">
               <path d="M20 6 9 17l-5-5" />
             </svg>
+            <svg v-else-if="emailFailed" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M3 12h9"/>
+            </svg>
             <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect width="20" height="16" x="2" y="4" rx="2" />
               <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
             </svg>
-            {{ resending ? 'Sending…' : resendSuccess ? 'Sent!' : hasEverBeenSent ? 'Resend Email' : 'Send Email' }}
+            {{ resending ? 'Sending…' : resendSuccess ? 'Sent!' : emailFailed ? 'Retry Send' : hasEverBeenSent ? 'Resend Email' : 'Send Email' }}
           </AppButton>
 
           <!-- Download PDF -->
@@ -1174,10 +1200,16 @@ async function submitRemovePayment() {
                   <div class="flex items-start gap-3 relative">
                     <div
                       class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 ring-2 ring-background"
-                      :class="sentEvent ? 'bg-success/15' : 'bg-muted'"
+                      :class="emailFailed ? 'bg-destructive/15' : sentEvent ? 'bg-success/15' : 'bg-muted'"
                     >
+                      <!-- Failed icon (X) -->
+                      <svg v-if="emailFailed" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                        class="text-destructive">
+                        <path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+                      </svg>
                       <!-- Sent icon (paper plane) -->
-                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                      <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                         :class="sentEvent ? 'text-success' : 'text-muted-foreground'">
                         <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
@@ -1185,8 +1217,14 @@ async function submitRemovePayment() {
                       </svg>
                     </div>
                     <div class="pt-0.5 min-w-0">
-                      <p class="text-sm font-semibold text-foreground">Sent</p>
-                      <template v-if="sentEvent">
+                      <p class="text-sm font-semibold" :class="emailFailed ? 'text-destructive' : 'text-foreground'">
+                        {{ emailFailed ? 'Delivery Failed' : 'Sent' }}
+                      </p>
+                      <template v-if="emailFailed">
+                        <p class="text-xs text-destructive/70">Failed on {{ formatDateTime(invoice.email_failed_at) }}</p>
+                        <p class="text-xs text-destructive/70">All retry attempts exhausted</p>
+                      </template>
+                      <template v-else-if="sentEvent">
                         <p class="text-xs text-muted-foreground">{{ formatDateTime(sentEvent.occurred_at) }}</p>
                         <p v-if="sentEvent.email" class="text-xs text-muted-foreground truncate">{{ sentEvent.email }}</p>
                       </template>
@@ -1244,8 +1282,22 @@ async function submitRemovePayment() {
                 </div>
               </div>
 
+              <!-- Email failed callout -->
+              <div v-if="emailFailed" class="mt-4 px-3 py-2.5 bg-destructive/5 border border-destructive/20 rounded-md flex items-start gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="text-destructive shrink-0 mt-px">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+                </svg>
+                <div>
+                  <p class="text-xs text-destructive leading-relaxed font-medium">The recipient never received this invoice.</p>
+                  <p v-if="failedEmailReason" class="text-xs text-destructive/70 mt-0.5 leading-relaxed">{{ failedEmailReason }}</p>
+                  <p class="text-xs text-destructive/70 mt-0.5">Use <strong>Retry Send</strong> above to attempt delivery again.</p>
+                </div>
+              </div>
+
               <!-- Time-to-open stat -->
-              <div v-if="openedEvent && timeToOpen" class="mt-4 px-3 py-2.5 bg-success/8 border border-success/20 rounded-md flex items-center gap-2">
+              <div v-else-if="openedEvent && timeToOpen" class="mt-4 px-3 py-2.5 bg-success/8 border border-success/20 rounded-md flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                   class="text-success shrink-0">
@@ -1307,6 +1359,8 @@ async function submitRemovePayment() {
         label="Amount"
         type="number"
         placeholder="0.00"
+        :min="0"
+        :max="9999999999.99"
       />
       <AppInput
         v-model="addPaymentForm.notes"
@@ -1376,6 +1430,8 @@ async function submitRemovePayment() {
         label="Amount"
         type="number"
         placeholder="0.00"
+        :min="0"
+        :max="9999999999.99"
       />
 
       <AppDatePicker

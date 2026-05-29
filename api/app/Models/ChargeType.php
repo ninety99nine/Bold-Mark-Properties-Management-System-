@@ -35,7 +35,7 @@ class ChargeType extends Model
      * @var array
      */
     protected $fillable = [
-        'code',
+        'type',
         'name',
         'description',
         'is_system',
@@ -56,8 +56,7 @@ class ChargeType extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('name', 'like', '%' . $searchTerm . '%')
-              ->orWhere('code', 'like', '%' . $searchTerm . '%');
+        $query->where('name', 'like', '%' . $searchTerm . '%');
     }
 
     /**

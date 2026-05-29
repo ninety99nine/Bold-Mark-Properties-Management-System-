@@ -31,8 +31,10 @@ use App\Policies\UnitPolicy;
 use App\Policies\TenantPolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -53,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
         $this->registerRouteModelBindings();
+        $this->registerJobRateLimiters();
 
         // Portable case-insensitive LIKE — works on SQLite, MySQL, and PostgreSQL.
         \Illuminate\Database\Eloquent\Builder::macro('whereLike', function (string $column, string $value) {
@@ -92,6 +95,12 @@ class AppServiceProvider extends ServiceProvider
                     'resetUrl' => $resetUrl,
                 ]);
         });
+    }
+
+    protected function registerJobRateLimiters(): void
+    {
+        // Global Resend rate limit: 4/sec across all workers and billing runs.
+        RateLimiter::for('resend-emails', fn() => Limit::perSecond(4));
     }
 
     /**

@@ -13,7 +13,7 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 </script>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Doughnut, Bar } from 'vue-chartjs'
 import AppAlert from '@/components/common/AppAlert.vue'
@@ -28,17 +28,30 @@ import AppPoptip from '@/components/common/AppPoptip.vue'
 import AppDropdown from '@/components/common/AppDropdown.vue'
 import AppDropdownItem from '@/components/common/AppDropdownItem.vue'
 import BulkImportUnitsModal from '@/components/common/BulkImportUnitsModal.vue'
+import BulkImportPqModal from '@/components/common/BulkImportPqModal.vue'
 import { useCountryStore } from '@/stores/country'
 import AppExportModal from '@/components/common/AppExportModal.vue'
 import CreateChecklistModal from '@/pages/compliance/CreateChecklistModal.vue'
 import api from '@/composables/useApi.js'
 import { useExport } from '@/composables/useExport.js'
 import { useBack } from '@/composables/useBack.js'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
 const { goBack } = useBack('/estates')
 const countryStore = useCountryStore()
+const { success, error: toastError } = useToast()
+
+// ── Tab navigation ────────────────────────────────────────────────────
+const VALID_TABS = ['units', 'pq', 'compliance', 'communication', 'overview']
+const activeTab = computed(() => {
+  const q = route.query.tab
+  return VALID_TABS.includes(q) ? q : 'units'
+})
+function setTab(tabId) {
+  router.replace({ query: { ...route.query, tab: tabId } })
+}
 
 // ── API state ─────────────────────────────────────────────────────────
 const estateLoading = ref(true)
@@ -61,6 +74,7 @@ async function fetchEstate() {
     const res = await api.get(`/estates/${route.params.id}`)
     estate.value   = res.data.data
     apiStats.value = res.data.stats ?? null
+    fetchAllPqUnits()
   } catch (e) {
     estateError.value = 'Failed to load estate details.'
   } finally {
@@ -98,7 +112,9 @@ const BALANCE_API_MAP   = { arrears: 'in_arrears', clear: 'clear' }
 
 function buildApiParams() {
   const state  = toolbarState.value
-  const params = { _per_page: PER_PAGE, page: currentPage.value }
+  const params = showAllUnits.value
+    ? { _per_page: 1000, page: 1 }
+    : { _per_page: PER_PAGE, page: currentPage.value }
 
   if (state.search?.trim()) {
     params._search = state.search.trim()
@@ -134,10 +150,14 @@ async function fetchUnits() {
     allUnits.value  = (res.data.data ?? []).map(u => ({
       id:             u.id,
       unit:           u.unit_number,
+      section:        u.section || null,
+      pq:             u.pq ?? null,
+      effectiveReserveLevy: u.effective_reserve_levy ?? 0,
       occupancy:      mapOccupancy(u.occupancy_type),
       balance:        u.balance ?? 0,
       outstanding:    u.outstanding_amount ?? 0,
       effectiveLevy:  u.effective_levy_amount ?? 0,
+      levyOverride:   u.levy_override ?? null,
       rentAmount:     u.rent_amount ?? 0,
 
       // Owner
@@ -275,6 +295,7 @@ function onToolbarUpdate(state) {
   const prevSearch   = toolbarState.value.search
   toolbarState.value = state
   currentPage.value  = 1
+  showAllUnits.value = false
 
   // Debounce search input; apply all other changes immediately
   clearTimeout(searchDebounceTimer)
@@ -286,8 +307,15 @@ function onToolbarUpdate(state) {
   }
 }
 
-const currentPage = ref(1)
-const PER_PAGE    = 15
+const currentPage  = ref(1)
+const showAllUnits = ref(false)
+const PER_PAGE     = 15
+
+function toggleShowAll() {
+  showAllUnits.value = !showAllUnits.value
+  currentPage.value  = 1
+  fetchUnits()
+}
 
 // Pagination derived from API meta
 const totalPages        = computed(() => unitsMeta.value?.last_page ?? 1)
@@ -432,6 +460,7 @@ async function sendEmail() {
       body:            messageForm.value.body,
     })
     showSendMessage.value = false
+    success('Email sent successfully.')
   } catch (e) {
     messageError.value = e?.response?.data?.message ?? 'Failed to send email. Please try again.'
   } finally {
@@ -485,9 +514,12 @@ const editEstateForm   = ref({
   type:                'sectional_title',
   address:             '',
   country:             '',
-  default_levy_amount: '',
+  admin_fund_amount:   '',
+  reserve_fund_amount: '',
+  csos_levy_amount:    '',
   default_rent_amount: '',
   billing_day:         '',
+  payment_terms_days:  '',
 })
 
 const editCountryOptions = Object.entries(countryStore.COUNTRY_MAP).map(([code, info]) => ({
@@ -521,9 +553,12 @@ function openEditEstate() {
     type:                estate.value.type                ?? 'sectional_title',
     address:             estate.value.address             ?? '',
     country:             estate.value.country             ?? countryStore.activeCountry ?? '',
-    default_levy_amount: estate.value.default_levy_amount ?? '',
+    admin_fund_amount:   estate.value.admin_fund_amount   ?? '',
+    reserve_fund_amount: estate.value.reserve_fund_amount ?? '',
+    csos_levy_amount:    estate.value.csos_levy_amount    ?? '',
     default_rent_amount: estate.value.default_rent_amount ?? '',
     billing_day:         estate.value.billing_day         ?? '',
+    payment_terms_days:  estate.value.payment_terms_days  ?? '',
   }
   editEstateError.value = null
   showEditEstate.value  = true
@@ -542,8 +577,14 @@ async function saveEditEstate() {
       payload.country  = editEstateForm.value.country
       payload.currency = countryStore.COUNTRY_MAP[editEstateForm.value.country]?.currencyCode || null
     }
-    if (editShowLevy.value && editEstateForm.value.default_levy_amount !== '') {
-      payload.default_levy_amount = parseFloat(editEstateForm.value.default_levy_amount) || 0
+    if (editShowLevy.value && editEstateForm.value.admin_fund_amount !== '') {
+      payload.admin_fund_amount = parseFloat(editEstateForm.value.admin_fund_amount) || 0
+    }
+    if (editShowLevy.value && editEstateForm.value.reserve_fund_amount !== '') {
+      payload.reserve_fund_amount = parseFloat(editEstateForm.value.reserve_fund_amount) || 0
+    }
+    if (editShowLevy.value && editEstateForm.value.country === 'ZA' && editEstateForm.value.csos_levy_amount !== '') {
+      payload.csos_levy_amount = parseFloat(editEstateForm.value.csos_levy_amount) || 0
     }
     if (editShowRent.value && editEstateForm.value.default_rent_amount !== '') {
       payload.default_rent_amount = parseFloat(editEstateForm.value.default_rent_amount) || 0
@@ -551,9 +592,13 @@ async function saveEditEstate() {
     if (editEstateForm.value.billing_day !== '') {
       payload.billing_day = parseInt(editEstateForm.value.billing_day) || undefined
     }
+    if (editEstateForm.value.payment_terms_days !== '') {
+      payload.payment_terms_days = parseInt(editEstateForm.value.payment_terms_days) || undefined
+    }
     await api.put(`/estates/${route.params.id}`, payload)
     showEditEstate.value = false
     await fetchEstate()
+    success('Estate updated successfully.')
   } catch (e) {
     editEstateError.value = e?.response?.data?.message ?? 'Failed to update estate. Please try again.'
   } finally {
@@ -561,34 +606,59 @@ async function saveEditEstate() {
   }
 }
 
-// ── Billing Day modal ─────────────────────────────────────────────────
-const showBillingDay      = ref(false)
-const billingDayForm      = ref('')
-const billingDaySaving    = ref(false)
-const billingDayError     = ref(null)
+// ── Billing Settings modal ────────────────────────────────────────────
+const showBillingDay        = ref(false)
+const billingDayForm        = ref('')
+const paymentTermsForm      = ref('')
+const billingDaySaving      = ref(false)
+const billingDayError       = ref(null)
 
 function openBillingDay() {
-  billingDayForm.value  = estate.value?.billing_day ?? ''
-  billingDayError.value = null
-  showBillingDay.value  = true
+  billingDayForm.value    = estate.value?.billing_day ?? ''
+  paymentTermsForm.value  = estate.value?.payment_terms_days ?? 7
+  billingDayError.value   = null
+  showBillingDay.value    = true
 }
 
 async function saveBillingDay() {
   billingDaySaving.value = true
   billingDayError.value  = null
   try {
-    const day = parseInt(billingDayForm.value)
+    const day   = parseInt(billingDayForm.value)
+    const terms = parseInt(paymentTermsForm.value)
     if (!day || day < 1 || day > 28) {
-      billingDayError.value = 'Please enter a day between 1 and 28.'
+      billingDayError.value = 'Please enter a billing day between 1 and 28.'
       return
     }
-    await api.put(`/estates/${route.params.id}`, { billing_day: day })
+    if (!terms || terms < 1 || terms > 365) {
+      billingDayError.value = 'Please enter payment terms between 1 and 365 days.'
+      return
+    }
+    await api.put(`/estates/${route.params.id}`, { billing_day: day, payment_terms_days: terms })
     showBillingDay.value = false
     await fetchEstate()
+    success('Billing settings updated.')
   } catch (e) {
-    billingDayError.value = e?.response?.data?.message ?? 'Failed to update billing day.'
+    billingDayError.value = e?.response?.data?.message ?? 'Failed to update billing settings.'
   } finally {
     billingDaySaving.value = false
+  }
+}
+
+// ── Billing pause toggle ──────────────────────────────────────────────
+const billingPauseToggling = ref(false)
+
+async function toggleBillingPaused() {
+  billingPauseToggling.value = true
+  try {
+    const newState = !estate.value.billing_paused
+    await api.put(`/estates/${route.params.id}`, { billing_paused: newState })
+    await fetchEstate()
+    success(newState ? 'Automatic billing paused.' : 'Automatic billing resumed.')
+  } catch (e) {
+    toastError(e?.response?.data?.message ?? 'Failed to update billing schedule.')
+  } finally {
+    billingPauseToggling.value = false
   }
 }
 
@@ -666,10 +736,16 @@ async function confirmDeleteEstate() {
   }
 }
 
+const addUnitStep = ref(1)
+const addUnitTotalSteps = computed(() => estate.value?.type === 'sectional_title' ? 2 : 3)
+
 const newUnit = ref({
   unitNumber:   '',
+  section:      '',
   occupancy:    'owner',
+  overrideLevy: false,
   levyOverride: '',
+  pq:           '',
   showTenant:   false,
   owner: {
     name:     '',
@@ -693,8 +769,9 @@ const newUnitShowTenantFields = computed(() =>
 )
 
 function resetNewUnit() {
+  addUnitStep.value = 1
   newUnit.value = {
-    unitNumber: '', occupancy: 'owner', levyOverride: '', showTenant: false,
+    unitNumber: '', section: '', occupancy: 'owner', overrideLevy: false, levyOverride: '', pq: '', showTenant: false,
     owner:  { name: '', email: '', phone: '', idNumber: '' },
     tenant: { name: '', email: '', phone: '', rent: '', leaseStart: '', leaseEnd: '' },
   }
@@ -717,7 +794,9 @@ async function saveUnit() {
     },
   }
 
-  if (editUnitShowLevy.value && newUnit.value.levyOverride !== '') {
+  if (newUnit.value.section !== '') payload.section = newUnit.value.section || null
+  if (newUnit.value.pq !== '')      payload.pq      = parseFloat(newUnit.value.pq) || null
+  if (editUnitShowLevy.value && newUnit.value.overrideLevy && newUnit.value.levyOverride !== '') {
     payload.levy_override = parseFloat(newUnit.value.levyOverride) || 0
   }
 
@@ -740,12 +819,14 @@ async function saveUnit() {
     await api.post(`/estates/${route.params.id}/units`, payload)
     showAddUnit.value = false
     resetNewUnit()
+    success('Unit created successfully.')
     // Set date filter to today so the newly created unit is shown prominently
     toolbarInitialDateRange.value = 'today'
     toolbarKey.value++
     toolbarState.value = { search: '', dateRange: 'today', customStart: '', customEnd: '', filters: {}, sort: null }
     currentPage.value  = 1
     await Promise.all([fetchEstate(), fetchUnits()])
+    fetchAllPqUnits()
   } catch (e) {
     saveError.value = e.response?.data?.message ?? 'Failed to create unit. Please try again.'
   } finally {
@@ -761,6 +842,8 @@ const editUnitError  = ref(null)
 
 const editUnitForm = ref({
   unitNumber:    '',
+  section:       '',
+  pq:            '',
   occupancy:     'owner',
   ownerName:     '',
   ownerEmail:    '',
@@ -784,8 +867,10 @@ function openEditUnit(unit) {
   editUnitError.value = null
   editUnitForm.value  = {
     unitNumber:   unit.unit,
+    section:      unit.section ?? '',
+    pq:           unit.pq != null ? String(unit.pq) : '',
     occupancy:    unit.occupancy,
-    levyOverride: unit.effectiveLevy ? String(unit.effectiveLevy) : '',
+    levyOverride: unit.levyOverride != null ? String(unit.levyOverride) : '',
     owner: {
       name:     unit.ownerName     ?? '',
       email:    unit.ownerEmail    ?? '',
@@ -841,6 +926,8 @@ async function saveEditUnit() {
     },
   }
 
+  if (editUnitForm.value.section !== '') payload.section = editUnitForm.value.section || null
+  if (editUnitForm.value.pq !== '')      payload.pq      = parseFloat(editUnitForm.value.pq) || null
   if (editUnitShowLevy.value && editUnitForm.value.levyOverride !== '') {
     payload.levy_override = parseFloat(editUnitForm.value.levyOverride) || 0
   }
@@ -864,6 +951,8 @@ async function saveEditUnit() {
     await api.put(`/estates/${route.params.id}/units/${editingUnit.value.id}`, payload)
     showEditUnit.value = false
     await fetchUnits()
+    fetchAllPqUnits()
+    success('Unit updated successfully.')
   } catch (e) {
     editUnitError.value = e?.response?.data?.message ?? 'Failed to update unit. Please try again.'
   } finally {
@@ -896,8 +985,10 @@ async function confirmDeleteUnit() {
   try {
     await api.delete(`/estates/${route.params.id}/units/${deletingUnitTarget.value.id}`)
     showDeleteUnit.value = false
+    success('Unit deleted successfully.')
     await fetchUnits()
     await fetchEstate()
+    fetchAllPqUnits()
   } catch (e) {
     deleteUnitError.value = e?.response?.data?.message ?? 'Failed to delete unit. Please try again.'
   } finally {
@@ -965,9 +1056,11 @@ async function confirmBulkDelete() {
       )
     )
     showBulkDelete.value  = false
+    success('Selected units deleted successfully.')
     selectedUnitIds.value = new Set()
     await fetchUnits()
     await fetchEstate()
+    fetchAllPqUnits()
   } catch (e) {
     bulkDeleteError.value = e?.response?.data?.message ?? 'Failed to delete units. Please try again.'
   } finally {
@@ -1401,6 +1494,238 @@ const tenantArrearsChartOptions = {
     },
   },
 }
+
+// ── PQ (Participation Quota) section ─────────────────────────────────
+const isPqEstate = computed(() =>
+  ['sectional_title', 'mixed'].includes(estate.value?.type)
+)
+
+const showPqImportModal  = ref(false)
+const showPqExplainModal = ref(false)
+const pqExplainView      = ref('breakdown') // 'breakdown' | 'learn'
+
+function openPqExplain() {
+  pqExplainView.value      = 'breakdown'
+  showPqExplainModal.value = true
+}
+
+const pqStickyHeaderEl = ref(null)
+
+// PQ search + quick filters
+const pqSearch       = ref('')
+const pqQuickFilter  = ref(null) // null | 'missing_pq' | 'has_override'
+
+// Bulk PQ edit mode
+const pqEditMode  = ref(false)
+const pqDraft     = ref([])
+const pqSaving    = ref(false)
+
+function enterPqEditMode() {
+  pqDraft.value    = pqAllUnits.value.map(u => ({
+    id:          u.id,
+    pqStr:       u.pq != null ? String(u.pq) : '',
+    overrideStr: u.levyOverride != null ? String(u.levyOverride) : '',
+  }))
+  pqEditMode.value = true
+}
+
+function cancelPqEditMode() {
+  pqEditMode.value    = false
+  pqDraft.value       = []
+  pqQuickFilter.value = null
+}
+
+const pqEditRows = computed(() => {
+  if (!pqEditMode.value || !pqDraft.value.length) return pqRows.value
+
+  const adminBudget   = parseFloat(estate.value?.admin_fund_amount   ?? 0)
+  const reserveBudget = parseFloat(estate.value?.reserve_fund_amount ?? 0)
+  const unitCount     = pqDraft.value.length
+
+  const totalPq = pqDraft.value.reduce((s, d) => {
+    const v = parseFloat(d.pqStr)
+    return s + (isNaN(v) ? 0 : v)
+  }, 0)
+
+  return pqDraft.value.map(d => {
+    const orig        = pqAllUnits.value.find(u => u.id === d.id) ?? {}
+    const pq          = d.pqStr !== '' ? parseFloat(d.pqStr) : null
+    const hasPq       = pq != null && !isNaN(pq)
+    const override    = d.overrideStr !== '' ? parseFloat(d.overrideStr) : null
+    const hasOverride = override != null && !isNaN(override)
+
+    let effectiveLevy
+    if (hasOverride) {
+      effectiveLevy = Math.round(override * 100) / 100
+    } else if (hasPq && totalPq > 0 && adminBudget > 0) {
+      effectiveLevy = Math.round((pq / totalPq) * adminBudget * 100) / 100
+    } else {
+      effectiveLevy = unitCount > 0 ? Math.round((adminBudget / unitCount) * 100) / 100 : 0
+    }
+
+    let effectiveReserveLevy = 0
+    if (hasPq && totalPq > 0 && reserveBudget > 0) {
+      effectiveReserveLevy = Math.round((pq / totalPq) * reserveBudget * 100) / 100
+    }
+
+    return {
+      id: d.id, unit: orig.unit, section: orig.section, ownerName: orig.ownerName,
+      pq: hasPq ? pq : null,
+      levyOverride: hasOverride ? override : null,
+      effectiveLevy, effectiveReserveLevy,
+    }
+  })
+})
+
+const pqHasChanges = computed(() => {
+  if (!pqEditMode.value) return false
+  return pqDraft.value.some(d => {
+    const orig         = pqAllUnits.value.find(u => u.id === d.id)
+    if (!orig) return false
+    const origPq       = orig.pq       != null ? orig.pq       : null
+    const origOverride = orig.levyOverride != null ? orig.levyOverride : null
+    const draftPq      = d.pqStr       !== '' ? parseFloat(d.pqStr)       : null
+    const draftOverride = d.overrideStr !== '' ? parseFloat(d.overrideStr) : null
+    return origPq !== draftPq || origOverride !== draftOverride
+  })
+})
+
+// Map id → draft item so filtered rows can still bind inputs
+const pqDraftMap = computed(() =>
+  Object.fromEntries(pqDraft.value.map(d => [d.id, d]))
+)
+
+// Filtered view — works in both view and edit mode
+const pqFilteredRows = computed(() => {
+  let rows = pqEditRows.value
+
+  if (pqQuickFilter.value === 'missing_pq') {
+    rows = rows.filter(r => r.pq == null)
+  } else if (pqQuickFilter.value === 'has_override') {
+    rows = rows.filter(r => r.levyOverride != null)
+  }
+
+  const q = pqSearch.value.trim().toLowerCase()
+  if (!q) return rows
+  return rows.filter(r =>
+    (r.section   ?? '').toLowerCase().includes(q) ||
+    (r.unit      ?? '').toLowerCase().includes(q) ||
+    (r.ownerName ?? '').toLowerCase().includes(q)
+  )
+})
+
+async function savePqEdits() {
+  if (!pqHasChanges.value || pqSaving.value) return
+  pqSaving.value = true
+  try {
+    const changed = pqDraft.value.filter(d => {
+      const orig         = pqAllUnits.value.find(u => u.id === d.id)
+      if (!orig) return false
+      const origPq       = orig.pq       != null ? orig.pq       : null
+      const origOverride = orig.levyOverride != null ? orig.levyOverride : null
+      const draftPq      = d.pqStr       !== '' ? parseFloat(d.pqStr)       : null
+      const draftOverride = d.overrideStr !== '' ? parseFloat(d.overrideStr) : null
+      return origPq !== draftPq || origOverride !== draftOverride
+    })
+    await Promise.all(changed.map(d => {
+      const payload = {
+        pq:            d.pqStr       !== '' ? (parseFloat(d.pqStr) || null)       : null,
+        levy_override: d.overrideStr !== '' ? (parseFloat(d.overrideStr) || null) : null,
+      }
+      return api.put(`/estates/${route.params.id}/units/${d.id}`, payload)
+    }))
+    cancelPqEditMode()
+    await fetchAllPqUnits()
+    success(`${changed.length} unit${changed.length > 1 ? 's' : ''} updated.`)
+  } catch {
+    toastError('Failed to save changes.')
+  } finally {
+    pqSaving.value = false
+  }
+}
+
+// All units for PQ section — fetched independently of the main table's pagination/filters.
+const pqAllUnits        = ref([])
+const pqAllUnitsLoading = ref(false)
+
+async function fetchAllPqUnits() {
+  if (!isPqEstate.value) return
+  pqAllUnitsLoading.value = true
+  try {
+    const res = await api.get(`/estates/${route.params.id}/units`, { params: { _per_page: 1000 } })
+    pqAllUnits.value = (res.data.data ?? []).map(u => ({
+      id:                   u.id,
+      unit:                 u.unit_number,
+      section:              u.section || null,
+      pq:                   u.pq ?? null,
+      effectiveLevy:        u.effective_levy_amount ?? 0,
+      effectiveReserveLevy: u.effective_reserve_levy ?? 0,
+      levyOverride:         u.levy_override ?? null,
+      ownerName:            u.owner?.full_name ?? '—',
+    }))
+  } catch (e) {
+    console.error('Failed to load PQ units', e)
+  } finally {
+    pqAllUnitsLoading.value = false
+  }
+}
+
+async function onPqImported() {
+  await Promise.all([fetchUnits(), fetchEstate()])
+  await fetchAllPqUnits()
+}
+
+const pqRows = computed(() => {
+  if (!pqAllUnits.value.length) return []
+  const totalPq = pqAllUnits.value.reduce((sum, u) => sum + (u.pq ?? 0), 0)
+  return pqAllUnits.value.map(u => ({
+    ...u,
+    pqPercent: totalPq > 0 && u.pq != null ? ((u.pq / totalPq) * 100).toFixed(2) : null,
+  }))
+})
+
+const pqBudgetStatus = computed(() => {
+  if (!estate.value || !pqRows.value.length) return null
+  const totalAdmin    = pqRows.value.reduce((s, r) => s + r.effectiveLevy, 0)
+  const totalReserve  = pqRows.value.reduce((s, r) => s + r.effectiveReserveLevy, 0)
+  const adminBudget   = parseFloat(estate.value.admin_fund_amount   ?? 0)
+  const reserveBudget = parseFloat(estate.value.reserve_fund_amount ?? 0)
+  const adminDiff     = totalAdmin   - adminBudget
+  const reserveDiff   = totalReserve - reserveBudget
+  const missingPq     = pqAllUnits.value.filter(u => u.pq == null).length
+  const overrideUnits  = pqRows.value.filter(r => r.levyOverride != null)
+  const pqUnits        = pqRows.value.filter(r => r.levyOverride == null && r.pq != null)
+  const fallbackUnits  = pqRows.value.filter(r => r.levyOverride == null && r.pq == null)
+  const adminOverrideCount  = overrideUnits.length
+  const adminOverrideTotal  = overrideUnits.reduce((s, r) => s + r.effectiveLevy, 0)
+  const adminPqCount        = pqUnits.length
+  const adminPqTotal        = pqUnits.reduce((s, r) => s + r.effectiveLevy, 0)
+  const adminFallbackCount  = fallbackUnits.length
+  const adminFallbackTotal  = fallbackUnits.reduce((s, r) => s + r.effectiveLevy, 0)
+  return {
+    totalAdmin, totalReserve,
+    adminBudget, reserveBudget,
+    adminDiff, reserveDiff,
+    missingPq,
+    adminOverrideCount, adminOverrideTotal,
+    adminPqCount, adminPqTotal,
+    adminFallbackCount, adminFallbackTotal,
+    hasIssues: Math.abs(adminDiff) >= 1 || (reserveBudget > 0 && Math.abs(reserveDiff) >= 1),
+  }
+})
+
+const estateTabs = computed(() => {
+  const tabs = [
+    { id: 'units', label: 'Units', badge: computedStats.value.units > 0 ? computedStats.value.units : null },
+    { id: 'compliance', label: 'Compliance', badge: complianceChecklists.value.length > 0 ? complianceChecklists.value.length : null },
+    { id: 'communication', label: 'Communication', badge: null },
+    { id: 'overview', label: 'Overview', badge: null },
+  ]
+  if (isPqEstate.value) {
+    tabs.splice(1, 0, { id: 'pq', label: 'Participation Quotas', badge: null })
+  }
+  return tabs
+})
 </script>
 
 <template>
@@ -1449,20 +1774,6 @@ const tenantArrearsChartOptions = {
 
       <!-- Actions -->
       <div class="flex gap-2 shrink-0 items-center">
-        <AppButton variant="outline" @click="showBulkImport = true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" x2="12" y1="3" y2="15"/>
-          </svg>
-          Bulk Import
-        </AppButton>
-        <AppButton variant="primary" @click="showAddUnit = true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
-            <path d="M5 12h14"/><path d="M12 5v14"/>
-          </svg>
-          Add Unit
-        </AppButton>
 
         <!-- Estate action menu -->
         <AppDropdown align="right">
@@ -1562,11 +1873,11 @@ const tenantArrearsChartOptions = {
     <div v-if="!estateLoading && estate" class="rounded-lg border bg-card shadow-sm overflow-hidden">
       <div class="flex items-center gap-0">
 
-        <!-- Left section: schedule info with accent left border -->
-        <div class="flex items-center gap-3.5 flex-1 min-w-0 px-5 py-4 border-l-[3px] border-l-accent">
+        <!-- Left section: schedule info with accent left border (muted when paused) -->
+        <div :class="['flex items-center gap-3.5 flex-1 min-w-0 px-5 py-4 border-l-[3px]', estate.billing_paused ? 'border-l-muted-foreground/30' : 'border-l-accent']">
           <!-- Calendar icon -->
-          <div class="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
+          <div :class="['w-9 h-9 rounded-lg flex items-center justify-center shrink-0', estate.billing_paused ? 'bg-muted' : 'bg-accent/10']">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="estate.billing_paused ? 'text-muted-foreground' : 'text-accent'">
               <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
             </svg>
           </div>
@@ -1575,13 +1886,16 @@ const tenantArrearsChartOptions = {
           <div class="min-w-0">
             <template v-if="billingSchedule">
               <p class="text-sm font-medium text-foreground">
-                Billing runs on the <span class="text-accent font-semibold">{{ billingSchedule.ordinal }}</span> of each month
+                Billing runs on the <span :class="estate.billing_paused ? 'text-muted-foreground font-semibold' : 'text-accent font-semibold'">{{ billingSchedule.ordinal }}</span> of each month
+                <span v-if="estate.billing_paused" class="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-muted text-muted-foreground border border-border">Paused</span>
               </p>
               <p class="text-xs text-muted-foreground mt-0.5">
-                Invoices auto-generated for
-                <template v-if="estate?.type === 'sectional_title'">owners</template>
-                <template v-else-if="estate?.type === 'residential_rental' || estate?.type === 'commercial_rental'">tenants</template>
-                <template v-else>owners &amp; tenants</template>
+                <template v-if="estate.billing_paused">Automatic billing is paused — run manually or resume to re-enable.</template>
+                <template v-else>Invoices auto-generated for
+                  <template v-if="estate?.type === 'sectional_title'">owners</template>
+                  <template v-else-if="estate?.type === 'residential_rental' || estate?.type === 'commercial_rental'">tenants</template>
+                  <template v-else>owners &amp; tenants</template>
+                </template>
               </p>
             </template>
             <template v-else>
@@ -1591,7 +1905,7 @@ const tenantArrearsChartOptions = {
           </div>
         </div>
 
-        <!-- Run Now button -->
+        <!-- Run Now button (always visible when schedule exists) -->
         <div v-if="billingSchedule && computedStats.units > 0" class="shrink-0 flex items-center px-5 py-3">
           <AppButton
             variant="primary"
@@ -1599,22 +1913,20 @@ const tenantArrearsChartOptions = {
             @click="openRunBilling"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="6 3 20 12 6 21 6 3"/>
+              <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>
             </svg>
             Run Now
           </AppButton>
         </div>
 
-        <!-- Countdown section -->
-        <template v-if="billingSchedule && computedStats.units > 0">
+        <!-- Countdown section (hidden when paused) -->
+        <template v-if="billingSchedule && computedStats.units > 0 && !estate.billing_paused">
           <div class="shrink-0 flex items-center gap-3 pl-5 pr-5 py-4 border-l border-border/40">
             <div>
               <p class="text-[11px] uppercase tracking-wider text-muted-foreground font-medium leading-none mb-1.5">Next Run</p>
               <p class="text-sm font-semibold text-foreground leading-tight">{{ billingSchedule.formatted }}</p>
             </div>
-            <span
-              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-mono font-semibold leading-none bg-accent/10 text-accent border border-accent/20"
-            >
+            <span class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-mono font-semibold leading-none bg-accent/10 text-accent border border-accent/20">
               <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-70">
                 <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
               </svg>
@@ -1624,18 +1936,47 @@ const tenantArrearsChartOptions = {
         </template>
 
         <!-- No units prompt -->
-        <template v-else-if="billingSchedule && computedStats.units === 0">
+        <template v-else-if="billingSchedule && computedStats.units === 0 && !estate.billing_paused">
           <div class="shrink-0 px-5 py-4 border-l border-border">
             <p class="text-xs text-muted-foreground">Add units to see the</p>
             <p class="text-xs text-muted-foreground">billing countdown</p>
           </div>
         </template>
 
+        <!-- Pause / Resume toggle -->
+        <div v-if="billingSchedule" class="shrink-0 flex items-center ml-4">
+          <!-- When paused: single "Resume" pill button -->
+          <button
+            v-if="estate.billing_paused"
+            @click="toggleBillingPaused"
+            :disabled="billingPauseToggling"
+            title="Resume automatic billing schedule"
+            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm font-medium text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="6 3 20 12 6 21 6 3"/>
+            </svg>
+            Resume Schedule
+          </button>
+          <!-- When active: icon-only pause button -->
+          <button
+            v-else
+            @click="toggleBillingPaused"
+            :disabled="billingPauseToggling"
+            title="Pause automatic billing"
+            class="inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+            </svg>
+          </button>
+        </div>
+
         <!-- Edit button -->
         <button
           @click="openBillingDay"
           title="Edit billing day"
-          class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors mx-4"
+          class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors ml-2 mr-4"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
@@ -1645,8 +1986,35 @@ const tenantArrearsChartOptions = {
       </div>
     </div>
 
+    <!-- ── Tab Navigation ────────────────────────────────────────────── -->
+    <div class="border-b border-border">
+      <nav class="flex" aria-label="Estate sections">
+        <button
+          v-for="tab in estateTabs"
+          :key="tab.id"
+          @click="setTab(tab.id)"
+          :class="[
+            'inline-flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors focus:outline-none',
+            activeTab === tab.id
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+          ]"
+        >
+          {{ tab.label }}
+          <span
+            v-if="tab.badge != null"
+            :class="[
+              'inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full px-1 text-[10px] font-semibold leading-none',
+              activeTab === tab.id ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            ]"
+          >{{ tab.badge }}</span>
+        </button>
+      </nav>
+    </div>
+
     <!-- ── Units Table Card ─────────────────────────────────────────── -->
-    <div class="rounded-lg border bg-card shadow-sm">
+    <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" leave-active-class="transition-none">
+    <div v-show="activeTab === 'units'" class="rounded-lg border bg-card shadow-sm">
 
       <!-- ── Empty state: no units exist at all ────────────────────── -->
       <div
@@ -1706,17 +2074,30 @@ const tenantArrearsChartOptions = {
           </svg>
           Units
         </h3>
-        <button
-          class="inline-flex items-center gap-1.5 rounded border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors"
-          @click="showExportModal = true"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" x2="12" y1="3" y2="15"/>
-          </svg>
-          Export
-        </button>
+        <div class="flex items-center gap-2">
+          <AppButton variant="primary" size="sm" @click="showAddUnit = true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+              <path d="M5 12h14"/><path d="M12 5v14"/>
+            </svg>
+            Add Unit
+          </AppButton>
+          <AppButton variant="outline" size="sm" @click="showBulkImport = true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" x2="12" y1="3" y2="15"/>
+            </svg>
+            Bulk Import
+          </AppButton>
+          <AppButton variant="outline" size="sm" @click="showExportModal = true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" x2="12" y1="3" y2="15"/>
+            </svg>
+            Export
+          </AppButton>
+        </div>
       </div>
 
       <!-- Toolbar row -->
@@ -2030,43 +2411,336 @@ const tenantArrearsChartOptions = {
       </div>
 
       <!-- Pagination -->
-      <div v-if="!unitsLoading && totalPages > 1" class="flex items-center justify-between px-6 py-3 border-t border-border">
+      <div v-if="!unitsLoading && totalUnitsInQuery > PER_PAGE" class="flex items-center justify-between px-6 py-3 border-t border-border">
         <p class="text-xs text-muted-foreground">
-          Showing {{ (currentPage - 1) * PER_PAGE + 1 }}–{{ Math.min(currentPage * PER_PAGE, totalUnitsInQuery) }}
-          of {{ totalUnitsInQuery }} units
+          <template v-if="showAllUnits">Showing all {{ totalUnitsInQuery }} units</template>
+          <template v-else>Showing {{ (currentPage - 1) * PER_PAGE + 1 }}–{{ Math.min(currentPage * PER_PAGE, totalUnitsInQuery) }} of {{ totalUnitsInQuery }} units</template>
         </p>
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-2">
           <button
-            class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
-            :disabled="currentPage <= 1"
-            @click="setPage(currentPage - 1)"
-          >Previous</button>
-          <button
-            v-for="page in totalPages"
-            :key="page"
-            :class="[
-              'h-8 w-8 text-xs rounded border transition-colors',
-              page === currentPage
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-border hover:bg-muted',
-            ]"
-            @click="setPage(page)"
-          >{{ page }}</button>
-          <button
-            class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
-            :disabled="currentPage >= totalPages"
-            @click="setPage(currentPage + 1)"
-          >Next</button>
+            class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors"
+            @click="toggleShowAll"
+          >{{ showAllUnits ? 'Show Less' : 'Show All' }}</button>
+          <div v-if="!showAllUnits" class="flex items-center gap-1">
+            <button
+              class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
+              :disabled="currentPage <= 1"
+              @click="setPage(currentPage - 1)"
+            >Previous</button>
+            <button
+              v-for="page in totalPages"
+              :key="page"
+              :class="[
+                'h-8 w-8 text-xs rounded border transition-colors',
+                page === currentPage
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-border hover:bg-muted',
+              ]"
+              @click="setPage(page)"
+            >{{ page }}</button>
+            <button
+              class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
+              :disabled="currentPage >= totalPages"
+              @click="setPage(currentPage + 1)"
+            >Next</button>
+          </div>
         </div>
       </div>
 
       </template><!-- end normal state -->
     </div>
+    </Transition>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- PQ (Participation Quota) Section                              -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" leave-active-class="transition-none">
+    <div v-show="activeTab === 'pq'" class="bg-card border border-border rounded-lg">
+      <!-- Sticky header group: title + budget strip + search/filters + column headers -->
+      <div ref="pqStickyHeaderEl" class="sticky -top-6 z-20 bg-card rounded-t-lg">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div>
+          <h3 class="text-sm font-semibold text-foreground">Participation Quotas (PQ)</h3>
+          <p class="text-xs text-muted-foreground mt-0.5">PQ determines each unit's share of the admin and reserve fund levy.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- View mode actions -->
+          <template v-if="!pqEditMode">
+            <AppButton variant="outline" size="sm" @click="showPqImportModal = true">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>
+              </svg>
+              Bulk Import PQs
+            </AppButton>
+            <AppButton variant="outline" size="sm" @click="enterPqEditMode" :disabled="pqAllUnitsLoading">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/>
+              </svg>
+              Edit PQs
+            </AppButton>
+          </template>
+          <!-- Edit mode actions -->
+          <template v-else>
+            <AppButton variant="outline" size="sm" @click="cancelPqEditMode" :disabled="pqSaving">
+              Cancel
+            </AppButton>
+            <AppButton variant="primary" size="sm" @click="savePqEdits" :disabled="!pqHasChanges || pqSaving" :loading="pqSaving">
+              <svg v-if="!pqSaving" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Save Changes
+            </AppButton>
+          </template>
+        </div>
+      </div>
+
+      <!-- Budget health strip -->
+      <div v-if="pqBudgetStatus?.hasIssues" class="flex items-center gap-3 px-6 py-2 border-b border-amber-100 bg-amber-50/50">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-amber-500 shrink-0">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+        </svg>
+        <div class="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+          <span v-if="Math.abs(pqBudgetStatus.adminDiff) > 0.01" class="inline-flex items-center gap-1.5 text-xs text-amber-700">
+            <span class="font-medium text-amber-600/80 uppercase tracking-wide text-[10px]">Admin Fund</span>
+            <span class="font-semibold text-amber-900">{{ countryStore.formatCurrency(pqBudgetStatus.totalAdmin) }}</span>
+            <span class="text-amber-400">/</span>
+            <span class="text-amber-600/70">{{ countryStore.formatCurrency(pqBudgetStatus.adminBudget) }}</span>
+            <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold"
+              :class="pqBudgetStatus.adminDiff < 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'">
+              {{ pqBudgetStatus.adminDiff > 0 ? '+' : '' }}{{ countryStore.formatCurrency(pqBudgetStatus.adminDiff) }}
+            </span>
+          </span>
+          <span v-if="pqBudgetStatus.reserveBudget > 0 && Math.abs(pqBudgetStatus.reserveDiff) > 0.01" class="text-amber-200 text-xs select-none">|</span>
+          <span v-if="pqBudgetStatus.reserveBudget > 0 && Math.abs(pqBudgetStatus.reserveDiff) > 0.01" class="inline-flex items-center gap-1.5 text-xs text-amber-700">
+            <span class="font-medium text-amber-600/80 uppercase tracking-wide text-[10px]">Reserve Fund</span>
+            <span class="font-semibold text-amber-900">{{ countryStore.formatCurrency(pqBudgetStatus.totalReserve) }}</span>
+            <span class="text-amber-400">/</span>
+            <span class="text-amber-600/70">{{ countryStore.formatCurrency(pqBudgetStatus.reserveBudget) }}</span>
+            <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold"
+              :class="pqBudgetStatus.reserveDiff < 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'">
+              {{ pqBudgetStatus.reserveDiff > 0 ? '+' : '' }}{{ countryStore.formatCurrency(pqBudgetStatus.reserveDiff) }}
+            </span>
+          </span>
+          <span v-if="pqBudgetStatus.missingPq > 0" class="text-amber-200 text-xs select-none">|</span>
+          <span v-if="pqBudgetStatus.missingPq > 0" class="inline-flex items-center gap-1 text-xs text-amber-700">
+            <span class="inline-flex items-center rounded-full px-1.5 py-0.5 bg-amber-100 text-[11px] font-semibold text-amber-700">
+              {{ pqBudgetStatus.missingPq }} {{ pqBudgetStatus.missingPq === 1 ? 'unit' : 'units' }} missing PQ
+            </span>
+          </span>
+        </div>
+        <AppButton variant="outline" size="sm" @click="openPqExplain">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          Explain
+        </AppButton>
+      </div>
+
+      <!-- Search + quick filters -->
+      <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border flex-wrap">
+        <!-- Text search -->
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            v-model="pqSearch"
+            type="text"
+            placeholder="Search section, unit, owner…"
+            class="w-56 pl-8 pr-7 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+          />
+          <button v-if="pqSearch" type="button" @click="pqSearch = ''"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Divider -->
+        <div class="w-px h-4 bg-border shrink-0" />
+
+        <!-- Quick filter chips -->
+        <div class="flex items-center gap-1.5">
+          <button type="button"
+            :class="['inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border',
+              pqQuickFilter === null
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground']"
+            @click="pqQuickFilter = null">
+            All
+            <span class="opacity-60 font-normal">{{ pqEditRows.length }}</span>
+          </button>
+          <button type="button"
+            :class="['inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border',
+              pqQuickFilter === 'missing_pq'
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground']"
+            @click="pqQuickFilter = pqQuickFilter === 'missing_pq' ? null : 'missing_pq'">
+            Missing PQ
+            <span class="opacity-75 font-normal">{{ pqEditRows.filter(r => r.pq == null).length }}</span>
+          </button>
+          <button type="button"
+            :class="['inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border',
+              pqQuickFilter === 'has_override'
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground']"
+            @click="pqQuickFilter = pqQuickFilter === 'has_override' ? null : 'has_override'">
+            Has Override
+            <span class="opacity-75 font-normal">{{ pqEditRows.filter(r => r.levyOverride != null).length }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Column headers — part of the sticky group -->
+      <div :class="['border-b border-border transition-colors', pqEditMode ? 'bg-primary/5' : 'bg-muted/40']">
+        <table class="w-full text-sm table-fixed">
+          <colgroup>
+            <col class="w-[8%]" /><col class="w-[11%]" /><col /><col class="w-[11%]" /><col class="w-[16%]" /><col class="w-[14%]" /><col class="w-[13%]" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Section</th>
+              <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit No</th>
+              <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Owner</th>
+              <th class="text-right py-3 px-4 text-xs font-medium uppercase tracking-wider"
+                :class="pqEditMode ? 'text-primary' : 'text-muted-foreground'">PQ</th>
+              <th class="text-right py-3 px-4 text-xs font-medium uppercase tracking-wider"
+                :class="pqEditMode ? 'text-primary' : 'text-muted-foreground'">Admin Levy</th>
+              <th class="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Reserve Levy</th>
+              <th class="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Levy</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+
+      </div><!-- end sticky header group -->
+
+      <!-- Table data -->
+      <table class="w-full text-sm table-fixed">
+        <colgroup>
+          <col class="w-[8%]" /><col class="w-[11%]" /><col /><col class="w-[11%]" /><col class="w-[16%]" /><col class="w-[14%]" /><col class="w-[13%]" />
+        </colgroup>
+        <tbody class="divide-y divide-border">
+            <tr v-if="!allUnits.length">
+              <td colspan="7" class="py-8 text-center text-sm text-muted-foreground">No units found.</td>
+            </tr>
+            <tr v-else-if="!pqFilteredRows.length">
+              <td colspan="7" class="py-12 text-center">
+                <div class="flex flex-col items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/40">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                  </svg>
+                  <p class="text-sm font-medium text-muted-foreground">No results found</p>
+                  <button type="button" class="text-xs text-primary hover:underline"
+                    @click="pqSearch = ''; pqQuickFilter = null">
+                    Clear filters
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-for="row in pqFilteredRows" :key="row.id"
+              :class="['transition-colors', pqEditMode ? 'hover:bg-muted/10' : 'hover:bg-muted/20']">
+              <td class="py-3 px-4 text-muted-foreground">{{ row.section ?? '—' }}</td>
+              <td class="py-3 px-4 font-medium text-foreground">{{ row.unit }}</td>
+              <td class="py-3 px-4 text-muted-foreground">{{ row.ownerName }}</td>
+              <!-- PQ cell -->
+              <td class="py-2 px-4 text-right">
+                <input v-if="pqEditMode"
+                  v-model="pqDraftMap[row.id].pqStr"
+                  type="number" step="0.0001" min="0" placeholder="—"
+                  class="w-24 text-right font-mono text-sm bg-background border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+                />
+                <template v-else>
+                  <span v-if="row.pq != null" class="font-mono text-foreground">{{ Number(row.pq).toFixed(4) }}</span>
+                  <span v-else class="text-muted-foreground">—</span>
+                </template>
+              </td>
+              <!-- Admin Levy cell -->
+              <td class="py-2 px-4 text-right">
+                <!-- Edit mode: override input for every row -->
+                <template v-if="pqEditMode">
+                  <div class="flex items-center justify-end gap-1">
+                    <input
+                      v-model="pqDraftMap[row.id].overrideStr"
+                      type="number" step="0.01" min="0" placeholder="—"
+                      :class="['w-28 text-right text-sm bg-background border rounded px-2 py-1 focus:outline-none focus:ring-1 transition-colors',
+                        pqDraftMap[row.id].overrideStr !== ''
+                          ? 'border-amber-400 focus:ring-amber-500 focus:border-amber-500'
+                          : 'border-border focus:ring-primary focus:border-primary']"
+                    />
+                    <button v-if="pqDraftMap[row.id].overrideStr !== ''" type="button" title="Remove override"
+                      class="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      @click="pqDraftMap[row.id].overrideStr = ''">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                    <div v-else class="w-5 shrink-0" />
+                  </div>
+                </template>
+                <!-- View mode: override badge + levy amount -->
+                <template v-else>
+                  <div class="flex items-center justify-end gap-1.5">
+                    <AppPoptip v-if="row.levyOverride != null" position="bottom" max-width="220px">
+                      <template #trigger>
+                        <span class="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200 cursor-pointer">
+                          Override
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5 opacity-70">
+                            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                          </svg>
+                        </span>
+                      </template>
+                      <div class="p-3 space-y-1.5">
+                        <div class="flex items-center gap-2 pb-2 border-b border-border">
+                          <div class="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 text-amber-700">
+                              <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                            </svg>
+                          </div>
+                          <p class="text-xs font-semibold text-foreground">Fixed Levy Override</p>
+                        </div>
+                        <p class="text-xs text-muted-foreground">This unit's levy is set to a fixed amount of <span class="font-semibold text-foreground">{{ countryStore.formatCurrency(row.levyOverride) }}</span> per month.</p>
+                        <p class="text-[10px] text-muted-foreground">Not calculated from PQ — overrides the estate formula.</p>
+                      </div>
+                    </AppPoptip>
+                    <span class="text-foreground">{{ countryStore.formatCurrency(row.effectiveLevy) }}</span>
+                  </div>
+                </template>
+              </td>
+              <td class="py-3 px-4 text-right text-foreground">{{ countryStore.formatCurrency(row.effectiveReserveLevy) }}</td>
+              <td class="py-3 px-4 text-right font-medium text-foreground">{{ countryStore.formatCurrency(row.effectiveLevy + row.effectiveReserveLevy) }}</td>
+            </tr>
+          </tbody>
+          <tfoot v-if="allUnits.length" class="border-t border-border bg-muted/20">
+            <tr>
+              <td colspan="3" class="py-3 px-4 text-xs font-medium text-muted-foreground">Totals</td>
+              <td class="py-3 px-4 text-right text-xs font-mono font-medium text-foreground">
+                {{ pqEditRows.reduce((s, r) => s + (r.pq ?? 0), 0).toFixed(4) }}
+              </td>
+              <td class="py-3 px-4 text-right text-xs font-medium text-foreground">
+                {{ countryStore.formatCurrency(pqEditRows.reduce((s, r) => s + r.effectiveLevy, 0)) }}
+              </td>
+              <td class="py-3 px-4 text-right text-xs font-medium text-foreground">
+                {{ countryStore.formatCurrency(pqEditRows.reduce((s, r) => s + r.effectiveReserveLevy, 0)) }}
+              </td>
+              <td class="py-3 px-4 text-right text-xs font-medium text-foreground">
+                {{ countryStore.formatCurrency(pqEditRows.reduce((s, r) => s + r.effectiveLevy + r.effectiveReserveLevy, 0)) }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+    </div>
+    </Transition>
 
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Compliance Section                                            -->
     <!-- ══════════════════════════════════════════════════════════════ -->
-    <div class="rounded-lg border bg-card shadow-sm mt-6">
+    <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" leave-active-class="transition-none">
+    <div v-show="activeTab === 'compliance'" class="rounded-lg border bg-card shadow-sm">
       <div class="flex items-center justify-between px-6 pt-5 pb-3">
         <div>
           <h3 class="font-body font-semibold text-base text-foreground">Compliance</h3>
@@ -2133,6 +2807,7 @@ const tenantArrearsChartOptions = {
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- Create Checklist Modal -->
     <CreateChecklistModal
@@ -2142,6 +2817,10 @@ const tenantArrearsChartOptions = {
       @close="showCreateChecklist = false"
       @created="onChecklistCreated"
     />
+
+    <!-- ── Overview Tab: Charts ─────────────────────────────────────── -->
+    <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" leave-active-class="transition-none">
+    <div v-show="activeTab === 'overview'" class="space-y-6">
 
     <!-- ── Charts: Occupancy Breakdown + Invoice Status ─────────────── -->
     <!-- Skeleton while primary data is still loading -->
@@ -2381,6 +3060,99 @@ const tenantArrearsChartOptions = {
       </div>
     </template>
 
+    </div><!-- end overview tab -->
+    </Transition>
+
+    <!-- ── Communication Tab ─────────────────────────────────────────── -->
+    <div v-show="activeTab === 'communication'" class="space-y-6">
+
+      <!-- Header row -->
+      <div class="rounded-lg border bg-card shadow-sm px-6 py-5 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-foreground">Email Communication</h2>
+            <p class="text-sm text-muted-foreground">Send email notices, statements and announcements to estate residents</p>
+          </div>
+        </div>
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+          Coming Soon
+        </span>
+      </div>
+
+      <!-- Feature preview cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        <!-- Notices & Announcements -->
+        <div class="rounded-lg border bg-card shadow-sm p-5 flex flex-col gap-3 opacity-60">
+          <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-foreground">Notices & Announcements</h3>
+            <p class="text-xs text-muted-foreground mt-1">Email important notices and announcements to all owners and tenants in bulk.</p>
+          </div>
+          <div class="mt-auto pt-2 border-t border-border">
+            <span class="text-xs text-muted-foreground">Bulk email · Template library · Open tracking</span>
+          </div>
+        </div>
+
+        <!-- Monthly Statements -->
+        <div class="rounded-lg border bg-card shadow-sm p-5 flex flex-col gap-3 opacity-60">
+          <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-foreground">Monthly Statements</h3>
+            <p class="text-xs text-muted-foreground mt-1">Automatically email account statements and invoices to owners and tenants each month.</p>
+          </div>
+          <div class="mt-auto pt-2 border-t border-border">
+            <span class="text-xs text-muted-foreground">Auto-send · PDF attachments · Per-unit delivery</span>
+          </div>
+        </div>
+
+        <!-- Payment Reminders -->
+        <div class="rounded-lg border bg-card shadow-sm p-5 flex flex-col gap-3 opacity-60">
+          <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+            <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0M3.124 7.5A8.969 8.969 0 015.292 3m13.416 0a8.969 8.969 0 012.168 4.5" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-foreground">Payment Reminders</h3>
+            <p class="text-xs text-muted-foreground mt-1">Send automated email reminders for upcoming due dates and overdue balances.</p>
+          </div>
+          <div class="mt-auto pt-2 border-t border-border">
+            <span class="text-xs text-muted-foreground">Scheduled sends · Overdue alerts · Custom triggers</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sent email history placeholder -->
+      <div class="rounded-lg border bg-card shadow-sm">
+        <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-foreground">Sent Emails</h3>
+          <span class="text-xs text-muted-foreground">No emails sent yet</span>
+        </div>
+        <div class="flex flex-col items-center justify-center py-16 px-6 text-center gap-3">
+          <svg class="w-10 h-10 text-muted-foreground/30" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+          </svg>
+          <p class="text-sm text-muted-foreground">Sent email history will appear here once email communication is enabled.</p>
+        </div>
+      </div>
+
+    </div><!-- end communication tab -->
+
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Modals                                                        -->
     <!-- ══════════════════════════════════════════════════════════════ -->
@@ -2396,14 +3168,18 @@ const tenantArrearsChartOptions = {
         <!-- Unit Number + Occupancy Type -->
         <div class="grid grid-cols-2 gap-4">
           <AppInput v-model="editUnitForm.unitNumber" label="Unit Number" required />
-          <AppSelect v-model="editUnitForm.occupancy" label="Occupancy Type" :options="editUnitOccupancyOptions" required />
+          <AppInput v-model="editUnitForm.section" label="Section" placeholder="e.g. A" />
+        </div>
+        <AppSelect v-model="editUnitForm.occupancy" label="Occupancy Type" :options="editUnitOccupancyOptions" required />
+
+        <!-- Levy Override + PQ -->
+        <div v-if="editUnitShowLevy" class="grid grid-cols-2 gap-4">
+          <AppInput v-model="editUnitForm.levyOverride" label="Levy Override" type="number" placeholder="Calculated from PQ" :min="0" :max="9999999999.99" />
+          <AppInput v-model="editUnitForm.pq" label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" hint="% of total. All units must sum to 100." :min="0" :max="100" />
         </div>
 
-        <!-- Levy Override -->
-        <AppInput v-if="editUnitShowLevy" v-model="editUnitForm.levyOverride" label="Levy Override" type="number" placeholder="Use default levy" />
-
         <!-- Rent Amount (shown when tenant-occupied — not applicable for sectional title) -->
-        <AppInput v-if="editUnitForm.occupancy === 'tenant' && estate.type !== 'sectional_title'" v-model="editUnitForm.tenant.rent" label="Rent Amount" type="number" />
+        <AppInput v-if="editUnitForm.occupancy === 'tenant' && estate.type !== 'sectional_title'" v-model="editUnitForm.tenant.rent" label="Rent Amount" type="number" :min="0" :max="9999999999.99" />
 
         <!-- Owner Details -->
         <div class="border-t border-border pt-4">
@@ -2444,7 +3220,7 @@ const tenantArrearsChartOptions = {
               <AppInput v-model="editUnitForm.tenant.name"       label="Full Name"   size="sm" placeholder="Tenant name" required />
               <AppInput v-model="editUnitForm.tenant.email"      label="Email"       size="sm" type="email" placeholder="Email address" required />
               <AppInput v-model="editUnitForm.tenant.phone"      label="Phone"       size="sm" placeholder="+27 ..." />
-              <AppInput v-model="editUnitForm.tenant.rent"       label="Rent Amount" size="sm" type="number" placeholder="Monthly rent" required />
+              <AppInput v-model="editUnitForm.tenant.rent"       label="Rent Amount" size="sm" type="number" placeholder="Monthly rent" required :min="0" :max="9999999999.99" />
               <AppDatePicker v-model="editUnitForm.tenant.leaseStart" label="Lease Start" placeholder="Select date..." required />
               <AppDatePicker v-model="editUnitForm.tenant.leaseEnd" label="Lease End" placeholder="Select date..." />
             </div>
@@ -2571,89 +3347,167 @@ const tenantArrearsChartOptions = {
     </AppModal>
 
     <!-- Add Unit Modal -->
-    <AppModal title="Add Unit" :show="showAddUnit" size="md" @close="showAddUnit = false">
-      <div class="space-y-4">
+    <AppModal title="Add Unit" :show="showAddUnit" size="md" @close="showAddUnit = false; resetNewUnit()">
 
-        <div v-if="saveError" class="rounded border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
-          {{ saveError }}
+      <!-- Step indicator -->
+      <div class="flex items-center gap-3 mb-5 pb-5 border-b border-border">
+        <!-- Step 1 -->
+        <div class="flex items-center gap-2">
+          <span :class="['w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors', addUnitStep === 1 ? 'bg-primary text-white' : 'bg-success text-white']">
+            <svg v-if="addUnitStep > 1" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span v-else>1</span>
+          </span>
+          <span :class="['text-xs font-medium', addUnitStep === 1 ? 'text-foreground' : 'text-muted-foreground']">Unit Details</span>
         </div>
+        <div class="flex-1 h-px bg-border"></div>
+        <!-- Step 2 -->
+        <div class="flex items-center gap-2">
+          <span :class="['w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors', addUnitStep === 2 ? 'bg-primary text-white' : addUnitStep > 2 ? 'bg-success text-white' : 'bg-muted text-muted-foreground']">
+            <svg v-if="addUnitStep > 2" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span v-else>2</span>
+          </span>
+          <span :class="['text-xs font-medium', addUnitStep === 2 ? 'text-foreground' : 'text-muted-foreground']">Owner Details</span>
+        </div>
+        <template v-if="addUnitTotalSteps === 3">
+          <div class="flex-1 h-px bg-border"></div>
+          <!-- Step 3 -->
+          <div class="flex items-center gap-2">
+            <span :class="['w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors', addUnitStep === 3 ? 'bg-primary text-white' : 'bg-muted text-muted-foreground']">3</span>
+            <span :class="['text-xs font-medium', addUnitStep === 3 ? 'text-foreground' : 'text-muted-foreground']">Tenant Details</span>
+          </div>
+        </template>
+      </div>
 
-        <!-- Unit Number + Occupancy Type -->
+      <!-- Step 1: Unit Details -->
+      <div v-if="addUnitStep === 1" class="space-y-4">
+        <div v-if="saveError" class="rounded border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">{{ saveError }}</div>
+
         <div class="grid grid-cols-2 gap-4">
           <AppInput v-model="newUnit.unitNumber" label="Unit Number" placeholder="e.g. A01" required />
-          <AppSelect v-model="newUnit.occupancy" label="Occupancy Type" :options="editUnitOccupancyOptions" required />
+          <AppInput v-model="newUnit.section" label="Section" placeholder="e.g. A" />
         </div>
+        <AppSelect v-model="newUnit.occupancy" label="Occupancy Type" :options="editUnitOccupancyOptions" required />
 
-        <!-- Levy Override -->
-        <AppInput v-if="editUnitShowLevy" v-model="newUnit.levyOverride" label="Levy Override" type="number" placeholder="Use default levy" />
+        <template v-if="editUnitShowLevy">
+          <AppInput v-model="newUnit.pq" label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" hint="% of total. All units must sum to 100." :min="0" :max="100" />
 
-        <!-- Rent Amount (shown when tenant-occupied — not applicable for sectional title) -->
-        <AppInput v-if="newUnit.occupancy === 'tenant' && estate?.type !== 'sectional_title'" v-model="newUnit.tenant.rent" label="Rent Amount" type="number" />
-
-        <!-- Owner Details -->
-        <div class="border-t border-border pt-4">
-          <p class="text-sm font-medium text-foreground mb-3">Owner Details</p>
-          <div class="grid grid-cols-2 gap-4">
-            <AppInput v-model="newUnit.owner.name"     label="Full Name"  size="sm" placeholder="e.g. Sarah van der Merwe" required />
-            <AppInput v-model="newUnit.owner.email"    label="Email"      size="sm" type="email" placeholder="e.g. sarah@email.com" required />
-            <AppInput v-model="newUnit.owner.phone"    label="Phone"      size="sm" placeholder="e.g. +27 82 555 1234" />
-            <AppInput v-model="newUnit.owner.idNumber" label="ID Number"  size="sm" placeholder="e.g. 8001015009088" />
-          </div>
-        </div>
-
-        <!-- Tenant Details — hidden entirely for sectional title estates -->
-        <div v-if="estate?.type !== 'sectional_title'" class="border-t border-border pt-4">
-          <!-- Toggle header (owner/vacant units) -->
-          <div v-if="newUnit.occupancy !== 'tenant'" class="flex items-center justify-between mb-3">
+          <!-- Levy Override toggle -->
+          <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-foreground">Tenant Details</p>
-              <p class="text-xs text-muted-foreground">Toggle on if this unit also has a tenant</p>
+              <p class="text-sm font-medium text-foreground">Override Levy Amount</p>
+              <p class="text-xs text-muted-foreground">Set a fixed levy instead of using PQ calculation</p>
             </div>
-            <button type="button" class="text-primary transition-colors" @click="newUnit.showTenant = !newUnit.showTenant">
-              <!-- Toggle ON -->
-              <svg v-if="newUnit.showTenant" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-9 h-9 text-accent">
+            <button type="button" @click="newUnit.overrideLevy = !newUnit.overrideLevy; if (!newUnit.overrideLevy) newUnit.levyOverride = ''">
+              <svg v-if="newUnit.overrideLevy" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-9 h-9 text-accent">
                 <rect width="20" height="12" x="2" y="6" rx="6" ry="6"/><circle cx="16" cy="12" r="2"/>
               </svg>
-              <!-- Toggle OFF -->
               <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-9 h-9 text-muted-foreground">
                 <rect width="20" height="12" x="2" y="6" rx="6" ry="6"/><circle cx="8" cy="12" r="2"/>
               </svg>
             </button>
           </div>
-          <!-- Direct heading (tenant-occupied units) -->
-          <p v-else class="text-sm font-medium text-foreground mb-3">Tenant Details</p>
+          <AppInput v-if="newUnit.overrideLevy" v-model="newUnit.levyOverride" type="number" placeholder="e.g. 1500.00" :min="0" :max="9999999999.99" />
+        </template>
 
-          <!-- Tenant fields -->
-          <div v-if="newUnitShowTenantFields" class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
-              <AppInput v-model="newUnit.tenant.name"       label="Full Name"   size="sm" placeholder="Tenant name" required />
-              <AppInput v-model="newUnit.tenant.email"      label="Email"       size="sm" type="email" placeholder="Email address" required />
-              <AppInput v-model="newUnit.tenant.phone"      label="Phone"       size="sm" placeholder="+27 ..." />
-              <AppInput v-model="newUnit.tenant.rent"       label="Rent Amount" size="sm" type="number" placeholder="Monthly rent" required />
-              <AppDatePicker v-model="newUnit.tenant.leaseStart" label="Lease Start" placeholder="Select date..." required />
-              <AppDatePicker v-model="newUnit.tenant.leaseEnd" label="Lease End" placeholder="Select date..." />
-            </div>
-            <!-- Lease Document upload -->
-            <div>
-              <label class="block text-xs text-muted-foreground mb-1">Lease Document</label>
-              <div class="border border-dashed border-border rounded-lg p-4 text-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-muted-foreground mx-auto mb-1.5">
-                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
-                </svg>
-                <p class="text-xs text-muted-foreground mb-1.5">Drop lease PDF here or click to browse</p>
-                <AppButton variant="outline" size="sm">Choose File</AppButton>
-              </div>
+        <AppInput v-if="newUnit.occupancy === 'tenant' && estate?.type !== 'sectional_title'" v-model="newUnit.tenant.rent" label="Rent Amount" type="number" :min="0" :max="9999999999.99" />
+      </div>
+
+      <!-- Step 2: Owner Details -->
+      <div v-if="addUnitStep === 2" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <AppInput v-model="newUnit.owner.name"     label="Full Name"  placeholder="e.g. Sarah van der Merwe" required />
+          <AppInput v-model="newUnit.owner.email"    label="Email"      type="email" placeholder="e.g. sarah@email.com" required />
+          <AppInput v-model="newUnit.owner.phone"    label="Phone"      placeholder="e.g. +27 82 555 1234" />
+          <AppInput v-model="newUnit.owner.idNumber" label="ID Number"  placeholder="e.g. 8001015009088" />
+        </div>
+        <p v-if="saveError" class="text-sm text-destructive">{{ saveError }}</p>
+      </div>
+
+      <!-- Step 3: Tenant Details (non-sectional-title only) -->
+      <div v-if="addUnitStep === 3" class="space-y-4">
+        <!-- Toggle header (owner/vacant units) -->
+        <div v-if="newUnit.occupancy !== 'tenant'" class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-foreground">Tenant Details</p>
+            <p class="text-xs text-muted-foreground">Toggle on if this unit also has a tenant</p>
+          </div>
+          <button type="button" class="text-primary transition-colors" @click="newUnit.showTenant = !newUnit.showTenant">
+            <svg v-if="newUnit.showTenant" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-9 h-9 text-accent">
+              <rect width="20" height="12" x="2" y="6" rx="6" ry="6"/><circle cx="16" cy="12" r="2"/>
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-9 h-9 text-muted-foreground">
+              <rect width="20" height="12" x="2" y="6" rx="6" ry="6"/><circle cx="8" cy="12" r="2"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Direct heading (tenant-occupied) -->
+        <p v-else class="text-sm font-medium text-foreground">Tenant Details</p>
+
+        <!-- Tenant fields -->
+        <div v-if="newUnitShowTenantFields" class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <AppInput v-model="newUnit.tenant.name"       label="Full Name"   placeholder="Tenant name" required />
+            <AppInput v-model="newUnit.tenant.email"      label="Email"       type="email" placeholder="Email address" required />
+            <AppInput v-model="newUnit.tenant.phone"      label="Phone"       placeholder="+27 ..." />
+            <AppInput v-model="newUnit.tenant.rent"       label="Rent Amount" type="number" placeholder="Monthly rent" :min="0" :max="9999999999.99" />
+            <AppDatePicker v-model="newUnit.tenant.leaseStart" label="Lease Start" placeholder="Select date..." />
+            <AppDatePicker v-model="newUnit.tenant.leaseEnd"   label="Lease End"   placeholder="Select date..." />
+          </div>
+          <div>
+            <label class="block text-xs text-muted-foreground mb-1">Lease Document</label>
+            <div class="border border-dashed border-border rounded-lg p-4 text-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-muted-foreground mx-auto mb-1.5">
+                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
+              </svg>
+              <p class="text-xs text-muted-foreground mb-1.5">Drop lease PDF here or click to browse</p>
+              <AppButton variant="outline" size="sm">Choose File</AppButton>
             </div>
           </div>
         </div>
 
+        <p v-if="saveError" class="text-sm text-destructive">{{ saveError }}</p>
       </div>
 
       <template #footer>
-        <AppButton variant="outline" :disabled="savingUnit" @click="showAddUnit = false">Cancel</AppButton>
-        <AppButton variant="primary" :disabled="savingUnit" @click="saveUnit">
-          {{ savingUnit ? 'Saving…' : 'Add Unit' }}
-        </AppButton>
+        <!-- Step 1 -->
+        <template v-if="addUnitStep === 1">
+          <AppButton variant="outline" @click="showAddUnit = false; resetNewUnit()">Cancel</AppButton>
+          <AppButton variant="primary" :disabled="!newUnit.unitNumber || !newUnit.occupancy" @click="addUnitStep = 2">
+            Next
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </AppButton>
+        </template>
+        <!-- Step 2 — last step for sectional title -->
+        <template v-else-if="addUnitStep === 2 && addUnitTotalSteps === 2">
+          <AppButton variant="outline" @click="addUnitStep = 1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            Back
+          </AppButton>
+          <AppButton variant="primary" :disabled="savingUnit || !newUnit.owner.name || !newUnit.owner.email" @click="saveUnit">
+            {{ savingUnit ? 'Saving…' : 'Add Unit' }}
+          </AppButton>
+        </template>
+        <!-- Step 2 — middle step for other estates -->
+        <template v-else-if="addUnitStep === 2">
+          <AppButton variant="outline" @click="addUnitStep = 1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            Back
+          </AppButton>
+          <AppButton variant="primary" :disabled="!newUnit.owner.name || !newUnit.owner.email" @click="addUnitStep = 3">
+            Next
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </AppButton>
+        </template>
+        <!-- Step 3 -->
+        <template v-else>
+          <AppButton variant="outline" @click="addUnitStep = 2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            Back
+          </AppButton>
+          <AppButton variant="primary" :disabled="savingUnit" @click="saveUnit">
+            {{ savingUnit ? 'Saving…' : 'Add Unit' }}
+          </AppButton>
+        </template>
       </template>
     </AppModal>
 
@@ -2695,11 +3549,36 @@ const tenantArrearsChartOptions = {
         <div class="grid grid-cols-2 gap-4">
           <AppInput
             v-if="editShowLevy"
-            v-model="editEstateForm.default_levy_amount"
-            label="Default Levy Amount"
+            v-model="editEstateForm.admin_fund_amount"
+            label="Admin Fund Budget"
             type="number"
             placeholder="0.00"
             :prefix="editFormCurrencySymbol"
+            hint="Monthly admin fund total"
+            :min="0"
+            :max="9999999999.99"
+          />
+          <AppInput
+            v-if="editShowLevy"
+            v-model="editEstateForm.reserve_fund_amount"
+            label="Reserve Fund Budget"
+            type="number"
+            placeholder="0.00"
+            :prefix="editFormCurrencySymbol"
+            hint="Monthly reserve fund total"
+            :min="0"
+            :max="9999999999.99"
+          />
+          <AppInput
+            v-if="editShowLevy && editEstateForm.country === 'ZA'"
+            v-model="editEstateForm.csos_levy_amount"
+            label="CSOS Levy (per unit)"
+            type="number"
+            placeholder="0.00"
+            :prefix="editFormCurrencySymbol"
+            hint="Flat monthly CSOS government levy charged per unit"
+            :min="0"
+            :max="99999999.99"
           />
           <AppInput
             v-if="editShowRent"
@@ -2708,6 +3587,8 @@ const tenantArrearsChartOptions = {
             type="number"
             placeholder="0.00"
             :prefix="editFormCurrencySymbol"
+            :min="0"
+            :max="9999999999.99"
           />
           <AppInput
             v-model="editEstateForm.billing_day"
@@ -2715,6 +3596,17 @@ const tenantArrearsChartOptions = {
             type="number"
             placeholder="e.g. 1"
             hint="Day of month (1–28) billing runs"
+            :min="1"
+            :max="28"
+          />
+          <AppInput
+            v-model="editEstateForm.payment_terms_days"
+            label="Payment Terms (days)"
+            type="number"
+            placeholder="e.g. 30"
+            hint="Days before invoice becomes overdue"
+            :min="1"
+            :max="365"
           />
         </div>
 
@@ -2728,30 +3620,38 @@ const tenantArrearsChartOptions = {
       </template>
     </AppModal>
 
-    <!-- Billing Day Modal -->
-    <AppModal title="Billing Day" :show="showBillingDay" size="sm" @close="showBillingDay = false">
+    <!-- Billing Settings Modal -->
+    <AppModal title="Billing Settings" :show="showBillingDay" size="sm" @close="showBillingDay = false">
       <div class="space-y-4 py-2">
 
         <div v-if="billingDayError" class="rounded border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
           {{ billingDayError }}
         </div>
 
-        <p class="text-sm text-muted-foreground">
-          Set the day of each month when invoices are automatically generated and sent.
-        </p>
-
         <AppInput
           v-model="billingDayForm"
-          label="Day of Month"
+          label="Billing Day"
           type="number"
           placeholder="e.g. 25"
-          hint="Enter a value between 1 and 28"
+          hint="Day of each month invoices are generated (1–28)"
+          :min="1"
+          :max="28"
+        />
+
+        <AppInput
+          v-model="paymentTermsForm"
+          label="Payment Terms (days)"
+          type="number"
+          placeholder="e.g. 7"
+          hint="Days from invoice date until payment is due"
+          :min="1"
+          :max="365"
         />
       </div>
 
       <template #footer>
         <AppButton variant="outline" :disabled="billingDaySaving" @click="showBillingDay = false">Cancel</AppButton>
-        <AppButton variant="primary" :disabled="billingDaySaving || !billingDayForm" @click="saveBillingDay">
+        <AppButton variant="primary" :disabled="billingDaySaving || !billingDayForm || !paymentTermsForm" @click="saveBillingDay">
           {{ billingDaySaving ? 'Saving…' : 'Save' }}
         </AppButton>
       </template>
@@ -3043,6 +3943,14 @@ const tenantArrearsChartOptions = {
       @imported="onBulkImported"
     />
 
+    <!-- PQ Import Modal -->
+    <BulkImportPqModal
+      :show="showPqImportModal"
+      :estate-id="route.params.id"
+      @close="showPqImportModal = false"
+      @imported="onPqImported"
+    />
+
     <!-- Export Units Modal -->
     <AppExportModal
       :show="showExportModal"
@@ -3050,6 +3958,130 @@ const tenantArrearsChartOptions = {
       @close="showExportModal = false"
       @download="handleExportDownload"
     />
+
+    <!-- PQ Budget Explain Modal -->
+    <AppModal
+      :title="pqExplainView === 'breakdown' ? 'PQ Budget Breakdown' : 'About Participation Quotas'"
+      :show="showPqExplainModal"
+      size="sm"
+      @close="showPqExplainModal = false"
+    >
+      <!-- ── Breakdown view (default) ─────────────────────────────────── -->
+      <div v-if="pqExplainView === 'breakdown'" class="space-y-3">
+
+        <!-- Admin Fund card -->
+        <div class="rounded-lg border border-border overflow-hidden text-sm">
+          <div class="px-4 py-2.5 bg-muted/40 border-b border-border">
+            <span class="font-semibold text-foreground text-sm">Admin Fund</span>
+          </div>
+          <div class="divide-y divide-border">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-muted-foreground">Budget target</span>
+              <span class="font-medium text-foreground">{{ countryStore.formatCurrency(pqBudgetStatus?.adminBudget ?? 0) }}</span>
+            </div>
+            <div v-if="pqBudgetStatus?.adminPqCount > 0" class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-muted-foreground">PQ levied <span class="text-xs">({{ pqBudgetStatus.adminPqCount }} {{ pqBudgetStatus.adminPqCount === 1 ? 'unit' : 'units' }})</span></span>
+              <span class="font-medium text-foreground">{{ countryStore.formatCurrency(pqBudgetStatus.adminPqTotal) }}</span>
+            </div>
+            <div v-if="pqBudgetStatus?.adminOverrideCount > 0" class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-muted-foreground">Overrides <span class="text-xs">({{ pqBudgetStatus.adminOverrideCount }} {{ pqBudgetStatus.adminOverrideCount === 1 ? 'unit' : 'units' }})</span></span>
+              <span class="font-medium text-foreground">{{ countryStore.formatCurrency(pqBudgetStatus.adminOverrideTotal) }}</span>
+            </div>
+            <div v-if="pqBudgetStatus?.adminFallbackCount > 0" class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-muted-foreground">Equal-share fallback <span class="text-xs">({{ pqBudgetStatus.adminFallbackCount }} {{ pqBudgetStatus.adminFallbackCount === 1 ? 'unit' : 'units' }}, no PQ set)</span></span>
+              <span class="font-medium text-amber-600">{{ countryStore.formatCurrency(pqBudgetStatus.adminFallbackTotal) }}</span>
+            </div>
+            <div v-if="Math.abs(pqBudgetStatus?.adminDiff ?? 0) > 0.01" class="flex items-center justify-between px-4 py-2.5"
+              :class="pqBudgetStatus.adminDiff < 0 ? 'bg-red-50/50' : 'bg-amber-50/50'">
+              <span class="text-xs font-medium" :class="pqBudgetStatus.adminDiff < 0 ? 'text-danger' : 'text-amber-700'">
+                {{ pqBudgetStatus.adminDiff < 0 ? 'Shortfall — levies fall short of budget' : 'Surplus — levies exceed budget' }}
+              </span>
+              <span class="text-xs font-semibold" :class="pqBudgetStatus.adminDiff < 0 ? 'text-danger' : 'text-amber-600'">
+                {{ pqBudgetStatus.adminDiff > 0 ? '+' : '' }}{{ countryStore.formatCurrency(pqBudgetStatus.adminDiff) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reserve Fund card -->
+        <div v-if="pqBudgetStatus?.reserveBudget > 0" class="rounded-lg border border-border overflow-hidden text-sm">
+          <div class="px-4 py-2.5 bg-muted/40 border-b border-border">
+            <span class="font-semibold text-foreground text-sm">Reserve Fund</span>
+          </div>
+          <div class="divide-y divide-border">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-muted-foreground">Budget target</span>
+              <span class="font-medium text-foreground">{{ countryStore.formatCurrency(pqBudgetStatus.reserveBudget) }}</span>
+            </div>
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-muted-foreground">Total levied via PQ</span>
+              <span class="font-semibold" :class="Math.abs(pqBudgetStatus?.reserveDiff ?? 0) > 0.01 ? (pqBudgetStatus.reserveDiff < 0 ? 'text-danger' : 'text-amber-600') : 'text-foreground'">
+                {{ countryStore.formatCurrency(pqBudgetStatus.totalReserve) }}
+              </span>
+            </div>
+            <div v-if="Math.abs(pqBudgetStatus?.reserveDiff ?? 0) > 0.01" class="flex items-center justify-between px-4 py-2.5"
+              :class="pqBudgetStatus.reserveDiff < 0 ? 'bg-red-50/50' : 'bg-amber-50/50'">
+              <span class="text-xs font-medium" :class="pqBudgetStatus.reserveDiff < 0 ? 'text-danger' : 'text-amber-700'">
+                {{ pqBudgetStatus.reserveDiff < 0 ? 'Shortfall — levies fall short of budget' : 'Surplus — levies exceed budget' }}
+              </span>
+              <span class="text-xs font-semibold" :class="pqBudgetStatus.reserveDiff < 0 ? 'text-danger' : 'text-amber-600'">
+                {{ pqBudgetStatus.reserveDiff > 0 ? '+' : '' }}{{ countryStore.formatCurrency(pqBudgetStatus.reserveDiff) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Missing PQ notice -->
+        <div v-if="pqBudgetStatus?.missingPq > 0" class="flex items-start gap-2.5 rounded-lg bg-amber-50/60 border border-amber-100 px-3.5 py-3 text-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-amber-500 shrink-0 mt-0.5">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <span class="text-amber-800">
+            <span class="font-semibold">{{ pqBudgetStatus.missingPq }} {{ pqBudgetStatus.missingPq === 1 ? 'unit' : 'units' }}</span> {{ pqBudgetStatus.missingPq === 1 ? 'has' : 'have' }} no PQ set — using equal-share fallback instead of PQ formula.
+          </span>
+        </div>
+
+        <!-- Learn more link -->
+        <button type="button" class="text-xs text-primary hover:underline" @click="pqExplainView = 'learn'">
+          What is a PQ and how are levies calculated? →
+        </button>
+
+      </div>
+
+      <!-- ── Learn view ────────────────────────────────────────────────── -->
+      <div v-else class="space-y-4 text-sm">
+
+        <div class="space-y-1.5">
+          <h4 class="font-semibold text-foreground">What is a PQ?</h4>
+          <p class="text-muted-foreground leading-relaxed">A Participation Quota is each unit's legally registered percentage share of common property in a Sectional Title scheme, recorded on the Deeds Office sectional plan.</p>
+        </div>
+
+        <div class="space-y-2">
+          <h4 class="font-semibold text-foreground">How levies are calculated</h4>
+          <div class="rounded-md bg-muted/40 border border-border px-4 py-3 font-mono text-[10px] text-foreground overflow-x-auto whitespace-nowrap">
+            Levy = (Unit PQ ÷ Total PQ) × Admin Fund Budget
+          </div>
+          <p class="text-muted-foreground text-xs">No PQ → equal-share fallback (Budget ÷ unit count). Levy Override → fixed amount overrides the formula entirely.</p>
+        </div>
+
+        <div class="space-y-1.5">
+          <h4 class="font-semibold text-foreground">Why collected ≠ budget</h4>
+          <ul class="space-y-1.5 text-muted-foreground text-xs">
+            <li><span class="font-medium text-foreground">Levy Overrides</span> — fixed amounts that deviate from each unit's PQ-calculated share.</li>
+            <li><span class="font-medium text-foreground">Missing PQs</span> — units on equal-share fallback pull the total away from the PQ-weighted sum.</li>
+          </ul>
+        </div>
+
+
+      </div>
+
+      <template #footer>
+        <AppButton v-if="pqExplainView === 'learn'" variant="ghost" @click="pqExplainView = 'breakdown'">
+          ← Back
+        </AppButton>
+        <AppButton variant="primary" @click="showPqExplainModal = false">Got it</AppButton>
+      </template>
+    </AppModal>
 
   </div>
 </template>

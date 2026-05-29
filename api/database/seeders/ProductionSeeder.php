@@ -2,58 +2,466 @@
 
 namespace Database\Seeders;
 
+use App\Enums\ChargeTypeAppliesTo;
+use App\Models\ChargeType;
+use App\Models\ComplianceTemplate;
+use App\Models\ComplianceTemplateItem;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Passport\ClientRepository;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
+/**
+ * Production seed — org + charge types + compliance templates + 3 users only.
+ * No demo estates or dummy data.
+ *
+ * Usage: php artisan migrate:fresh --seed --class=ProductionSeeder
+ *        php artisan db:seed --class=ProductionSeeder
+ */
 class ProductionSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->command?->info('Creating Passport personal access client...');
         app(ClientRepository::class)->createPersonalAccessGrantClient(
-            'BoldMark PMS Personal Access Client'
+            config('app.name') . ' Personal Access Client'
         );
 
-        $this->call(RolesAndPermissionsSeeder::class);
+        $this->seedRolesAndPermissions();
+        $this->seedSuperAdmin();
+        $this->seedOrganization();
+        $this->seedDefaultChargeTypes();
+        $this->seedComplianceTemplates();
+        $this->seedBoldMarkUsers();
 
-        $org = Organization::firstOrCreate(
-            ['slug' => 'boldmark'],
+        $this->command?->info('Done — Bold Mark Properties production seed complete.');
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  ROLES AND PERMISSIONS                                               */
+    /* ------------------------------------------------------------------ */
+
+    private function seedRolesAndPermissions(): void
+    {
+        $this->command?->info('Seeding roles and permissions...');
+
+        // Reset cached roles and permissions
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+
+        $permissions = [
+            'view-financials',
+            'manage-financials',
+            'view-levies',
+            'manage-levies',
+            'approve-levies',
+            'view-debt',
+            'manage-debt',
+            'approve-debt-actions',
+            'view-compliance',
+            'manage-compliance',
+            'view-maintenance',
+            'manage-maintenance',
+            'assign-contractors',
+            'manage-users',
+            'manage-communities',
+            'manage-organizations',
+            'view-reports',
+            'export-reports',
+            'send-communications',
+            'manage-documents',
+            'approve-payments',
+        ];
+
+        foreach ($permissions as $permission) {
+            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'api']);
+        }
+
+        // Super Admin — full system access (Optimum Quality)
+        $superAdmin = Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'api']);
+        $superAdmin->givePermissionTo(Permission::all());
+
+        // Company Admin — managing agent company administrator
+        $companyAdmin = Role::firstOrCreate(['name' => 'company-admin', 'guard_name' => 'api']);
+        $companyAdmin->givePermissionTo([
+            'view-financials', 'manage-financials',
+            'view-levies', 'manage-levies', 'approve-levies',
+            'view-debt', 'manage-debt', 'approve-debt-actions',
+            'view-compliance', 'manage-compliance',
+            'view-maintenance', 'manage-maintenance', 'assign-contractors',
+            'manage-users', 'manage-communities',
+            'view-reports', 'export-reports',
+            'send-communications',
+            'manage-documents',
+        ]);
+
+        // Portfolio Manager
+        $portfolioManager = Role::firstOrCreate(['name' => 'portfolio-manager', 'guard_name' => 'api']);
+        $portfolioManager->givePermissionTo([
+            'view-financials',
+            'view-levies', 'manage-levies',
+            'view-debt', 'manage-debt',
+            'view-compliance', 'manage-compliance',
+            'view-maintenance', 'manage-maintenance', 'assign-contractors',
+            'view-reports', 'export-reports',
+            'send-communications',
+            'manage-documents',
+        ]);
+
+        // Financial Controller
+        $financialController = Role::firstOrCreate(['name' => 'financial-controller', 'guard_name' => 'api']);
+        $financialController->givePermissionTo([
+            'view-financials', 'manage-financials',
+            'view-levies', 'manage-levies',
+            'view-debt', 'manage-debt',
+            'view-reports', 'export-reports',
+        ]);
+
+        // Portfolio Assistant
+        $portfolioAssistant = Role::firstOrCreate(['name' => 'portfolio-assistant', 'guard_name' => 'api']);
+        $portfolioAssistant->givePermissionTo([
+            'view-financials',
+            'view-levies',
+            'view-debt',
+            'view-compliance',
+            'view-maintenance', 'manage-maintenance',
+            'send-communications',
+            'manage-documents',
+        ]);
+
+        // Trustee — community director/trustee (external)
+        $trustee = Role::firstOrCreate(['name' => 'trustee', 'guard_name' => 'api']);
+        $trustee->givePermissionTo([
+            'view-financials',
+            'view-reports',
+            'approve-payments',
+        ]);
+
+        // Owner — unit owner (external)
+        $owner = Role::firstOrCreate(['name' => 'owner', 'guard_name' => 'api']);
+        $owner->givePermissionTo([
+            'view-financials',
+        ]);
+
+        // Tenant — unit occupant (external)
+        Role::firstOrCreate(['name' => 'tenant', 'guard_name' => 'api']);
+
+        // Contractor — maintenance provider (external)
+        Role::firstOrCreate(['name' => 'contractor', 'guard_name' => 'api']);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  SUPER ADMIN                                                         */
+    /* ------------------------------------------------------------------ */
+
+    private function seedSuperAdmin(): void
+    {
+        $this->command?->info('Seeding super admin user...');
+
+        $superAdmin = User::firstOrCreate(
+            ['email' => 'super@optimumquality.co.za'],
             [
-                'name'          => 'BoldMark Properties',
-                'company_name'  => 'Bold Mark Properties',
-                'contact_email' => 'info@boldmarkprop.co.za',
-                'country'       => 'ZA',
-                'currency'      => 'ZAR',
-                'is_active'     => true,
+                'name'     => 'Optimum Quality Admin',
+                'password' => Hash::make(env('SUPER_ADMIN_PASSWORD', 'changeme-in-production')),
             ]
         );
 
-        $password = env('BOLDMARK_ADMIN_PASSWORD', 'BoldMark@2026!');
+        $superAdmin->assignRole(Role::findByName('super-admin', 'api'));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  ORGANIZATION (TENANT)                                               */
+    /* ------------------------------------------------------------------ */
+
+    private function seedOrganization(): void
+    {
+        $this->command?->info('Seeding Bold Mark Properties organization...');
+
+        Organization::updateOrCreate(
+            ['slug' => 'boldmark'],
+            [
+                'name'            => 'Bold Mark Properties',
+                'company_name'    => 'Bold Mark Properties',
+                'company_slogan'  => 'Moving People Forward',
+                'logo_url'        => '/assets/logo2-CB_yk5b_.png',
+                'contact_email'   => 'info@boldmarkprop.co.za',
+                'contact_phone'   => '+27 10 442 0012',
+                'address'         => '112 Boeing Rd, Bedfordview, Johannesburg',
+                'country'         => 'ZA',
+                'currency'        => 'ZAR',
+                'primary_color'   => '#0B1F38',
+                'secondary_color' => '#D89B4B',
+                'credentials'     => ['NAMA-9141', 'PPRA Registered', 'Johannesburg · Botswana'],
+                'copyright_name'  => 'Bold Mark Properties',
+                'is_active'       => true,
+            ]
+        );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  DEFAULT CHARGE TYPES                                                */
+    /* ------------------------------------------------------------------ */
+
+    private function seedDefaultChargeTypes(): void
+    {
+        $this->command?->info('Seeding default charge types...');
+
+        $organizations = Organization::all();
+
+        foreach ($organizations as $tenant) {
+            $this->seedChargeTypesForTenant($tenant->id);
+        }
+    }
+
+    private function seedChargeTypesForTenant(string $tenantId): void
+    {
+        $defaults = $this->chargeTypeDefaults();
+
+        foreach ($defaults as $chargeType) {
+            $attributes = array_merge($chargeType, ['organization_id' => $tenantId]);
+
+            ChargeType::updateOrCreate(
+                ['organization_id' => $tenantId, 'code' => $chargeType['code']],
+                $attributes
+            );
+        }
+    }
+
+    private function chargeTypeDefaults(): array
+    {
+        return [
+            // --- Locked system types (is_system = true, matched by 'type') ---
+            [
+                'code'         => 'LEVY',
+                'name'         => 'Admin Levy',
+                'description'  => 'Monthly body corporate admin fund levy (day-to-day operations)',
+                'is_system'    => true,
+                'is_active'    => true,
+                'is_recurring' => true,
+                'applies_to'   => ChargeTypeAppliesTo::OWNER,
+                'sort_order'   => 1,
+            ],
+            [
+                'code'         => 'RESERVE_LEVY',
+                'name'         => 'Reserve Levy',
+                'description'  => 'Monthly body corporate reserve fund levy (capital expenditure)',
+                'is_system'    => true,
+                'is_active'    => true,
+                'is_recurring' => true,
+                'applies_to'   => ChargeTypeAppliesTo::OWNER,
+                'sort_order'   => 2,
+            ],
+            [
+                'code'         => 'CSOS_LEVY',
+                'name'         => 'CSOS Levy',
+                'description'  => 'Community Schemes Ombud Service government levy (flat per-unit, SA only)',
+                'is_system'    => true,
+                'is_active'    => true,
+                'is_recurring' => true,
+                'applies_to'   => ChargeTypeAppliesTo::OWNER,
+                'sort_order'   => 3,
+            ],
+            [
+                'code'         => 'RENT',
+                'name'         => 'Rent',
+                'description'  => 'Regular monthly rental payment',
+                'is_system'    => true,
+                'is_active'    => true,
+                'is_recurring' => true,
+                'applies_to'   => ChargeTypeAppliesTo::TENANT,
+                'sort_order'   => 4,
+            ],
+
+            // --- Common presets (is_system = false) ---
+            ['code' => 'SPECIAL_LEVY',    'name' => 'Special Levy',          'description' => 'Once-off body corporate charge approved at AGM or special meeting',  'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::OWNER,   'sort_order' => 5],
+            ['code' => 'WATER_RECOVERY',  'name' => 'Water Recovery',        'description' => 'Metered water billed per unit',                                       'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 6],
+            ['code' => 'ELECTRICITY_RECOVERY', 'name' => 'Electricity Recovery', 'description' => 'Metered electricity billed per unit',                            'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 7],
+            ['code' => 'GAS_RECOVERY',    'name' => 'Gas Recovery',          'description' => 'Metered gas billed per unit',                                         'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 8],
+            ['code' => 'SEWERAGE_RECOVERY','name' => 'Sewerage Recovery',    'description' => 'Sewerage charges billed per unit',                                    'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 9],
+            ['code' => 'REFUSE_RECOVERY', 'name' => 'Refuse Recovery',       'description' => 'Refuse/waste collection billed per unit',                             'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 10],
+            ['code' => 'LATE_INTEREST',   'name' => 'Late Payment Interest',  'description' => 'Interest charged on overdue balances',                               'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 11],
+            ['code' => 'LATE_PENALTY',    'name' => 'Late Payment Penalty',   'description' => 'Flat penalty fee for late payment',                                  'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 12],
+            ['code' => 'INSURANCE_EXCESS','name' => 'Insurance Excess',       'description' => 'Damage-related excess billed back to a unit',                        'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::OWNER,   'sort_order' => 13],
+            ['code' => 'KEY_DEPOSIT',     'name' => 'Key Deposit',            'description' => 'Deposit for keys or access devices',                                  'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::TENANT,  'sort_order' => 14],
+            ['code' => 'DAMAGE_DEPOSIT',  'name' => 'Damage Deposit',         'description' => 'Security/damage deposit held against the unit',                      'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::TENANT,  'sort_order' => 15],
+            ['code' => 'PARKING_RENTAL',  'name' => 'Parking Rental',         'description' => 'Monthly parking bay rental',                                         'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 16],
+            ['code' => 'STORAGE_RENTAL',  'name' => 'Storage Rental',         'description' => 'Monthly storage unit rental',                                        'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 17],
+            ['code' => 'MOVING_IN',       'name' => 'Moving-In Fee',          'description' => 'Once-off fee charged when a tenant moves in',                        'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::TENANT,  'sort_order' => 18],
+            ['code' => 'MOVING_OUT',      'name' => 'Moving-Out Fee',         'description' => 'Once-off fee charged when a tenant moves out',                       'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::TENANT,  'sort_order' => 19],
+            ['code' => 'ACCESS_CARD',     'name' => 'Access Card Fee',        'description' => 'Once-off or replacement fee for access cards/remotes',               'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 20],
+            ['code' => 'GYM_ACCESS',      'name' => 'Gym Access',             'description' => 'Recurring fee for gym or fitness facility',                           'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 21],
+            ['code' => 'POOL_ACCESS',     'name' => 'Pool Access',            'description' => 'Recurring fee for pool facility',                                     'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 22],
+            ['code' => 'GARDEN_MAINT',    'name' => 'Garden Maintenance',     'description' => 'Individual garden maintenance charge for units with private gardens', 'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::OWNER,   'sort_order' => 23],
+            ['code' => 'PET_LEVY',        'name' => 'Pet Levy',               'description' => 'Recurring monthly charge for pet-owning residents',                  'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 24],
+            ['code' => 'SECURITY_CONTRIB','name' => 'Security Contribution',  'description' => 'Additional security charge beyond the standard levy',                'is_system' => false, 'is_active' => true,  'is_recurring' => true,  'applies_to' => ChargeTypeAppliesTo::OWNER,   'sort_order' => 25],
+            ['code' => 'LEGAL_RECOVERY',  'name' => 'Legal Recovery',         'description' => 'Recovery of legal costs incurred in collections',                    'is_system' => false, 'is_active' => true,  'is_recurring' => false, 'applies_to' => ChargeTypeAppliesTo::EITHER,  'sort_order' => 26],
+        ];
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  COMPLIANCE TEMPLATES                                                */
+    /* ------------------------------------------------------------------ */
+
+    private function seedComplianceTemplates(): void
+    {
+        $this->command?->info('Seeding compliance templates...');
+
+        $organizations = Organization::all();
+
+        foreach ($organizations as $tenant) {
+            $this->seedComplianceTemplatesForTenant($tenant);
+        }
+    }
+
+    private function seedComplianceTemplatesForTenant(Organization $tenant): void
+    {
+        // Skip if templates already exist for this tenant
+        if (ComplianceTemplate::where('organization_id', $tenant->id)->exists()) {
+            return;
+        }
+
+        // ── Botswana Sectional Title ────────────────────────────────
+        $this->createComplianceTemplate($tenant, [
+            'name'        => 'Sectional Title — Botswana',
+            'description' => 'Standard annual compliance checklist for body corporate schemes in Botswana under the Sectional Titles Act.',
+            'country'     => 'BW',
+            'is_default'  => true,
+            'is_system'   => true,
+            'items'       => [
+                ['name' => 'Annual General Meeting (AGM) held', 'category' => 'Governance', 'description' => 'AGM must be held within 4 months of financial year-end. All owners must be notified at least 14 days in advance.', 'priority' => 'critical', 'default_month_due' => 4, 'sort_order' => 1],
+                ['name' => 'AGM minutes prepared and distributed', 'category' => 'Governance', 'description' => 'Minutes must be circulated to all owners within 30 days of the AGM.', 'priority' => 'high', 'default_month_due' => 5, 'sort_order' => 2],
+                ['name' => 'Trustees elected / confirmed', 'category' => 'Governance', 'description' => 'Board of trustees must be elected or re-confirmed at the AGM. Minimum 2 trustees required.', 'priority' => 'high', 'default_month_due' => 4, 'sort_order' => 3],
+                ['name' => 'Trustee meeting schedule set for year', 'category' => 'Governance', 'description' => 'Set regular meeting dates for the board of trustees (quarterly recommended).', 'priority' => 'medium', 'default_month_due' => 5, 'sort_order' => 4],
+                ['name' => 'Management rules reviewed', 'category' => 'Governance', 'description' => 'Review and update management and conduct rules as needed. Any amendments require special resolution at AGM.', 'priority' => 'low', 'default_month_due' => 3, 'sort_order' => 5],
+                ['name' => 'Annual budget prepared and approved', 'category' => 'Financial', 'description' => 'The annual budget must be prepared and presented for approval at the AGM. Budget should cover all estimated operational expenses.', 'priority' => 'critical', 'default_month_due' => 3, 'sort_order' => 6],
+                ['name' => 'Levy schedule issued to owners', 'category' => 'Financial', 'description' => 'Once budget is approved, issue updated levy schedule showing each unit\'s monthly contribution.', 'priority' => 'high', 'default_month_due' => 4, 'sort_order' => 7],
+                ['name' => 'Audited financial statements prepared', 'category' => 'Financial', 'description' => 'Annual financial statements must be audited by a registered accountant and presented at the AGM.', 'priority' => 'critical', 'default_month_due' => 3, 'sort_order' => 8],
+                ['name' => 'Reserve fund / maintenance fund reviewed', 'category' => 'Financial', 'description' => 'Review the adequacy of the reserve fund for major maintenance and capital expenditure. 10-year maintenance plan recommended.', 'priority' => 'high', 'default_month_due' => 3, 'sort_order' => 9],
+                ['name' => 'Arrears recovery plan in place', 'category' => 'Financial', 'description' => 'Review outstanding levies and ensure a formal arrears recovery process is being followed for delinquent owners.', 'priority' => 'high', 'default_month_due' => 6, 'sort_order' => 10],
+                ['name' => 'Building insurance renewed', 'category' => 'Insurance', 'description' => 'Building insurance policy must be renewed annually. Coverage must include the full replacement value of the common property.', 'priority' => 'critical', 'default_month_due' => 1, 'sort_order' => 11],
+                ['name' => 'Insurance valuation updated', 'category' => 'Insurance', 'description' => 'Obtain a professional replacement cost valuation at least every 3 years. Review annually for adequacy.', 'priority' => 'medium', 'default_month_due' => 1, 'sort_order' => 12],
+                ['name' => 'Fidelity guarantee cover confirmed', 'category' => 'Insurance', 'description' => 'Confirm that fidelity guarantee insurance is in place to protect the body corporate against fraud or misappropriation.', 'priority' => 'high', 'default_month_due' => 1, 'sort_order' => 13],
+                ['name' => 'Managing agent agreement reviewed', 'category' => 'Legal', 'description' => 'Review the managing agent service agreement. Confirm scope of services, fees, and performance KPIs.', 'priority' => 'medium', 'default_month_due' => 11, 'sort_order' => 14],
+                ['name' => 'Registered owner records updated', 'category' => 'Legal', 'description' => 'Verify that the body corporate\'s register of owners is current and matches Deeds Office records.', 'priority' => 'medium', 'default_month_due' => 6, 'sort_order' => 15],
+                ['name' => 'Tax compliance confirmed (BURS)', 'category' => 'Legal', 'description' => 'Ensure the body corporate is compliant with BURS (Botswana Unified Revenue Service) requirements for tax filing.', 'priority' => 'high', 'default_month_due' => 9, 'sort_order' => 16],
+                ['name' => 'Building condition inspection completed', 'category' => 'Maintenance', 'description' => 'Conduct an annual walk-through inspection of common property areas, noting maintenance issues and safety hazards.', 'priority' => 'medium', 'default_month_due' => 2, 'sort_order' => 17],
+                ['name' => 'Fire safety equipment serviced', 'category' => 'Maintenance', 'description' => 'Service all fire extinguishers, hose reels, and fire alarm systems. Ensure compliance with fire safety regulations.', 'priority' => 'high', 'default_month_due' => 6, 'sort_order' => 18],
+                ['name' => '10-year maintenance plan reviewed', 'category' => 'Maintenance', 'description' => 'Review and update the long-term maintenance plan covering roof, plumbing, electrical, elevators, and structural elements.', 'priority' => 'medium', 'default_month_due' => 3, 'sort_order' => 19],
+            ],
+        ]);
+
+        // ── South Africa Sectional Title ────────────────────────────
+        $this->createComplianceTemplate($tenant, [
+            'name'        => 'Sectional Title — South Africa',
+            'description' => 'Standard annual compliance checklist for body corporate schemes in South Africa under the Sectional Titles Schemes Management Act (STSMA) and Community Schemes Ombud Service Act.',
+            'country'     => 'ZA',
+            'is_default'  => true,
+            'is_system'   => true,
+            'items'       => [
+                ['name' => 'Annual General Meeting (AGM) held', 'category' => 'Governance', 'description' => 'AGM must be held within 4 months of financial year-end per STSMA. All owners must receive 14 days written notice.', 'priority' => 'critical', 'default_month_due' => 4, 'sort_order' => 1],
+                ['name' => 'AGM minutes prepared and distributed', 'category' => 'Governance', 'description' => 'Minutes must be circulated to all owners. Keep on record for inspection per STSMA requirements.', 'priority' => 'high', 'default_month_due' => 5, 'sort_order' => 2],
+                ['name' => 'Trustees elected / confirmed', 'category' => 'Governance', 'description' => 'Trustees must be elected at AGM. Minimum of 2 trustees. Trustees serve until next AGM unless removed by special resolution.', 'priority' => 'high', 'default_month_due' => 4, 'sort_order' => 3],
+                ['name' => 'Trustee meeting schedule set for year', 'category' => 'Governance', 'description' => 'Trustees must meet at least once per quarter. Set the annual calendar after AGM.', 'priority' => 'medium', 'default_month_due' => 5, 'sort_order' => 4],
+                ['name' => 'Conduct rules reviewed and updated', 'category' => 'Governance', 'description' => 'Review prescribed conduct rules (PMR 1 Annexure 2) and any body corporate specific rules. Updates require trustee resolution.', 'priority' => 'low', 'default_month_due' => 6, 'sort_order' => 5],
+                ['name' => 'Annual budget prepared and approved', 'category' => 'Financial', 'description' => 'Budget must be approved at AGM per STSMA s3(1)(b). Must include administrative and reserve fund contributions.', 'priority' => 'critical', 'default_month_due' => 3, 'sort_order' => 6],
+                ['name' => 'Levy schedule issued to owners', 'category' => 'Financial', 'description' => 'Issue levy invoices per approved budget. Levies are proportional to participation quota per STSMA.', 'priority' => 'high', 'default_month_due' => 4, 'sort_order' => 7],
+                ['name' => 'Audited financial statements prepared', 'category' => 'Financial', 'description' => 'Annual financial statements must be independently audited and presented at AGM as required by STSMA.', 'priority' => 'critical', 'default_month_due' => 3, 'sort_order' => 8],
+                ['name' => 'Reserve fund adequacy reviewed', 'category' => 'Financial', 'description' => 'STSMA requires a reserve fund. Review the 10-year maintenance plan to ensure contributions are adequate. PMR 24(4) requires minimum balance.', 'priority' => 'critical', 'default_month_due' => 3, 'sort_order' => 9],
+                ['name' => 'Arrears recovery plan in place', 'category' => 'Financial', 'description' => 'Follow the body corporate arrears collection policy. Issue letters of demand, then hand over to attorneys if unresolved per arrears protocol.', 'priority' => 'high', 'default_month_due' => 6, 'sort_order' => 10],
+                ['name' => 'Building insurance renewed', 'category' => 'Insurance', 'description' => 'STSMA s3(1)(h) mandates insurance for replacement value of buildings and common property against fire, storm, earthquake, etc.', 'priority' => 'critical', 'default_month_due' => 1, 'sort_order' => 11],
+                ['name' => 'Insurance valuation updated', 'category' => 'Insurance', 'description' => 'Professional replacement cost valuation required every 3 years. Must reflect current building costs.', 'priority' => 'high', 'default_month_due' => 1, 'sort_order' => 12],
+                ['name' => 'Fidelity guarantee cover confirmed', 'category' => 'Insurance', 'description' => 'PMR 2(1)(a) requires fidelity guarantee insurance covering persons who handle body corporate funds.', 'priority' => 'high', 'default_month_due' => 1, 'sort_order' => 13],
+                ['name' => 'Public liability insurance confirmed', 'category' => 'Insurance', 'description' => 'Ensure adequate public liability cover is in place for common property areas.', 'priority' => 'high', 'default_month_due' => 1, 'sort_order' => 14],
+                ['name' => 'CSOS levy return filed', 'category' => 'Legal', 'description' => 'File the annual Community Schemes Ombud Service (CSOS) levy return. The body corporate must be registered with CSOS.', 'priority' => 'critical', 'default_month_due' => 5, 'sort_order' => 15],
+                ['name' => 'CSOS levy paid', 'category' => 'Legal', 'description' => 'Pay the CSOS levy as prescribed. Non-payment can result in penalties and sanctions.', 'priority' => 'critical', 'default_month_due' => 6, 'sort_order' => 16],
+                ['name' => 'Managing agent agreement reviewed', 'category' => 'Legal', 'description' => 'Review the managing agent agreement. STSMA s7 requires trustees to oversee the managing agent.', 'priority' => 'medium', 'default_month_due' => 11, 'sort_order' => 17],
+                ['name' => 'Registered owner records updated', 'category' => 'Legal', 'description' => 'Verify owner register against the Deeds Office. PMR 3(1)(d) requires the body corporate to keep an up-to-date register.', 'priority' => 'medium', 'default_month_due' => 6, 'sort_order' => 18],
+                ['name' => 'Tax compliance confirmed (SARS)', 'category' => 'Legal', 'description' => 'Ensure the body corporate is registered with SARS and compliant with income tax obligations (if applicable) and VAT if turnover exceeds thresholds.', 'priority' => 'high', 'default_month_due' => 9, 'sort_order' => 19],
+                ['name' => 'Building condition inspection completed', 'category' => 'Maintenance', 'description' => 'Conduct annual inspection of all common property areas. Document findings and prioritise repairs.', 'priority' => 'medium', 'default_month_due' => 2, 'sort_order' => 20],
+                ['name' => 'Fire safety equipment serviced', 'category' => 'Maintenance', 'description' => 'Service fire extinguishers, hose reels, alarms per SANS 10400-T. Keep certificates on file.', 'priority' => 'high', 'default_month_due' => 6, 'sort_order' => 21],
+                ['name' => '10-year maintenance, repair and replacement plan reviewed', 'category' => 'Maintenance', 'description' => 'PMR 22(3) requires a 10-year plan. Review and update annually, adjusting reserve fund contributions accordingly.', 'priority' => 'high', 'default_month_due' => 3, 'sort_order' => 22],
+                ['name' => 'Electrical compliance certificate (COC) valid', 'category' => 'Maintenance', 'description' => 'Ensure electrical COC for common property is valid. Required for insurance claims and sale of units.', 'priority' => 'medium', 'default_month_due' => 6, 'sort_order' => 23],
+            ],
+        ]);
+
+        // ── Generic / Custom Template ───────────────────────────────
+        $this->createComplianceTemplate($tenant, [
+            'name'        => 'Generic Property Compliance',
+            'description' => 'A general compliance checklist suitable for residential rental and commercial properties managed under a managing agent agreement.',
+            'country'     => null,
+            'is_default'  => false,
+            'is_system'   => true,
+            'items'       => [
+                ['name' => 'Annual budget prepared', 'category' => 'Financial', 'description' => 'Prepare and approve the annual operating budget for the property.', 'priority' => 'high', 'default_month_due' => 3, 'sort_order' => 1],
+                ['name' => 'Insurance renewed', 'category' => 'Insurance', 'description' => 'Ensure building and liability insurance policies are renewed and adequate.', 'priority' => 'critical', 'default_month_due' => 1, 'sort_order' => 2],
+                ['name' => 'Building inspection completed', 'category' => 'Maintenance', 'description' => 'Conduct annual inspection of the property and document maintenance requirements.', 'priority' => 'medium', 'default_month_due' => 2, 'sort_order' => 3],
+                ['name' => 'Fire safety compliance', 'category' => 'Maintenance', 'description' => 'Service fire safety equipment and verify compliance with local fire regulations.', 'priority' => 'high', 'default_month_due' => 6, 'sort_order' => 4],
+                ['name' => 'Lease agreements reviewed', 'category' => 'Legal', 'description' => 'Review all active lease agreements. Identify renewals due and terms requiring attention.', 'priority' => 'medium', 'default_month_due' => 10, 'sort_order' => 5],
+                ['name' => 'Tax compliance confirmed', 'category' => 'Legal', 'description' => 'Ensure all tax filings and payments are up to date for the property entity.', 'priority' => 'high', 'default_month_due' => 9, 'sort_order' => 6],
+                ['name' => 'Maintenance plan reviewed', 'category' => 'Maintenance', 'description' => 'Review and update the long-term maintenance plan and reserve fund adequacy.', 'priority' => 'medium', 'default_month_due' => 3, 'sort_order' => 7],
+                ['name' => 'Financial statements prepared', 'category' => 'Financial', 'description' => 'Prepare annual financial statements for the property.', 'priority' => 'high', 'default_month_due' => 3, 'sort_order' => 8],
+            ],
+        ]);
+    }
+
+    private function createComplianceTemplate(Organization $tenant, array $data): void
+    {
+        $template = ComplianceTemplate::create([
+            'name'            => $data['name'],
+            'description'     => $data['description'],
+            'country'         => $data['country'],
+            'is_default'      => $data['is_default'],
+            'is_system'       => $data['is_system'],
+            'organization_id' => $tenant->id,
+        ]);
+
+        foreach ($data['items'] as $itemData) {
+            ComplianceTemplateItem::create([
+                'name'                   => $itemData['name'],
+                'category'               => $itemData['category'],
+                'description'            => $itemData['description'] ?? null,
+                'priority'               => $itemData['priority'],
+                'default_month_due'      => $itemData['default_month_due'] ?? null,
+                'sort_order'             => $itemData['sort_order'] ?? 0,
+                'is_recurring'           => $itemData['is_recurring'] ?? true,
+                'compliance_template_id' => $template->id,
+            ]);
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  BOLD MARK USERS                                                     */
+    /* ------------------------------------------------------------------ */
+
+    private function seedBoldMarkUsers(): void
+    {
+        $this->command?->info('Seeding Bold Mark admin users...');
+
+        $tenant   = Organization::where('slug', 'boldmark')->firstOrFail();
+        $password = Hash::make(env('BOLDMARK_ADMIN_PASSWORD', 'BoldMark@2026!'));
+        $role     = Role::findByName('company-admin', 'api');
 
         $users = [
-            ['name' => 'Justin Justin',   'email' => 'justin@boldmarkprop.co.za'],
-            ['name' => 'Ayanda Habana',   'email' => 'ayanda@boldmarkprop.co.za'],
-            ['name' => 'Julian Tabona',   'email' => 'julian@boldmarkprop.co.za'],
+            ['name' => 'Julian Tabona',  'email' => 'julian@boldmarkprop.co.za',  'phone' => '+27 82 555 0000'],
+            ['name' => 'Justin Justin',  'email' => 'justin@boldmarkprop.co.za',  'phone' => '+27 82 555 0001'],
+            ['name' => 'Ayanda Dlamini', 'email' => 'ayanda@boldmarkprop.co.za',  'phone' => '+27 82 555 0002'],
         ];
 
-        $role = Role::findByName('company-admin', 'api');
-
         foreach ($users as $data) {
-            $user = User::firstOrCreate(
+            $user = User::updateOrCreate(
                 ['email' => $data['email']],
                 [
                     'name'            => $data['name'],
-                    'password'        => Hash::make($password),
-                    'organization_id' => $org->id,
+                    'password'        => $password,
+                    'phone'           => $data['phone'],
+                    'organization_id' => $tenant->id,
                 ]
             );
 
             $user->syncRoles([$role]);
         }
-
-        $this->command->info('BoldMark org + 3 users created. Temp password: ' . $password);
     }
 }

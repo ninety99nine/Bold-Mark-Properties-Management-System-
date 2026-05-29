@@ -11,10 +11,12 @@ import AppInput from '@/components/common/AppInput.vue'
 import AppTableToolbar from '@/components/common/AppTableToolbar.vue'
 import AppExportModal from '@/components/common/AppExportModal.vue'
 import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
 const countryStore = useCountryStore()
+const { success } = useToast()
 
 // ─── Remote state ─────────────────────────────────────────────────────────
 const invoices   = ref([])
@@ -290,6 +292,7 @@ function goToInvoice(inv) {
 }
 
 function emailDeliveryStatus(inv) {
+  if (inv.email_failed_at) return 'failed'
   const events = inv.email_events ?? []
   if (events.some(e => e.event_type === 'opened'))    return 'opened'
   if (events.some(e => e.event_type === 'delivered')) return 'delivered'
@@ -300,6 +303,7 @@ function emailDeliveryStatus(inv) {
 function emailDeliveryTooltip(inv) {
   return {
     none:      'Not yet sent',
+    failed:    'Email delivery failed — all retries exhausted',
     sent:      'Email sent — awaiting delivery confirmation',
     delivered: 'Email delivered to inbox',
     opened:    'Email opened by recipient',
@@ -357,6 +361,7 @@ async function confirmRunBilling() {
       dry_run:        false,
     })
     closeRun()
+    success('Billing run completed successfully.')
     fetchInvoices()
     fetchSummary()
   } catch (e) {
@@ -398,6 +403,7 @@ async function generateAdHoc() {
       billing_period: periodOpts.value[0]?.value,
     })
     closeAdHoc()
+    success('Ad-hoc billing generated successfully.')
     fetchInvoices()
     fetchSummary()
   } catch (e) {
@@ -527,6 +533,7 @@ async function restoreInvoice(inv) {
   restoringId.value = inv.id
   try {
     await api.post(`/invoices/${inv.id}/restore`)
+    success('Invoice restored successfully.')
     await fetchDeletedInvoices()
     fetchSummary()
   } catch (e) {
@@ -837,6 +844,11 @@ function onBarMove(event, bar) {
                 <!-- Email delivery tick indicator -->
                 <td class="py-3 px-4 text-center" :title="emailDeliveryTooltip(inv)">
                   <span v-if="emailDeliveryStatus(inv) === 'none'" class="text-xs text-muted-foreground/40">—</span>
+                  <span v-else-if="emailDeliveryStatus(inv) === 'failed'" class="inline-flex items-center">
+                    <svg width="16" height="11" viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-destructive">
+                      <path d="M1.5 5.5L5.5 9.5L14.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
                   <span v-else-if="emailDeliveryStatus(inv) === 'sent'" class="inline-flex items-center">
                     <svg width="16" height="11" viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-muted-foreground">
                       <path d="M1.5 5.5L5.5 9.5L14.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1358,6 +1370,8 @@ function onBarMove(event, bar) {
           placeholder="0.00"
           :prefix="countryStore.currencySymbol"
           required
+          :min="0"
+          :max="9999999999.99"
         />
         <p v-if="adHocError" class="text-sm text-danger">{{ adHocError }}</p>
         <div class="flex justify-end gap-2 pt-2">
