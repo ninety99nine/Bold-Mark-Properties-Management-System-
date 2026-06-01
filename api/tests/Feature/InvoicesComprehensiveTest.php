@@ -945,6 +945,8 @@ it('invoice summary is scoped to the authenticated tenant', function () {
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('run billing creates invoices for active units with recurring charge configs', function () {
+    \Illuminate\Support\Facades\Queue::fake();
+
     $user   = adminUser();
     $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
     $unit   = Unit::factory()->create([

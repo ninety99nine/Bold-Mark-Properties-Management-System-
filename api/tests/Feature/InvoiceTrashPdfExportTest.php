@@ -133,7 +133,7 @@ it('show deleted invoices paginates the list', function () {
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->count(5)->sequence(fn ($s) => [
-        'billing_period' => now()->subMonths($s->index)->startOfMonth()->format('Y-m-d'),
+        'billing_period' => \Carbon\Carbon::create(2020 + $s->index, 1, 1)->toDateString(),
     ])->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
@@ -471,9 +471,8 @@ it('_limit parameter caps the number of records exported', function () {
     $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
-    // Each invoice needs a unique (unit_id, charge_type_id, billing_period) combination
     Invoice::factory()->count(5)->sequence(fn ($s) => [
-        'billing_period' => now()->subMonths($s->index)->startOfMonth()->format('Y-m-d'),
+        'billing_period' => \Carbon\Carbon::create(2020 + $s->index, 1, 1)->toDateString(),
     ])->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,

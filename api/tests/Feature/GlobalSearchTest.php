@@ -388,6 +388,7 @@ it('global search returns at most 5 invoices', function () {
     $owner      = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     // Create 7 invoices with the token in the number
+    // Use deterministic year-based periods to avoid collisions with clock-dependent dates
     for ($i = 1; $i <= 7; $i++) {
         Invoice::factory()->create([
             'organization_id' => $user->organization_id,
@@ -395,7 +396,7 @@ it('global search returns at most 5 invoices', function () {
             'charge_type_id'  => $chargeType->id,
             'billed_to_type'  => 'owner',
             'billed_to_id'    => $owner->id,
-            'billing_period'  => now()->subMonths($i)->startOfMonth()->format('Y-m-d'),
+            'billing_period'  => \Carbon\Carbon::create(2010 + $i, 1, 1)->toDateString(),
             'invoice_number'  => "INV-{$token}-" . str_pad($i, 4, '0', STR_PAD_LEFT),
         ]);
     }

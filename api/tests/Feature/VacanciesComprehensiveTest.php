@@ -469,8 +469,8 @@ it('occupancy_per_estate includes all estates even those with no vacancies', fun
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('lost_revenue entry has correct structure', function () {
-    makeVacantUnit([], ['default_levy_amount' => 1000, 'default_rent_amount' => 3000]);
-    ['user' => $user] = makeVacantUnit([], ['default_levy_amount' => 1000, 'default_rent_amount' => 3000]);
+    makeVacantUnit([], ['admin_fund_amount' => 1000, 'default_rent_amount' => 3000]);
+    ['user' => $user] = makeVacantUnit([], ['admin_fund_amount' => 1000, 'default_rent_amount' => 3000]);
 
     $entry = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.vacancies'))
@@ -480,11 +480,11 @@ it('lost_revenue entry has correct structure', function () {
     expect($entry)->toHaveKeys(['id', 'name', 'lost_monthly']);
 });
 
-it('lost_revenue uses estate default_levy_amount and default_rent_amount when unit has no overrides', function () {
+it('lost_revenue uses estate admin_fund_amount and default_rent_amount when unit has no overrides', function () {
     $user   = adminUser();
     $estate = Estate::factory()->create([
         'organization_id'    => $user->organization_id,
-        'default_levy_amount' => 2000,
+        'admin_fund_amount' => 2000,
         'default_rent_amount' => 5000,
     ]);
     Unit::factory()->vacant()->create([
@@ -507,7 +507,7 @@ it('lost_revenue uses unit levy_override when set instead of estate default', fu
     $user   = adminUser();
     $estate = Estate::factory()->create([
         'organization_id'    => $user->organization_id,
-        'default_levy_amount' => 2000,
+        'admin_fund_amount' => 2000,
         'default_rent_amount' => 5000,
     ]);
     Unit::factory()->vacant()->create([
@@ -529,10 +529,10 @@ it('lost_revenue uses unit levy_override when set instead of estate default', fu
 it('total_lost_revenue is the sum of all estates lost_monthly', function () {
     $user    = adminUser();
     $estateA = Estate::factory()->create([
-        'organization_id' => $user->organization_id, 'default_levy_amount' => 1000, 'default_rent_amount' => 2000,
+        'organization_id' => $user->organization_id, 'admin_fund_amount' => 1000, 'default_rent_amount' => 2000,
     ]);
     $estateB = Estate::factory()->create([
-        'organization_id' => $user->organization_id, 'default_levy_amount' => 500, 'default_rent_amount' => 1500,
+        'organization_id' => $user->organization_id, 'admin_fund_amount' => 500, 'default_rent_amount' => 1500,
     ]);
     Unit::factory()->vacant()->create(['estate_id' => $estateA->id, 'organization_id' => $user->organization_id, 'levy_override' => null, 'rent_amount' => null]);
     Unit::factory()->vacant()->create(['estate_id' => $estateB->id, 'organization_id' => $user->organization_id, 'levy_override' => null, 'rent_amount' => null]);

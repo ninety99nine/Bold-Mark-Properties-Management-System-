@@ -193,8 +193,9 @@ it('dashboard recent_invoices returns at most 10 entries', function () {
     $chargeType  = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
     $owner       = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
+    // Use a deterministic sequence spanning years so billing_period is always unique.
     Invoice::factory()->count(15)->sequence(fn ($s) => [
-        'billing_period' => now()->subMonths($s->index)->startOfMonth()->toDateString(),
+        'billing_period' => \Carbon\Carbon::create(2020 + intdiv($s->index, 12), ($s->index % 12) + 1, 1)->toDateString(),
     ])->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,

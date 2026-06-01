@@ -27,7 +27,7 @@ class ShowUnitsRequest extends FormRequest
             '_date_range_end'   => ['nullable', 'date', 'after_or_equal:_date_range_start'],
 
             // Toolbar — pagination
-            '_per_page'         => ['nullable', 'integer', 'min:1', 'max:1000'],
+            '_per_page'         => ['nullable', 'integer', 'min:1', 'max:200'],
 
             // Filters
             'occupancy_type'    => ['nullable', 'string', 'in:owner_occupied,tenant_occupied,vacant'],

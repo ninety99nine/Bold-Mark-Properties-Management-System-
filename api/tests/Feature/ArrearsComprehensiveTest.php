@@ -790,7 +790,7 @@ it('filters data by charge_type code', function () {
     ]);
 
     $ids = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.arrears') . '?charge_type=LEVY')
+        ->getJson(route('api.v1.show.arrears') . '?charge_type=' . $levyCt->id)
         ->assertOk()
         ->json('data.*.id');
 
@@ -1137,7 +1137,7 @@ it('charge_types dropdown only includes active charge types', function () {
     expect($codes)->not->toContain($inactiveCt->id);
 });
 
-it('charge_types dropdown entry has id, code and name fields', function () {
+it('charge_types dropdown entry has id and name fields', function () {
     ['user' => $user] = makeOverdueUnit();
 
     $entry = $this->actingAs($user, 'api')
@@ -1145,7 +1145,7 @@ it('charge_types dropdown entry has id, code and name fields', function () {
         ->assertOk()
         ->json('charge_types.0');
 
-    expect($entry)->toHaveKeys(['id', 'code', 'name']);
+    expect($entry)->toHaveKeys(['id', 'name']);
 });
 
 it('charge_types dropdown does not include other tenants charge types', function () {

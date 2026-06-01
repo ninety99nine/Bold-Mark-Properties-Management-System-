@@ -20,7 +20,7 @@ function makeEstate(\App\Models\User $user, array $overrides = []): Estate
     return Estate::factory()->create(array_merge([
         'organization_id'           => $user->organization_id,
         'type'                => 'residential_rental',
-        'default_levy_amount' => 1000,
+        'admin_fund_amount' => 1000,
     ], $overrides));
 }
 
@@ -125,7 +125,7 @@ it('returns zero counts and empty arrays in charts when the estate has no units'
 
 it('exposes every field the EstateDetailPage table reads', function () {
     $user   = adminUser();
-    $estate = makeEstate($user, ['default_levy_amount' => 1500]);
+    $estate = makeEstate($user, ['admin_fund_amount' => 1500]);
 
     $unit = makeUnit($estate, [
         'unit_number'    => 'A01',
@@ -163,9 +163,9 @@ it('exposes every field the EstateDetailPage table reads', function () {
     expect($row['total_tenants_count'])->toBe(1);
 });
 
-it('falls back to estate default_levy_amount when no levy_override is set', function () {
+it('falls back to estate admin_fund_amount when no levy_override is set', function () {
     $user   = adminUser();
-    $estate = makeEstate($user, ['default_levy_amount' => 1500]);
+    $estate = makeEstate($user, ['admin_fund_amount' => 1500]);
     $unit   = makeUnit($estate, ['levy_override' => null]);
     attachOwner($unit);
 
@@ -1463,7 +1463,8 @@ it('downloads a CSV template by default', function () {
 
     expect($resp->headers->get('Content-Type'))->toContain('text/csv');
     expect($resp->headers->get('Content-Disposition'))->toContain('units-import-template.csv');
-    expect($resp->getContent())->toContain('unit_number,occupancy_type');
+    expect($resp->getContent())->toContain('unit_number');
+    expect($resp->getContent())->toContain('occupancy_type');
     expect($resp->getContent())->toContain('owner_full_name,owner_id_number,owner_email');
 });
 

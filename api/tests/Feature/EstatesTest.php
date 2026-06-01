@@ -429,12 +429,13 @@ it('includes units_count, occupied_units_count and vacant_units_count in the pay
     expect($row['vacant_units_count'])->toBe(3);
 });
 
-it('computes monthly_revenue = unit_count * default_levy for sectional_title', function () {
+it('computes monthly_revenue = admin_fund + reserve_fund for sectional_title', function () {
     $user   = adminUser();
     $estate = Estate::factory()->create([
-        'organization_id'           => $user->organization_id,
-        'type'                => 'sectional_title',
-        'default_levy_amount' => 1000,
+        'organization_id'    => $user->organization_id,
+        'type'               => 'sectional_title',
+        'admin_fund_amount'  => 30000,
+        'reserve_fund_amount'=> 10000,
     ]);
     makeUnits($estate, 'owner_occupied', null, 4);
 
@@ -443,7 +444,7 @@ it('computes monthly_revenue = unit_count * default_levy for sectional_title', f
         ->assertOk()
         ->json('data.0');
 
-    expect((float) $row['monthly_revenue'])->toBe(4000.0);
+    expect((float) $row['monthly_revenue'])->toBe(40000.0);
 });
 
 it('computes monthly_revenue = sum(rent_amount) for residential_rental', function () {
@@ -482,9 +483,10 @@ it('computes monthly_revenue for commercial_rental from rent_amount sum', functi
 it('computes monthly_revenue for mixed = levy + rent', function () {
     $user   = adminUser();
     $estate = Estate::factory()->create([
-        'organization_id'           => $user->organization_id,
+        'organization_id'     => $user->organization_id,
         'type'                => 'mixed',
-        'default_levy_amount' => 500,
+        'admin_fund_amount'   => 5000,
+        'reserve_fund_amount' => 2000,
     ]);
     makeUnits($estate, 'owner_occupied', null, 2);
     makeUnits($estate, 'tenant_occupied', 4000, 1);
@@ -494,16 +496,17 @@ it('computes monthly_revenue for mixed = levy + rent', function () {
         ->assertOk()
         ->json('data.0');
 
-    // 3 units × 500 levy + 1 × 4000 rent = 1500 + 4000 = 5500
-    expect((float) $row['monthly_revenue'])->toBe(5500.0);
+    // admin_fund + reserve_fund + sum(rent_amount) = 5000 + 2000 + 4000 = 11000
+    expect((float) $row['monthly_revenue'])->toBe(11000.0);
 });
 
-it('reports zero monthly_revenue when there are no units', function () {
+it('reports zero monthly_revenue when fund amounts are null', function () {
     $user = adminUser();
     Estate::factory()->create([
-        'organization_id'           => $user->organization_id,
+        'organization_id'     => $user->organization_id,
         'type'                => 'sectional_title',
-        'default_levy_amount' => 1000,
+        'admin_fund_amount'   => null,
+        'reserve_fund_amount' => null,
     ]);
 
     $row = $this->actingAs($user, 'api')
@@ -603,7 +606,7 @@ it('returns a single estate belonging to the user’s tenant with stats payload'
     $estate = Estate::factory()->create([
         'organization_id'           => $user->organization_id,
         'type'                => 'sectional_title',
-        'default_levy_amount' => 1000,
+        'admin_fund_amount' => 1000,
     ]);
     makeUnits($estate, 'owner_occupied',  null, 2);
     makeUnits($estate, 'tenant_occupied', 5000, 1);
@@ -735,30 +738,30 @@ it('accepts each valid estate type on create', function (string $type) {
         ->assertJsonPath('data.type', $type);
 })->with(['sectional_title', 'residential_rental', 'commercial_rental', 'mixed']);
 
-it('rejects negative default_levy_amount on create', function () {
+it('rejects negative admin_fund_amount on create', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.estate'), [
             'name'                => 'X',
             'type'                => 'sectional_title',
-            'default_levy_amount' => -1,
+            'admin_fund_amount' => -1,
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['default_levy_amount']);
+        ->assertJsonValidationErrors(['admin_fund_amount']);
 });
 
-it('rejects non-numeric default_levy_amount on create', function () {
+it('rejects non-numeric admin_fund_amount on create', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.estate'), [
             'name'                => 'X',
             'type'                => 'sectional_title',
-            'default_levy_amount' => 'lots',
+            'admin_fund_amount' => 'lots',
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['default_levy_amount']);
+        ->assertJsonValidationErrors(['admin_fund_amount']);
 });
 
 it('rejects negative default_rent_amount on create', function () {
@@ -877,7 +880,7 @@ it('creates a new estate and returns the resource + success message', function (
             'name'                => 'Crystal Mews Body Corporate',
             'type'                => 'sectional_title',
             'address'             => '12 Acacia Avenue, Gaborone',
-            'default_levy_amount' => 2850,
+            'admin_fund_amount' => 2850,
             'billing_day'         => 1,
             'country'             => 'BW',
             'currency'            => 'BWP',
@@ -1013,9 +1016,9 @@ it('rejects update with negative levy', function () {
     $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.estate', $estate), ['default_levy_amount' => -1])
+        ->putJson(route('api.v1.update.estate', $estate), ['admin_fund_amount' => -1])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['default_levy_amount']);
+        ->assertJsonValidationErrors(['admin_fund_amount']);
 });
 
 it('rejects update with billing_day out of range', function (int $day) {

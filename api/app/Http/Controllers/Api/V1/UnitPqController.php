@@ -25,8 +25,12 @@ class UnitPqController extends Controller
     {
         $format = strtolower($request->query('format', 'xlsx'));
 
+        $orderRaw = DB::getDriverName() === 'sqlite'
+            ? 'unit_number asc'
+            : "CASE WHEN REGEXP_REPLACE(unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(unit_number, '[^0-9]', ''), '') AS UNSIGNED), unit_number";
+
         $units = Unit::where('estate_id', $estate->id)
-            ->orderByRaw("CASE WHEN REGEXP_REPLACE(unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(unit_number, '[^0-9]', ''), '') AS UNSIGNED), unit_number")
+            ->orderByRaw($orderRaw)
             ->get(['unit_number', 'section', 'pq', 'levy_override']);
 
         $slug = 'pq-' . str_replace(' ', '-', strtolower($estate->name));

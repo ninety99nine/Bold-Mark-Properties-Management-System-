@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use App\Models\CashbookEntry;
 use App\Models\Invoice;
+use Illuminate\Support\Facades\DB;
 use App\Http\Resources\UnitResource;
 use App\Http\Resources\UnitResources;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -101,7 +102,7 @@ class UnitService extends BaseService
 
         // Default sort when no _sort param is sent
         if (!request()->has('_sort')) {
-            $query->orderByRaw("CASE WHEN REGEXP_REPLACE(units.unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(units.unit_number, '[^0-9]', ''), '') AS UNSIGNED), units.unit_number");
+            $query->orderByRaw($this->unitNumberOrderRaw());
         }
 
         // Run the filter/search/sort pipeline manually so we can snapshot filtered
@@ -172,7 +173,7 @@ class UnitService extends BaseService
         }
 
         if (!$this->request->has('_sort')) {
-            $query->orderByRaw("CASE WHEN REGEXP_REPLACE(units.unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(units.unit_number, '[^0-9]', ''), '') AS UNSIGNED), units.unit_number");
+            $query->orderByRaw($this->unitNumberOrderRaw());
         }
 
         $this->setQuery($query);
@@ -364,9 +365,7 @@ class UnitService extends BaseService
 
         switch ($field) {
             case 'unit_number':
-                $this->query->orderByRaw(
-                    "CASE WHEN REGEXP_REPLACE(units.unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(units.unit_number, '[^0-9]', ''), '') AS UNSIGNED) {$direction}, units.unit_number {$direction}"
-                );
+                $this->query->orderByRaw($this->unitNumberOrderRaw('units.unit_number', $direction));
                 break;
 
             case 'owner_name':
@@ -1164,5 +1163,21 @@ class UnitService extends BaseService
         } catch (\Exception) {
             return null;
         }
+    }
+
+    /**
+     * Natural-sort ORDER BY expression for unit_number, compatible with MySQL and SQLite.
+     * MySQL uses REGEXP_REPLACE; SQLite falls back to plain alphabetical order.
+     */
+    private function unitNumberOrderRaw(string $column = 'units.unit_number', string $direction = 'asc'): string
+    {
+        if (DB::getDriverName() === 'sqlite') {
+            return "{$column} {$direction}";
+        }
+
+        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+        return "CASE WHEN REGEXP_REPLACE({$column}, '[^0-9]', '') = '' THEN 1 ELSE 0 END,"
+            . " CAST(NULLIF(REGEXP_REPLACE({$column}, '[^0-9]', ''), '') AS UNSIGNED) {$dir},"
+            . " {$column} {$dir}";
     }
 }
