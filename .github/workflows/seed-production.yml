@@ -1,0 +1,31 @@
+name: Seed Production Database
+
+# Run manually from the GitHub Actions tab whenever you need to (re)seed.
+# Uses ProductionSeeder — safe to run on existing data (firstOrCreate / updateOrCreate).
+# Does NOT wipe the database.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    name: Run ProductionSeeder on Droplet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/do_key
+          chmod 600 ~/.ssh/do_key
+          ssh-keyscan -H "${{ secrets.DO_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Run ProductionSeeder
+        run: |
+          ssh -i ~/.ssh/do_key \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=5 \
+            root@${{ secrets.DO_HOST }} \
+            'cd /opt/boldmark && docker compose exec -T app php artisan db:seed --class=ProductionSeeder --force'
