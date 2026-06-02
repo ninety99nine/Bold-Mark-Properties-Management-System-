@@ -464,7 +464,8 @@
         <AppButton variant="outline" @click="handleClose">Cancel</AppButton>
         <AppButton
           variant="primary"
-          :disabled="!selectedFile || parsing"
+          :disabled="!selectedFile"
+          :loading="parsing"
           @click="parseFile"
         >
           {{ parsing ? 'Parsing...' : 'Next: Map Columns' }}

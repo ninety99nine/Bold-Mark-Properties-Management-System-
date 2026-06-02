@@ -738,13 +738,15 @@ async function confirmDeleteEstate() {
   if (!deleteNameMatches.value) return
   deletingEstate.value    = true
   deleteEstateError.value = null
+  const estateId = route.params.id
+  showDeleteEstate.value  = false
+  router.push('/estates')
   try {
-    await api.delete(`/estates/${route.params.id}`)
+    await api.delete(`/estates/${estateId}`)
     success('Estate deleted successfully.')
-    router.push('/estates')
   } catch (e) {
-    deleteEstateError.value = e?.response?.data?.message ?? 'Failed to delete estate. Please try again.'
-    deletingEstate.value    = false
+    toastError(e?.response?.data?.message ?? 'Failed to delete estate. Please try again.')
+    router.push(`/estates/${estateId}`)
   }
 }
 
