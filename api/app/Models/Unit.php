@@ -251,7 +251,9 @@ class Unit extends Model
             }
         }
 
-        return null;
+        $unitCount = $this->estate?->units()->count() ?? 1;
+
+        return $unitCount > 0 ? round(((float) ($this->estate?->reserve_fund_amount ?? 0)) / $unitCount, 2) : null;
     }
 
     public function resolveRouteBinding($value, $field = null): ?self

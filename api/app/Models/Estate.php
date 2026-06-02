@@ -29,9 +29,10 @@ class Estate extends Model
         'reserve_fund_amount'  => 'float',
         'csos_levy_amount'     => 'float',
         'default_rent_amount'  => 'float',
-        'billing_day'          => 'integer',
-        'payment_terms_days'   => 'integer',
-        'billing_paused'       => 'boolean',
+        'billing_day'             => 'integer',
+        'payment_terms_days'      => 'integer',
+        'payment_reminder_days'   => 'integer',
+        'billing_paused'          => 'boolean',
     ];
 
     /**
@@ -50,6 +51,7 @@ class Estate extends Model
         'default_rent_amount',
         'billing_day',
         'payment_terms_days',
+        'payment_reminder_days',
         'billing_paused',
         'country',
         'currency',

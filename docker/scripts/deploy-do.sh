@@ -45,9 +45,9 @@ sleep 10
 ok "App container started"
 
 # ── 4/5: Run migrations + warm caches ────────────────────────────────
-step "[4/5] Running migrations..."
-docker compose exec -T app php artisan migrate --force
-ok "Migrations complete"
+step "[4/5] Running migrations (fresh + production seed)..."
+docker compose exec -T app php artisan migrate:fresh --seed --class=ProductionSeeder --force
+ok "Migrations and production seed complete"
 
 step "[4/5] Warming caches..."
 docker compose exec -T app bash -c "

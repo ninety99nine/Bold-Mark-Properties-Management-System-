@@ -17,6 +17,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Jobs\SendInvoiceEmail;
 use Resend\Laravel\Facades\Resend;
 use App\Http\Resources\InvoiceResource;
@@ -792,14 +793,21 @@ class InvoiceService extends BaseService
 
         $from = config('mail.from.name') . ' <' . config('mail.from.address') . '>';
 
-        $response = Resend::emails()->send([
-            'from'    => $from,
-            'to'      => [$billedTo->email],
-            'subject' => "Invoice {$invoice->invoice_number} — {$invoice->chargeType->name}",
-            'html'    => $html,
-        ]);
-
-        $resendEmailId = $response->id ?? null;
+        if (app()->isLocal()) {
+            Log::info("[local] Invoice email suppressed — would send to {$billedTo->email}", [
+                'invoice' => $invoice->invoice_number,
+                'subject' => "Invoice {$invoice->invoice_number} — {$invoice->chargeType->name}",
+            ]);
+            $resendEmailId = null;
+        } else {
+            $response = Resend::emails()->send([
+                'from'    => $from,
+                'to'      => [$billedTo->email],
+                'subject' => "Invoice {$invoice->invoice_number} — {$invoice->chargeType->name}",
+                'html'    => $html,
+            ]);
+            $resendEmailId = $response->id ?? null;
+        }
 
         // Clear previous tracking events so the UI always shows the current send cycle
         InvoiceEmailEvent::where('invoice_id', $invoice->id)->delete();
@@ -819,6 +827,61 @@ class InvoiceService extends BaseService
         ]);
 
         return ['message' => 'Invoice sent successfully'];
+    }
+
+    /**
+     * Send a payment reminder email for an overdue/unpaid invoice and record the timestamp.
+     *
+     * @param Invoice $invoice
+     * @return array
+     */
+    public function sendPaymentReminder(Invoice $invoice): array
+    {
+        $invoice->load(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant']);
+
+        $billedTo = $invoice->billed_to_type->value === BilledToType::OWNER->value
+            ? $invoice->billedToOwner
+            : $invoice->billedToUnitTenant;
+
+        if (!$billedTo || !$billedTo->email) {
+            throw new Exception('No email address found for the invoice recipient.');
+        }
+
+        $html = view('emails.payment-reminder', [
+            'invoice'  => $invoice,
+            'billedTo' => $billedTo,
+        ])->render();
+
+        $from = config('mail.from.name') . ' <' . config('mail.from.address') . '>';
+
+        if (app()->isLocal()) {
+            Log::info("[local] Payment reminder email suppressed — would send to {$billedTo->email}", [
+                'invoice' => $invoice->invoice_number,
+                'subject' => "Payment Reminder — Invoice {$invoice->invoice_number}",
+            ]);
+            $resendEmailId = null;
+        } else {
+            $response = Resend::emails()->send([
+                'from'    => $from,
+                'to'      => [$billedTo->email],
+                'subject' => "Payment Reminder — Invoice {$invoice->invoice_number}",
+                'html'    => $html,
+            ]);
+            $resendEmailId = $response->id ?? null;
+        }
+
+        InvoiceEmailEvent::create([
+            'invoice_id'      => $invoice->id,
+            'organization_id' => $invoice->organization_id,
+            'event_type'      => 'reminder_sent',
+            'email'           => $billedTo->email,
+            'resend_email_id' => $resendEmailId,
+            'occurred_at'     => now(),
+        ]);
+
+        $invoice->update(['reminder_sent_at' => now()]);
+
+        return ['message' => 'Payment reminder sent successfully'];
     }
 
     /**

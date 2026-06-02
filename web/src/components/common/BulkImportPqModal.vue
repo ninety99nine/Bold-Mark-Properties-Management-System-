@@ -177,27 +177,68 @@
 
     <!-- ─── Step 2: Preview ─── -->
     <div v-else-if="step === 2">
-      <div class="grid grid-cols-3 gap-3 mb-5">
-        <div class="border border-[#DCDEE8] rounded p-3 text-center">
-          <p class="text-2xl font-bold text-[#1E2740]">{{ previewRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Total rows</p>
-        </div>
-        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50">
-          <p class="text-2xl font-bold text-[#22c55e]">{{ validRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Valid</p>
-        </div>
-        <div class="border rounded p-3 text-center" :class="invalidRows.length ? 'border-[#F75A68] bg-red-50' : 'border-[#DCDEE8]'">
-          <p class="text-2xl font-bold" :class="invalidRows.length ? 'text-[#F75A68]' : 'text-[#717B99]'">{{ invalidRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Errors</p>
-        </div>
+      <!-- Filter tabs -->
+      <div class="flex gap-2 mb-4">
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'all'
+            ? 'border-[#1F3A5C] bg-[#1F3A5C] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#1F3A5C] hover:text-[#1F3A5C]'"
+          @click="setPreviewFilter('all')"
+        >
+          All
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#EDEFF5] text-[#1E2740]'">
+            {{ previewRows.length }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'valid'
+            ? 'border-[#22c55e] bg-[#22c55e] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#22c55e] hover:text-[#22c55e]'"
+          @click="setPreviewFilter('valid')"
+        >
+          Valid
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'valid' ? 'bg-white/20 text-white' : 'bg-[#EDEFF5] text-[#1E2740]'">
+            {{ validRows.length }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all"
+          :class="previewFilter === 'issues'
+            ? 'border-[#F75A68] bg-[#F75A68] text-white cursor-pointer'
+            : invalidRows.length
+              ? 'border-[#DCDEE8] text-[#717B99] hover:border-[#F75A68] hover:text-[#F75A68] cursor-pointer'
+              : 'border-[#DCDEE8] text-[#DCDEE8] cursor-default'"
+          :disabled="!invalidRows.length"
+          @click="invalidRows.length && setPreviewFilter('issues')"
+        >
+          Issues
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'issues' ? 'bg-white/20 text-white' : invalidRows.length ? 'bg-red-100 text-[#F75A68]' : 'bg-[#EDEFF5] text-[#DCDEE8]'">
+            {{ invalidRows.length }}
+          </span>
+        </button>
       </div>
 
-      <p v-if="invalidRows.length" class="text-xs text-[#F75A68] mb-3 flex items-center gap-1.5">
-        <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        Fix the <strong>{{ invalidRows.length }} error{{ invalidRows.length > 1 ? 's' : '' }}</strong> in your file and re-upload before importing.
-      </p>
+      <div v-if="invalidRows.length" class="mb-3 rounded border border-[#F75A68]/30 bg-red-50 px-3 py-2.5 text-xs space-y-1.5">
+        <p class="font-semibold text-[#F75A68] flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {{ invalidRows.length }} row{{ invalidRows.length > 1 ? 's have' : ' has' }} issues — fix your file and re-upload to import them.
+        </p>
+        <ul class="space-y-0.5 pl-5">
+          <li v-for="e in errorCounts" :key="e.message" class="text-[#1E2740] list-disc">
+            <strong>{{ e.count }} row{{ e.count > 1 ? 's' : '' }}</strong>: {{ e.message }}
+          </li>
+        </ul>
+      </div>
       <p v-else class="text-xs text-[#717B99] mb-3">
         All <strong class="text-[#22c55e]">{{ validRows.length }} rows</strong> passed validation and are ready to import.
       </p>
@@ -241,11 +282,11 @@
                       <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      {{ row.__errors.length }} error{{ row.__errors.length > 1 ? 's' : '' }}
+                      {{ row.__errors.length }} issue{{ row.__errors.length > 1 ? 's' : '' }}
                     </span>
                   </template>
                   <div class="p-3">
-                    <p class="text-xs font-semibold text-[#1E2740] mb-2">Validation errors</p>
+                    <p class="text-xs font-semibold text-[#1E2740] mb-2">Validation issues</p>
                     <ul class="space-y-1.5">
                       <li v-for="err in row.__errors" :key="err" class="flex items-start gap-2 text-xs text-[#1E2740]">
                         <span class="mt-1 w-1.5 h-1.5 rounded-full bg-[#F75A68] shrink-0" />
@@ -261,7 +302,7 @@
       </div>
 
       <div v-if="totalPages > 1" class="flex items-center justify-between mt-3 text-xs text-[#717B99]">
-        <span>Showing {{ pageStart }}–{{ pageEnd }} of {{ previewRows.length }}</span>
+        <span>Showing {{ pageStart }}–{{ pageEnd }} of {{ filteredPreviewRows.length }}</span>
         <div class="flex gap-2">
           <button type="button" class="px-3 py-1 border border-[#DCDEE8] rounded disabled:opacity-40" :disabled="page === 1" @click="page--">Previous</button>
           <button type="button" class="px-3 py-1 border border-[#DCDEE8] rounded disabled:opacity-40" :disabled="page === totalPages" @click="page++">Next</button>
@@ -337,6 +378,7 @@
 
       <!-- Step 2 -->
       <template v-else-if="step === 2">
+        <p v-if="importError" class="text-xs text-[#F75A68] flex-1 text-left">{{ importError }}</p>
         <AppButton variant="outline" @click="step = 1">Back</AppButton>
         <AppButton variant="primary" :disabled="validRows.length === 0 || invalidRows.length > 0 || importing" @click="runImport">
           <svg v-if="importing" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -370,7 +412,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  imported: []
+  imported: [result: { updated: number; not_found: string[]; message: string }]
 }>()
 
 const API_URL = import.meta.env.VITE_API_URL ?? ''
@@ -391,6 +433,7 @@ const fileInputRef  = ref<HTMLInputElement | null>(null)
 const parseError    = ref('')
 const parsing       = ref(false)
 const importing     = ref(false)
+const importError   = ref('')
 const downloadingCsv  = ref(false)
 const downloadingXlsx = ref(false)
 
@@ -398,9 +441,10 @@ const fileColumns   = ref<string[]>([])
 const fileRows      = ref<Record<string, string>[]>([])
 const columnMapping = ref<Record<string, string>>({})
 
-const previewRows = ref<Array<Record<string, any> & { __rowIndex: number; __errors: string[] }>>([])
-const page        = ref(1)
-const PAGE_SIZE   = 10
+const previewRows  = ref<Array<Record<string, any> & { __rowIndex: number; __errors: string[] }>>([])
+const previewFilter = ref<'all' | 'valid' | 'issues'>('all')
+const page          = ref(1)
+const PAGE_SIZE     = 10
 
 const importResult = ref<{ updated: number; not_found: string[]; message: string } | null>(null)
 
@@ -414,10 +458,28 @@ const missingRequiredFields = computed(() => {
 const validRows   = computed(() => previewRows.value.filter(r => r.__errors.length === 0))
 const invalidRows = computed(() => previewRows.value.filter(r => r.__errors.length > 0))
 
-const totalPages  = computed(() => Math.ceil(previewRows.value.length / PAGE_SIZE))
-const pageStart   = computed(() => (page.value - 1) * PAGE_SIZE + 1)
-const pageEnd     = computed(() => Math.min(page.value * PAGE_SIZE, previewRows.value.length))
-const paginatedRows = computed(() => previewRows.value.slice(pageStart.value - 1, pageEnd.value))
+const filteredPreviewRows = computed(() => {
+  if (previewFilter.value === 'valid')  return validRows.value
+  if (previewFilter.value === 'issues') return invalidRows.value
+  return previewRows.value
+})
+
+const errorCounts = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const row of invalidRows.value) {
+    for (const msg of row.__errors) {
+      counts[msg] = (counts[msg] ?? 0) + 1
+    }
+  }
+  return Object.entries(counts)
+    .map(([message, count]) => ({ message, count }))
+    .sort((a, b) => b.count - a.count)
+})
+
+const totalPages    = computed(() => Math.ceil(filteredPreviewRows.value.length / PAGE_SIZE))
+const pageStart     = computed(() => (page.value - 1) * PAGE_SIZE + 1)
+const pageEnd       = computed(() => Math.min(page.value * PAGE_SIZE, filteredPreviewRows.value.length))
+const paginatedRows = computed(() => filteredPreviewRows.value.slice(pageStart.value - 1, pageEnd.value))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -566,6 +628,11 @@ async function parseFile() {
   }
 }
 
+function setPreviewFilter(filter: 'all' | 'valid' | 'issues') {
+  previewFilter.value = filter
+  page.value          = 1
+}
+
 function applyMappingAndPreview() {
   const mapped = fileRows.value.map((rawRow, idx) => {
     const row: Record<string, string> = {}
@@ -575,9 +642,10 @@ function applyMappingAndPreview() {
     const errors = validateRow(row)
     return { ...row, __rowIndex: idx + 1, __errors: errors }
   })
-  previewRows.value = mapped
-  page.value        = 1
-  step.value        = 2
+  previewRows.value   = mapped
+  previewFilter.value = 'all'
+  page.value          = 1
+  step.value          = 2
 }
 
 async function runImport() {
@@ -599,12 +667,15 @@ async function runImport() {
       { method: 'POST', headers: authHeaders(), body: formData }
     )
     const json = await res.json()
-    if (!res.ok) { console.error(json); return }
+    if (!res.ok) {
+      importError.value = json.message ?? 'Import failed. Please try again.'
+      return
+    }
     importResult.value = json
     step.value         = 3
-    emit('imported')
+    emit('imported', json)
   } catch (e) {
-    console.error(e)
+    importError.value = 'Could not reach the server. Please check your connection and try again.'
   } finally {
     importing.value = false
   }
@@ -617,8 +688,10 @@ function resetWizard() {
   fileRows.value      = []
   columnMapping.value = {}
   previewRows.value   = []
+  previewFilter.value = 'all'
   importResult.value  = null
   parseError.value    = ''
+  importError.value   = ''
   page.value          = 1
   if (fileInputRef.value) fileInputRef.value.value = ''
 }

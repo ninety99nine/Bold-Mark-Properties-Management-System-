@@ -182,28 +182,87 @@
 
     <!-- ─── Step 2: Preview ─── -->
     <div v-else-if="step === 2">
-      <!-- Summary cards -->
-      <div class="grid grid-cols-3 gap-3 mb-5">
-        <div class="border border-[#DCDEE8] rounded p-3 text-center">
-          <p class="text-2xl font-bold text-[#1E2740]">{{ previewRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Total rows</p>
-        </div>
-        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50">
-          <p class="text-2xl font-bold text-[#22c55e]">{{ validRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Valid</p>
-        </div>
-        <div class="border border-[#F75A68] rounded p-3 text-center" :class="invalidRows.length ? 'bg-red-50' : ''">
-          <p class="text-2xl font-bold" :class="invalidRows.length ? 'text-[#F75A68]' : 'text-[#717B99]'">{{ invalidRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Errors</p>
-        </div>
+      <!-- Filter tabs — only shown when there are issues or duplicates -->
+      <div v-if="invalidRows.length > 0 || duplicateRows.length > 0" class="flex gap-2 mb-4">
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'all'
+            ? 'border-[#1F3A5C] bg-[#1F3A5C] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#1F3A5C] hover:text-[#1F3A5C]'"
+          @click="setPreviewFilter('all')"
+        >
+          All
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#EDEFF5] text-[#1E2740]'">
+            {{ previewRows.length }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'valid'
+            ? 'border-[#22c55e] bg-[#22c55e] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#22c55e] hover:text-[#22c55e]'"
+          @click="setPreviewFilter('valid')"
+        >
+          Valid
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'valid' ? 'bg-white/20 text-white' : 'bg-[#EDEFF5] text-[#1E2740]'">
+            {{ validRows.length }}
+          </span>
+        </button>
+        <button
+          v-if="invalidRows.length > 0"
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'errors'
+            ? 'border-[#F75A68] bg-[#F75A68] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#F75A68] hover:text-[#F75A68]'"
+          @click="setPreviewFilter('errors')"
+        >
+          Issues
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'errors' ? 'bg-white/20 text-white' : 'bg-red-100 text-[#F75A68]'">
+            {{ invalidRows.length }}
+          </span>
+        </button>
+        <button
+          v-if="duplicateRows.length > 0"
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'duplicates'
+            ? 'border-amber-500 bg-amber-500 text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-amber-500 hover:text-amber-600'"
+          @click="setPreviewFilter('duplicates')"
+        >
+          Duplicates
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'duplicates' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-600'">
+            {{ duplicateRows.length }}
+          </span>
+        </button>
       </div>
 
-      <p v-if="invalidRows.length" class="text-xs text-[#F75A68] mb-3 flex items-center gap-1.5">
-        <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        Fix the <strong>{{ invalidRows.length }} error{{ invalidRows.length > 1 ? 's' : '' }}</strong> in your file and re-upload before importing.
-      </p>
+      <!-- Error banner -->
+      <div v-if="invalidRows.length" class="mb-3 rounded border border-[#F75A68]/30 bg-red-50 px-3 py-2.5 text-xs space-y-1.5">
+        <p class="font-semibold text-[#F75A68] flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {{ invalidRows.length }} row{{ invalidRows.length > 1 ? 's have' : ' has' }} validation errors — fix your file and re-upload.
+        </p>
+        <ul class="space-y-0.5 pl-5">
+          <li v-for="e in errorCounts" :key="e.message" class="text-[#1E2740] list-disc">
+            <strong>{{ e.count }} row{{ e.count > 1 ? 's' : '' }}</strong>: {{ e.message }}
+          </li>
+        </ul>
+      </div>
+      <!-- Duplicate banner -->
+      <div v-else-if="duplicateRows.length" class="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+        <strong>{{ duplicateRows.length }} duplicate row{{ duplicateRows.length > 1 ? 's' : '' }} will be skipped.</strong>
+        The first occurrence of each unit number will be imported. Remove the duplicates from your file to avoid this.
+      </div>
       <p v-else class="text-xs text-[#717B99] mb-3">
         All <strong class="text-[#22c55e]">{{ validRows.length }} rows</strong> passed validation and are ready to import.
       </p>
@@ -226,7 +285,7 @@
             <tr
               v-for="row in paginatedPreviewRows"
               :key="row.__rowIndex"
-              :class="row.__errors.length ? 'bg-red-50' : 'hover:bg-[#F8FBFF]'"
+              :class="row.__errors.length ? 'bg-red-50' : row.__isDuplicate ? 'bg-amber-50' : row.__warnings?.length ? 'bg-amber-50/40' : 'hover:bg-[#F8FBFF]'"
             >
               <td class="px-3 py-2 text-[#717B99]">{{ row.__rowIndex }}</td>
               <td class="px-3 py-2 font-medium text-[#1E2740]">{{ row.unit_number || '—' }}</td>
@@ -240,19 +299,14 @@
               <td class="px-3 py-2 text-[#717B99]">{{ row.owner_email || '—' }}</td>
               <td v-if="hasTenantFields" class="px-3 py-2 text-[#717B99]">{{ row.tenant_full_name || '—' }}</td>
               <td class="px-3 py-2">
-                <span v-if="!row.__errors.length" class="text-[#22c55e] flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Valid
-                </span>
-                <AppPoptip v-else position="top" max-width="280px">
+                <!-- Red: validation errors (row will be skipped) -->
+                <AppPoptip v-if="row.__errors.length" position="top" max-width="280px">
                   <template #trigger>
                     <span class="text-[#F75A68] flex items-center gap-1 cursor-default underline decoration-dotted underline-offset-2">
                       <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      {{ row.__errors.length }} error{{ row.__errors.length > 1 ? 's' : '' }}
+                      {{ row.__errors.length }} issue{{ row.__errors.length > 1 ? 's' : '' }}
                     </span>
                   </template>
                   <div class="p-3">
@@ -260,20 +314,73 @@
                       <svg class="w-3.5 h-3.5 text-[#F75A68] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      Validation errors
+                      Validation issues
                     </p>
                     <ul class="space-y-1.5">
-                      <li
-                        v-for="error in row.__errors"
-                        :key="error"
-                        class="flex items-start gap-2 text-xs text-[#1E2740]"
-                      >
+                      <li v-for="error in row.__errors" :key="error" class="flex items-start gap-2 text-xs text-[#1E2740]">
                         <span class="mt-1 w-1.5 h-1.5 rounded-full bg-[#F75A68] shrink-0" />
                         {{ error }}
                       </li>
                     </ul>
                   </div>
                 </AppPoptip>
+                <!-- Amber: duplicate row that will be SKIPPED -->
+                <AppPoptip v-else-if="row.__isDuplicate" position="top" max-width="280px">
+                  <template #trigger>
+                    <span class="text-amber-600 flex items-center gap-1 cursor-default underline decoration-dotted underline-offset-2">
+                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      Duplicate
+                    </span>
+                  </template>
+                  <div class="p-3">
+                    <p class="text-xs font-semibold text-[#1E2740] mb-2 flex items-center gap-1.5">
+                      <svg class="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      Duplicate warning
+                    </p>
+                    <ul class="space-y-1.5">
+                      <li v-for="warn in row.__warnings" :key="warn" class="flex items-start gap-2 text-xs text-[#1E2740]">
+                        <span class="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        {{ warn }}
+                      </li>
+                    </ul>
+                  </div>
+                </AppPoptip>
+                <!-- Green + poptip: first occurrence of a duplicated unit — will be IMPORTED -->
+                <AppPoptip v-else-if="row.__warnings?.length" position="top" max-width="280px">
+                  <template #trigger>
+                    <span class="text-[#22c55e] flex items-center gap-1 cursor-default underline decoration-dotted underline-offset-2">
+                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Valid
+                    </span>
+                  </template>
+                  <div class="p-3">
+                    <p class="text-xs font-semibold text-[#1E2740] mb-2 flex items-center gap-1.5">
+                      <svg class="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      Duplicate warning
+                    </p>
+                    <ul class="space-y-1.5">
+                      <li v-for="warn in row.__warnings" :key="warn" class="flex items-start gap-2 text-xs text-[#1E2740]">
+                        <span class="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        {{ warn }}
+                      </li>
+                    </ul>
+                  </div>
+                </AppPoptip>
+                <!-- Green: valid -->
+                <span v-else class="text-[#22c55e] flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Valid
+                </span>
               </td>
             </tr>
           </tbody>
@@ -282,7 +389,7 @@
 
       <!-- Pagination -->
       <div v-if="totalPreviewPages > 1" class="flex items-center justify-between mt-3 text-xs text-[#717B99]">
-        <span>Showing {{ previewPageStart }}–{{ previewPageEnd }} of {{ previewRows.length }}</span>
+        <span>Showing {{ previewPageStart }}–{{ previewPageEnd }} of {{ filteredPreviewRows.length }}</span>
         <div class="flex gap-2">
           <button
             type="button"
@@ -325,7 +432,7 @@
         </div>
         <div v-if="importResult?.error_count" class="border border-[#F75A68] rounded p-3 text-center bg-red-50 flex-1">
           <p class="text-2xl font-bold text-[#F75A68]">{{ importResult.error_count }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Errors</p>
+          <p class="text-xs text-[#717B99] mt-1">Issues</p>
         </div>
       </div>
 
@@ -382,6 +489,7 @@
         <AppButton
           variant="primary"
           :disabled="validRows.length === 0 || invalidRows.length > 0 || importing"
+          :title="invalidRows.length > 0 ? 'Fix validation errors before importing' : ''"
           @click="runImport"
         >
           {{ importing ? 'Importing...' : `Import ${validRows.length} unit${validRows.length === 1 ? '' : 's'}` }}
@@ -424,12 +532,12 @@ const ALL_FIELDS = [
   { key: 'unit_number',        label: 'Unit Number',        required: true },
   { key: 'section',            label: 'Section',            required: false },
   { key: 'address',            label: 'Unit Address',       required: false },
-  { key: 'occupancy_type',     label: 'Occupancy Type',     required: true },
+  { key: 'occupancy_type',     label: 'Occupancy Type',     required: false },
   { key: 'levy_override',      label: 'Levy Override',      required: false },
   { key: 'rent_amount',        label: 'Rent Amount',        required: false },
   { key: 'owner_full_name',    label: 'Owner Full Name',    required: true },
   { key: 'owner_id_number',    label: 'Owner ID Number',    required: false },
-  { key: 'owner_email',        label: 'Owner Email',        required: true },
+  { key: 'owner_email',        label: 'Owner Email',        required: false },
   { key: 'owner_phone',        label: 'Owner Phone',        required: false },
   { key: 'owner_address',      label: 'Owner Address',      required: false },
   { key: 'tenant_full_name',   label: 'Tenant Full Name',   required: false },
@@ -575,14 +683,43 @@ const missingRequiredFields = computed(() => {
     .map(f => f.label)
 })
 
-const validRows   = computed(() => previewRows.value.filter(r => r.__errors.length === 0))
-const invalidRows = computed(() => previewRows.value.filter(r => r.__errors.length > 0))
+const duplicateRows = computed(() => previewRows.value.filter(r => r.__isDuplicate))
+const validRows     = computed(() => previewRows.value.filter(r => r.__errors.length === 0 && !r.__isDuplicate))
+const invalidRows   = computed(() => previewRows.value.filter(r => r.__errors.length > 0))
 
-const totalPreviewPages    = computed(() => Math.ceil(previewRows.value.length / PREVIEW_PAGE_SIZE))
+// Count how many rows have each distinct error message
+const errorCounts = computed((): { message: string; count: number }[] => {
+  const tally = new Map<string, number>()
+  for (const row of invalidRows.value) {
+    for (const err of row.__errors) {
+      tally.set(err, (tally.get(err) ?? 0) + 1)
+    }
+  }
+  return [...tally.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([message, count]) => ({ message, count }))
+})
+
+type PreviewFilter = 'all' | 'errors' | 'valid' | 'duplicates'
+const previewFilter = ref<PreviewFilter>('all')
+
+function setPreviewFilter(f: PreviewFilter) {
+  previewFilter.value = f
+  previewPage.value   = 1
+}
+
+const filteredPreviewRows = computed(() => {
+  if (previewFilter.value === 'errors')     return invalidRows.value
+  if (previewFilter.value === 'valid')      return validRows.value
+  if (previewFilter.value === 'duplicates') return duplicateRows.value
+  return previewRows.value
+})
+
+const totalPreviewPages    = computed(() => Math.ceil(filteredPreviewRows.value.length / PREVIEW_PAGE_SIZE))
 const previewPageStart     = computed(() => (previewPage.value - 1) * PREVIEW_PAGE_SIZE + 1)
-const previewPageEnd       = computed(() => Math.min(previewPage.value * PREVIEW_PAGE_SIZE, previewRows.value.length))
+const previewPageEnd       = computed(() => Math.min(previewPage.value * PREVIEW_PAGE_SIZE, filteredPreviewRows.value.length))
 const paginatedPreviewRows = computed(() =>
-  previewRows.value.slice(previewPageStart.value - 1, previewPageEnd.value)
+  filteredPreviewRows.value.slice(previewPageStart.value - 1, previewPageEnd.value)
 )
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -623,6 +760,12 @@ function autoDetectMapping(columns: string[]): Record<string, string> {
   return mapping
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function parseEmails(raw: string): string[] {
+  return (raw ?? '').split(';').map(e => e.trim()).filter(Boolean)
+}
+
 function validateRow(row: Record<string, string>): string[] {
   const errors: string[] = []
 
@@ -630,26 +773,22 @@ function validateRow(row: Record<string, string>): string[] {
 
   const ot      = row.occupancy_type?.trim()
   const allowed = allowedOccupancyTypes()
-  if (!ot) {
-    errors.push('Occupancy type is required')
-  } else if (!allowed.includes(ot)) {
+  if (ot && !allowed.includes(ot)) {
     errors.push(`Occupancy type must be: ${allowed.join(', ')}`)
   }
 
   if (!row.owner_full_name?.trim()) errors.push('Owner full name is required')
 
-  const ownerEmail = row.owner_email?.trim()
-  if (!ownerEmail) {
-    errors.push('Owner email is required')
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
-    errors.push('Owner email is invalid')
+  // Support multiple semicolon-separated emails — validate each one individually
+  const ownerEmails = parseEmails(row.owner_email ?? '')
+  if (ownerEmails.some(e => !EMAIL_RE.test(e))) {
+    errors.push('One or more owner emails are invalid')
   }
 
-  // Only validate tenant email if the field exists in this estate type's template
   if (hasTenantFields.value) {
-    const tenantEmail = row.tenant_email?.trim()
-    if (tenantEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tenantEmail)) {
-      errors.push('Tenant email is invalid')
+    const tenantEmails = parseEmails(row.tenant_email ?? '')
+    if (tenantEmails.some(e => !EMAIL_RE.test(e))) {
+      errors.push('One or more tenant emails are invalid')
     }
   }
 
@@ -796,6 +935,9 @@ async function parseFile() {
 }
 
 function applyMappingAndPreview() {
+  // Pass 1: map rows and collect unit_number → all row indices
+  const unitNumberRows = new Map<string, number[]>()
+
   const mapped = fileRows.value.map((rawRow, idx) => {
     const row: Record<string, string> = {}
 
@@ -803,13 +945,44 @@ function applyMappingAndPreview() {
       if (systemField) row[systemField] = rawRow[fileCol] ?? ''
     }
 
-    const errors = validateRow(row)
-    return { ...row, __rowIndex: idx + 1, __errors: errors }
+    if (!row.occupancy_type?.trim()) {
+      row.occupancy_type = allowedOccupancyTypes()[0]
+    }
+
+    const errors   = validateRow(row)
+    const warnings: string[] = []
+    const key      = row.unit_number?.trim().toLowerCase()
+
+    if (key) {
+      const existing = unitNumberRows.get(key) ?? []
+      existing.push(idx + 1)
+      unitNumberRows.set(key, existing)
+    }
+
+    return { ...row, __rowIndex: idx + 1, __errors: errors, __warnings: warnings, __isDuplicate: false }
   })
 
-  previewRows.value = mapped
-  previewPage.value = 1
-  step.value        = 2
+  // Pass 2: flag originals (amber warning) and duplicates (skipped, amber) for any unit number seen more than once
+  for (const rowIndices of unitNumberRows.values()) {
+    if (rowIndices.length < 2) continue
+    const [firstRow, ...dupeRows] = rowIndices
+
+    // Original: warn that duplicates exist but it will still be imported
+    mapped[firstRow - 1].__warnings.push(
+      `Duplicate on row${dupeRows.length > 1 ? 's' : ''} ${dupeRows.join(', ')} — ${dupeRows.length > 1 ? 'those rows' : 'that row'} will be skipped`
+    )
+
+    // Duplicates: excluded from import, shown with amber "Skipped" badge
+    for (const dupeRowNum of dupeRows) {
+      mapped[dupeRowNum - 1].__isDuplicate = true
+      mapped[dupeRowNum - 1].__warnings.push(`Same unit as row ${firstRow} — this row will be skipped`)
+    }
+  }
+
+  previewRows.value   = mapped
+  previewPage.value   = 1
+  previewFilter.value = 'all'
+  step.value          = 2
 }
 
 async function runImport() {
@@ -822,7 +995,7 @@ async function runImport() {
         method:  'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          rows: validRows.value.map(({ __rowIndex, __errors, ...data }) => data),
+          rows: validRows.value.map(({ __rowIndex, __errors, __warnings, __isDuplicate, ...data }) => data),
         }),
       }
     )

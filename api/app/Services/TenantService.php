@@ -57,7 +57,7 @@ class TenantService extends BaseService
             ->update(['is_active' => false]);
 
         $tenantData = collect($data)
-            ->only(['full_name', 'email', 'phone', 'id_number', 'lease_start', 'lease_end', 'rent_amount'])
+            ->only(['full_name', 'email', 'secondary_emails', 'phone', 'id_number', 'lease_start', 'lease_end', 'rent_amount'])
             ->toArray();
 
         $tenant = Tenant::create(array_merge($tenantData, [
@@ -121,7 +121,7 @@ class TenantService extends BaseService
     public function updateTenant(Unit $unit, Tenant $tenant, array $data): array
     {
         $tenantData = collect($data)
-            ->only(['full_name', 'email', 'phone', 'id_number', 'lease_start', 'lease_end', 'rent_amount',
+            ->only(['full_name', 'email', 'secondary_emails', 'phone', 'id_number', 'lease_start', 'lease_end', 'rent_amount',
                     'move_out_date', 'move_out_reason', 'move_out_notes'])
             ->filter(fn($v) => !is_null($v))
             ->toArray();

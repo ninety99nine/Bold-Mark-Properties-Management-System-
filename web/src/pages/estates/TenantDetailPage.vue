@@ -572,23 +572,25 @@ const showEditTenant  = ref(false)
 const editTenantSaving = ref(false)
 const editTenantError  = ref(null)
 const editTenantForm   = ref({
-  full_name:   '',
-  email:       '',
-  phone:       '',
-  rent_amount: '',
-  lease_start: '',
-  lease_end:   '',
+  full_name:        '',
+  email:            '',
+  secondary_emails: [],
+  phone:            '',
+  rent_amount:      '',
+  lease_start:      '',
+  lease_end:        '',
 })
 
 function openEditTenant() {
   editTenantError.value = null
   editTenantForm.value = {
-    full_name:   tenant.value?.full_name   ?? '',
-    email:       tenant.value?.email       ?? '',
-    phone:       tenant.value?.phone       ?? '',
-    rent_amount: tenant.value?.rent_amount ?? '',
-    lease_start: tenant.value?.lease_start ?? '',
-    lease_end:   tenant.value?.lease_end   ?? '',
+    full_name:        tenant.value?.full_name        ?? '',
+    email:            tenant.value?.email            ?? '',
+    secondary_emails: [...(tenant.value?.secondary_emails ?? [])],
+    phone:            tenant.value?.phone            ?? '',
+    rent_amount:      tenant.value?.rent_amount      ?? '',
+    lease_start:      tenant.value?.lease_start      ?? '',
+    lease_end:        tenant.value?.lease_end        ?? '',
   }
   showEditTenant.value = true
 }
@@ -701,11 +703,17 @@ async function saveEditTenant() {
             <h3 class="tracking-tight font-body font-semibold text-lg">Contact Details</h3>
           </div>
           <div class="p-6 pt-0 space-y-3">
-            <div class="flex items-center gap-3 text-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0">
+            <div class="flex items-start gap-3 text-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0 mt-0.5">
                 <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
               </svg>
-              <span class="text-foreground">{{ tenant.email }}</span>
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-foreground">{{ tenant.email }}</span>
+                  <span v-if="tenant.secondary_emails?.length" class="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded uppercase tracking-wide">Primary</span>
+                </div>
+                <span v-for="email in (tenant.secondary_emails ?? [])" :key="email" class="text-foreground">{{ email }}</span>
+              </div>
             </div>
             <div class="flex items-center gap-3 text-sm">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0">
@@ -1386,7 +1394,38 @@ async function saveEditTenant() {
       <p v-if="editTenantError" class="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{{ editTenantError }}</p>
 
       <AppInput v-model="editTenantForm.full_name" label="Full Name" placeholder="e.g. Lisa Mokoena" required />
-      <AppInput v-model="editTenantForm.email" label="Email Address" type="email" placeholder="e.g. lisa@email.com" required />
+
+      <!-- Primary email -->
+      <AppInput v-model="editTenantForm.email" label="Primary Email" type="email" placeholder="e.g. lisa@email.com" required />
+
+      <!-- Additional emails -->
+      <div class="space-y-2">
+        <label class="block text-sm font-medium">Additional Emails</label>
+        <div v-for="(_, i) in editTenantForm.secondary_emails" :key="i" class="flex gap-2 items-center">
+          <AppInput
+            v-model="editTenantForm.secondary_emails[i]"
+            type="email"
+            :placeholder="`e.g. other${i + 1}@email.com`"
+            class="flex-1"
+          />
+          <button
+            type="button"
+            class="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            @click="editTenantForm.secondary_emails.splice(i, 1)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 text-sm text-primary hover:underline"
+          @click="editTenantForm.secondary_emails.push('')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Add another email
+        </button>
+      </div>
+
       <AppInput v-model="editTenantForm.phone" label="Phone Number" placeholder="e.g. +267 72 000 0000" />
 
       <div class="grid grid-cols-2 gap-4">

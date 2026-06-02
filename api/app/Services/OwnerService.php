@@ -86,7 +86,7 @@ class OwnerService extends BaseService
     {
         $owner->update(
             collect($data)
-                ->only(['full_name', 'email', 'phone', 'id_number', 'address'])
+                ->only(['full_name', 'email', 'secondary_emails', 'phone', 'id_number', 'address'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray()
         );

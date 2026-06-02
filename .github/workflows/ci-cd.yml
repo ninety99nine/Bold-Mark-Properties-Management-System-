@@ -93,7 +93,7 @@ jobs:
     needs: test
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/phase-2') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     environment: production
 
     steps:
@@ -126,9 +126,11 @@ jobs:
           PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
 
       - name: Build images and deploy
+        env:
+          DOCKER_BUILDKIT: "1"
         run: |
           ssh -i ~/.ssh/do_key \
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=10 \
             root@${{ secrets.DO_HOST }} \
-            'chmod +x /opt/boldmark/docker/scripts/*.sh && bash /opt/boldmark/docker/scripts/deploy-do.sh'
+            'DOCKER_BUILDKIT=1 chmod +x /opt/boldmark/docker/scripts/*.sh && bash /opt/boldmark/docker/scripts/deploy-do.sh'

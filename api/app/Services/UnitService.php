@@ -551,9 +551,15 @@ class UnitService extends BaseService
 
         // ── Apply updates ────────────────────────────────────────────────
         $unitData = collect($data)
-            ->only(['unit_number', 'section', 'address', 'pq', 'occupancy_type', 'status', 'levy_override', 'rent_amount'])
+            ->only(['unit_number', 'section', 'address', 'pq', 'occupancy_type', 'status', 'rent_amount'])
             ->filter(fn($v) => !is_null($v))
             ->toArray();
+
+        // levy_override can be explicitly set to null to clear it — keep it out of the
+        // null-filter above and add it directly only when the caller sent the key.
+        if (array_key_exists('levy_override', $data)) {
+            $unitData['levy_override'] = $data['levy_override'];
+        }
 
         $unit->update($unitData);
 
@@ -808,18 +814,12 @@ class UnitService extends BaseService
      */
     public function deleteUnits(Estate $estate, array $unitIds): array
     {
-        $units = Unit::whereIn('id', $unitIds)
+        $total = Unit::whereIn('id', $unitIds)
             ->where('estate_id', $estate->id)
-            ->get();
-
-        $total = $units->count();
+            ->delete();
 
         if ($total === 0) {
             throw new Exception('No Units deleted');
-        }
-
-        foreach ($units as $unit) {
-            $unit->delete();
         }
 
         $label = $total === 1 ? 'Unit' : 'Units';
@@ -965,14 +965,16 @@ class UnitService extends BaseService
                 $lineNumber++;
 
                 if ($lineNumber === 1) {
-                    $columns = array_map('trim', $row);
+                    $rawCols         = array_map('trim', $row);
+                    $validColIndexes = array_keys(array_filter($rawCols, fn($c) => $c !== ''));
+                    $columns         = array_values(array_intersect_key($rawCols, array_flip($validColIndexes)));
                     continue;
                 }
 
-                // Map columns to associative array
+                // Map columns to associative array (only named columns)
                 $assoc = [];
-                foreach ($columns as $i => $col) {
-                    $assoc[$col] = trim($row[$i] ?? '');
+                foreach ($validColIndexes as $pos => $srcIdx) {
+                    $assoc[$columns[$pos]] = trim($row[$srcIdx] ?? '');
                 }
 
                 $rows[] = $assoc;
@@ -982,14 +984,35 @@ class UnitService extends BaseService
         } else {
             // XLSX / XLS
             $spreadsheet = IOFactory::load($path);
-            $sheet       = $spreadsheet->getActiveSheet();
-            $sheetData   = $sheet->toArray(null, true, true, false);
+
+            // Numbers (Mac) exports with an optional summary worksheet that becomes the
+            // active sheet. Pick the first sheet whose name doesn't look like a summary,
+            // falling back to sheet 0 if every sheet is named "Summary".
+            $sheetCount = $spreadsheet->getSheetCount();
+            $sheet      = null;
+
+            for ($i = 0; $i < $sheetCount; $i++) {
+                $candidate = $spreadsheet->getSheet($i);
+                if (!preg_match('/summary/i', $candidate->getTitle())) {
+                    $sheet = $candidate;
+                    break;
+                }
+            }
+
+            $sheet     = $sheet ?? $spreadsheet->getSheet(0);
+            $sheetData = $sheet->toArray(null, true, true, false);
 
             if (empty($sheetData)) {
                 throw new Exception('The uploaded file is empty.');
             }
 
-            $columns = array_map('trim', array_map('strval', $sheetData[0]));
+            $rawColumns = array_map('trim', array_map('strval', $sheetData[0]));
+
+            // Build an index of only the columns that have a non-empty header.
+            // Numbers (Mac) exports often append blank trailing columns; dropping
+            // them here prevents spurious entries in the column-mapping step.
+            $validColIndexes = array_keys(array_filter($rawColumns, fn($c) => $c !== ''));
+            $columns         = array_values(array_intersect_key($rawColumns, array_flip($validColIndexes)));
 
             foreach (array_slice($sheetData, 1) as $row) {
                 // Skip entirely empty rows
@@ -999,8 +1022,8 @@ class UnitService extends BaseService
                 }
 
                 $assoc = [];
-                foreach ($columns as $i => $col) {
-                    $assoc[$col] = $values[$i] ?? '';
+                foreach ($validColIndexes as $pos => $srcIdx) {
+                    $assoc[$columns[$pos]] = $values[$srcIdx] ?? '';
                 }
 
                 $rows[] = $assoc;
@@ -1046,9 +1069,14 @@ class UnitService extends BaseService
             $rowErrors = [];
 
             $unitNumber    = trim($row['unit_number'] ?? '');
-            $occupancyType = trim($row['occupancy_type'] ?? '');
+            $occupancyType = trim($row['occupancy_type'] ?? '') ?: 'owner_occupied';
             $ownerName     = trim($row['owner_full_name'] ?? '');
-            $ownerEmail    = trim($row['owner_email'] ?? '');
+            $ownerEmailRaw = trim($row['owner_email'] ?? '');
+
+            // Support multiple semicolon-separated emails: first = primary, rest = secondary
+            $ownerEmailParts    = array_values(array_filter(array_map('trim', explode(';', $ownerEmailRaw))));
+            $ownerPrimaryEmail  = $ownerEmailParts[0] ?? '';
+            $ownerSecondaryEmails = array_slice($ownerEmailParts, 1);
 
             if (!$unitNumber) {
                 $rowErrors[] = 'Unit number is required.';
@@ -1062,15 +1090,21 @@ class UnitService extends BaseService
                 $rowErrors[] = 'Owner full name is required.';
             }
 
-            if (!$ownerEmail) {
-                $rowErrors[] = 'Owner email is required.';
-            } elseif (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
-                $rowErrors[] = 'Owner email is invalid.';
+            foreach ($ownerEmailParts as $e) {
+                if (!filter_var($e, FILTER_VALIDATE_EMAIL)) {
+                    $rowErrors[] = "Owner email '{$e}' is not a valid email address.";
+                }
             }
 
-            $tenantEmail = trim($row['tenant_email'] ?? '');
-            if ($tenantEmail && !filter_var($tenantEmail, FILTER_VALIDATE_EMAIL)) {
-                $rowErrors[] = 'Tenant email is invalid.';
+            $tenantEmailRaw = trim($row['tenant_email'] ?? '');
+            $tenantEmailParts    = array_values(array_filter(array_map('trim', explode(';', $tenantEmailRaw))));
+            $tenantPrimaryEmail  = $tenantEmailParts[0] ?? '';
+            $tenantSecondaryEmails = array_slice($tenantEmailParts, 1);
+
+            foreach ($tenantEmailParts as $e) {
+                if (!filter_var($e, FILTER_VALIDATE_EMAIL)) {
+                    $rowErrors[] = "Tenant email '{$e}' is invalid.";
+                }
             }
 
             if (!empty($rowErrors)) {
@@ -1105,27 +1139,29 @@ class UnitService extends BaseService
             $existingUnitNumbers[strtolower($unitNumber)] = true;
 
             Owner::create([
-                'unit_id'    => $unit->id,
+                'unit_id'          => $unit->id,
                 'organization_id'  => $tenantId,
-                'full_name'  => $ownerName,
-                'email'      => $ownerEmail,
-                'phone'      => trim($row['owner_phone'] ?? '') ?: null,
-                'id_number'  => trim($row['owner_id_number'] ?? '') ?: null,
-                'address'    => trim($row['owner_address'] ?? '') ?: null,
+                'full_name'        => $ownerName,
+                'email'            => $ownerPrimaryEmail,
+                'secondary_emails' => !empty($ownerSecondaryEmails) ? $ownerSecondaryEmails : null,
+                'phone'            => trim($row['owner_phone'] ?? '') ?: null,
+                'id_number'        => trim($row['owner_id_number'] ?? '') ?: null,
+                'address'          => trim($row['owner_address'] ?? '') ?: null,
             ]);
 
             if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value) {
                 $tenantName = trim($row['tenant_full_name'] ?? '');
-                if ($tenantName || $tenantEmail) {
+                if ($tenantName || $tenantPrimaryEmail) {
                     Tenant::create([
-                        'unit_id'     => $unit->id,
-                        'organization_id'   => $tenantId,
-                        'full_name'   => $tenantName ?: 'Unknown Organization',
-                        'email'       => $tenantEmail ?: null,
-                        'phone'       => trim($row['tenant_phone'] ?? '') ?: null,
-                        'lease_start' => $this->parseDate($row['tenant_lease_start'] ?? ''),
-                        'lease_end'   => $this->parseDate($row['tenant_lease_end'] ?? ''),
-                        'is_active'   => true,
+                        'unit_id'          => $unit->id,
+                        'organization_id'  => $tenantId,
+                        'full_name'        => $tenantName ?: 'Unknown Organization',
+                        'email'            => $tenantPrimaryEmail ?: null,
+                        'secondary_emails' => !empty($tenantSecondaryEmails) ? $tenantSecondaryEmails : null,
+                        'phone'            => trim($row['tenant_phone'] ?? '') ?: null,
+                        'lease_start'      => $this->parseDate($row['tenant_lease_start'] ?? ''),
+                        'lease_end'        => $this->parseDate($row['tenant_lease_end'] ?? ''),
+                        'is_active'        => true,
                     ]);
                 }
             }

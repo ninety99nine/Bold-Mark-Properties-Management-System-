@@ -166,7 +166,7 @@ async function fetchUnits() {
       ownerEmail:     u.owner?.email     ?? '',
       ownerPhone:     u.owner?.phone     ?? '',
       ownerIdNumber:  u.owner?.id_number ?? '',
-      ownerLevy:      u.effective_levy_amount ?? 0,
+      ownerLevy:      (u.effective_levy_amount ?? 0) + (u.effective_reserve_levy ?? 0),
 
       // Current tenant
       tenant:              u.current_tenant?.full_name ?? null,
@@ -607,25 +607,28 @@ async function saveEditEstate() {
 }
 
 // ── Billing Settings modal ────────────────────────────────────────────
-const showBillingDay        = ref(false)
-const billingDayForm        = ref('')
-const paymentTermsForm      = ref('')
-const billingDaySaving      = ref(false)
-const billingDayError       = ref(null)
+const showBillingDay             = ref(false)
+const billingDayForm             = ref('')
+const paymentTermsForm           = ref('')
+const paymentReminderDaysForm    = ref('')
+const billingDaySaving           = ref(false)
+const billingDayError            = ref(null)
 
 function openBillingDay() {
-  billingDayForm.value    = estate.value?.billing_day ?? ''
-  paymentTermsForm.value  = estate.value?.payment_terms_days ?? 7
-  billingDayError.value   = null
-  showBillingDay.value    = true
+  billingDayForm.value          = estate.value?.billing_day ?? ''
+  paymentTermsForm.value        = estate.value?.payment_terms_days ?? 7
+  paymentReminderDaysForm.value = estate.value?.payment_reminder_days ?? ''
+  billingDayError.value         = null
+  showBillingDay.value          = true
 }
 
 async function saveBillingDay() {
   billingDaySaving.value = true
   billingDayError.value  = null
   try {
-    const day   = parseInt(billingDayForm.value)
-    const terms = parseInt(paymentTermsForm.value)
+    const day      = parseInt(billingDayForm.value)
+    const terms    = parseInt(paymentTermsForm.value)
+    const reminder = paymentReminderDaysForm.value !== '' ? parseInt(paymentReminderDaysForm.value) : null
     if (!day || day < 1 || day > 28) {
       billingDayError.value = 'Please enter a billing day between 1 and 28.'
       return
@@ -634,7 +637,15 @@ async function saveBillingDay() {
       billingDayError.value = 'Please enter payment terms between 1 and 365 days.'
       return
     }
-    await api.put(`/estates/${route.params.id}`, { billing_day: day, payment_terms_days: terms })
+    if (reminder !== null && (reminder < 1 || reminder > 365)) {
+      billingDayError.value = 'Please enter a reminder threshold between 1 and 365 days.'
+      return
+    }
+    await api.put(`/estates/${route.params.id}`, {
+      billing_day:           day,
+      payment_terms_days:    terms,
+      payment_reminder_days: reminder,
+    })
     showBillingDay.value = false
     await fetchEstate()
     success('Billing settings updated.')
@@ -729,6 +740,7 @@ async function confirmDeleteEstate() {
   deleteEstateError.value = null
   try {
     await api.delete(`/estates/${route.params.id}`)
+    success('Estate deleted successfully.')
     router.push('/estates')
   } catch (e) {
     deleteEstateError.value = e?.response?.data?.message ?? 'Failed to delete estate. Please try again.'
@@ -997,13 +1009,16 @@ async function confirmDeleteUnit() {
 }
 
 // ── Multi-select & Bulk Delete ────────────────────────────────────────
-const selectedUnitIds   = ref(new Set())
-const showBulkDelete    = ref(false)
-const bulkDeleteConfirm = ref('')
-const bulkDeleteLoading = ref(false)
-const bulkDeleteError   = ref(null)
+const selectedUnitIds      = ref(new Set())
+const selectAllAcrossPages = ref(false)   // true when user has opted into "select all X units"
+const showBulkDelete       = ref(false)
+const bulkDeleteConfirm    = ref('')
+const bulkDeleteLoading    = ref(false)
+const bulkDeleteError      = ref(null)
 
-const selectedCount = computed(() => selectedUnitIds.value.size)
+const selectedCount = computed(() =>
+  selectAllAcrossPages.value ? totalUnitsInQuery.value : selectedUnitIds.value.size
+)
 
 const allVisibleSelected = computed(() =>
   allUnits.value.length > 0 &&
@@ -1011,7 +1026,15 @@ const allVisibleSelected = computed(() =>
 )
 
 const someVisibleSelected = computed(() =>
-  selectedUnitIds.value.size > 0 && !allVisibleSelected.value
+  selectedUnitIds.value.size > 0 && !allVisibleSelected.value && !selectAllAcrossPages.value
+)
+
+// Show the "select all X units" banner only when the full current page is ticked
+// and there are more units on other pages
+const showSelectAllBanner = computed(() =>
+  allVisibleSelected.value &&
+  !selectAllAcrossPages.value &&
+  totalUnitsInQuery.value > allUnits.value.length
 )
 
 const bulkDeleteConfirmMatches = computed(() =>
@@ -1020,6 +1043,7 @@ const bulkDeleteConfirmMatches = computed(() =>
 
 function toggleUnitSelection(id, event) {
   event.stopPropagation()
+  selectAllAcrossPages.value = false
   const next = new Set(selectedUnitIds.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
@@ -1028,6 +1052,7 @@ function toggleUnitSelection(id, event) {
 
 function toggleSelectAll(event) {
   event.stopPropagation()
+  selectAllAcrossPages.value = false
   if (allVisibleSelected.value) {
     selectedUnitIds.value = new Set()
   } else {
@@ -1035,8 +1060,15 @@ function toggleSelectAll(event) {
   }
 }
 
+function activateSelectAllAcrossPages() {
+  selectAllAcrossPages.value = true
+  // Keep current page IDs selected so the checkboxes look right
+  selectedUnitIds.value = new Set(allUnits.value.map(u => u.id))
+}
+
 function clearSelection() {
-  selectedUnitIds.value = new Set()
+  selectedUnitIds.value      = new Set()
+  selectAllAcrossPages.value = false
 }
 
 function openBulkDelete() {
@@ -1050,12 +1082,28 @@ async function confirmBulkDelete() {
   bulkDeleteLoading.value = true
   bulkDeleteError.value   = null
   try {
-    await Promise.all(
-      [...selectedUnitIds.value].map(id =>
-        api.delete(`/estates/${route.params.id}/units/${id}`)
-      )
-    )
-    showBulkDelete.value  = false
+    let unitIds = [...selectedUnitIds.value]
+
+    // If the user selected across all pages, fetch every unit ID first
+    if (selectAllAcrossPages.value) {
+      const PER_PAGE = 200
+      const first    = await api.get(`/estates/${route.params.id}/units`, { params: { _per_page: PER_PAGE, page: 1 } })
+      const lastPage = first.data.meta?.last_page ?? 1
+      let   raw      = first.data.data ?? []
+      if (lastPage > 1) {
+        const pages = await Promise.all(
+          Array.from({ length: lastPage - 1 }, (_, i) =>
+            api.get(`/estates/${route.params.id}/units`, { params: { _per_page: PER_PAGE, page: i + 2 } })
+          )
+        )
+        for (const r of pages) raw = raw.concat(r.data.data ?? [])
+      }
+      unitIds = raw.map(u => u.id)
+    }
+
+    await api.delete(`/estates/${route.params.id}/units`, { data: { unit_ids: unitIds } })
+    showBulkDelete.value       = false
+    selectAllAcrossPages.value = false
     success('Selected units deleted successfully.')
     selectedUnitIds.value = new Set()
     await fetchUnits()
@@ -1149,31 +1197,41 @@ const countdownText = computed(() => {
 })
 
 // ── Run Billing Now ──────────────────────────────────────────────
-const showRunBilling    = ref(false)
-const runBillingPreview = ref([])
-const runBillingLoading = ref(false)
-const runBillingConfirm = ref(false)
-const runBillingError   = ref('')
+const showRunBilling            = ref(false)
+const runBillingPreview         = ref([])
+const runBillingLoading         = ref(false)
+const runBillingConfirm         = ref(false)
+const runBillingConfirmStep     = ref(false)  // true = show final confirmation screen
+const runBillingError           = ref('')
+const runBillingPeriod          = ref('')     // YYYY-MM, user-selectable
 
-const runBillingPeriod = computed(() => {
+// Offer current month + 3 previous months
+const runBillingPeriodOptions = computed(() => {
+  const options = []
   const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  for (let i = 0; i < 4; i++) {
+    const d     = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    options.push({ value, label: i === 0 ? `${label} (current)` : label })
+  }
+  return options
 })
 
 const runBillingPeriodLabel = computed(() => {
-  const now = new Date()
-  return now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const opt = runBillingPeriodOptions.value.find(o => o.value === runBillingPeriod.value)
+  return opt?.label ?? runBillingPeriod.value
 })
 
 const nonDuplicateRun = computed(() => runBillingPreview.value.filter(r => !r.duplicate))
 const duplicateRunCount = computed(() => runBillingPreview.value.filter(r => r.duplicate).length)
 const runBillingTotal = computed(() => nonDuplicateRun.value.reduce((sum, r) => sum + Number(r.amount), 0))
 
-async function openRunBilling() {
-  showRunBilling.value    = true
+async function loadRunBillingPreview() {
   runBillingLoading.value = true
   runBillingError.value   = ''
   runBillingPreview.value = []
+  runBillingConfirmStep.value = false
   try {
     const { data } = await api.post('/invoices/run-billing', {
       estate_id:      route.params.id,
@@ -1186,6 +1244,18 @@ async function openRunBilling() {
   } finally {
     runBillingLoading.value = false
   }
+}
+
+async function openRunBilling() {
+  const now = new Date()
+  runBillingPeriod.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  showRunBilling.value   = true
+  await loadRunBillingPreview()
+}
+
+function promptRunBillingConfirm() {
+  runBillingConfirmStep.value = true
+  runBillingError.value       = ''
 }
 
 async function confirmRunBilling() {
@@ -1208,9 +1278,10 @@ async function confirmRunBilling() {
 }
 
 function closeRunBilling() {
-  showRunBilling.value    = false
-  runBillingPreview.value = []
-  runBillingError.value   = ''
+  showRunBilling.value        = false
+  runBillingPreview.value     = []
+  runBillingError.value       = ''
+  runBillingConfirmStep.value = false
 }
 
 // ── Charts ────────────────────────────────────────────────────────────
@@ -1502,6 +1573,8 @@ const isPqEstate = computed(() =>
 
 const showPqImportModal  = ref(false)
 const showPqExplainModal = ref(false)
+const showClearPqModal   = ref(false)
+const clearingPq         = ref(false)
 const pqExplainView      = ref('breakdown') // 'breakdown' | 'learn'
 
 function openPqExplain() {
@@ -1635,7 +1708,7 @@ async function savePqEdits() {
       return api.put(`/estates/${route.params.id}/units/${d.id}`, payload)
     }))
     cancelPqEditMode()
-    await fetchAllPqUnits()
+    await Promise.all([fetchAllPqUnits(), fetchEstate()])
     success(`${changed.length} unit${changed.length > 1 ? 's' : ''} updated.`)
   } catch {
     toastError('Failed to save changes.')
@@ -1652,8 +1725,21 @@ async function fetchAllPqUnits() {
   if (!isPqEstate.value) return
   pqAllUnitsLoading.value = true
   try {
-    const res = await api.get(`/estates/${route.params.id}/units`, { params: { _per_page: 1000 } })
-    pqAllUnits.value = (res.data.data ?? []).map(u => ({
+    const PER_PAGE = 200
+    const first    = await api.get(`/estates/${route.params.id}/units`, { params: { _per_page: PER_PAGE, page: 1 } })
+    const lastPage = first.data.meta?.last_page ?? 1
+    let   raw      = first.data.data ?? []
+
+    if (lastPage > 1) {
+      const pages = await Promise.all(
+        Array.from({ length: lastPage - 1 }, (_, i) =>
+          api.get(`/estates/${route.params.id}/units`, { params: { _per_page: PER_PAGE, page: i + 2 } })
+        )
+      )
+      for (const r of pages) raw = raw.concat(r.data.data ?? [])
+    }
+
+    pqAllUnits.value = raw.map(u => ({
       id:                   u.id,
       unit:                 u.unit_number,
       section:              u.section || null,
@@ -1662,6 +1748,7 @@ async function fetchAllPqUnits() {
       effectiveReserveLevy: u.effective_reserve_levy ?? 0,
       levyOverride:         u.levy_override ?? null,
       ownerName:            u.owner?.full_name ?? '—',
+      ownerId:              u.owner?.id ?? null,
     }))
   } catch (e) {
     console.error('Failed to load PQ units', e)
@@ -1670,9 +1757,28 @@ async function fetchAllPqUnits() {
   }
 }
 
-async function onPqImported() {
+async function onPqImported(result) {
   await Promise.all([fetchUnits(), fetchEstate()])
   await fetchAllPqUnits()
+  if (result?.updated) {
+    success(result.message ?? `${result.updated} unit${result.updated !== 1 ? 's' : ''} updated.`)
+  } else {
+    success('PQs imported successfully.')
+  }
+}
+
+async function clearAllPqs() {
+  clearingPq.value = true
+  try {
+    const res = await api.delete(`/estates/${route.params.id}/units/pq`)
+    showClearPqModal.value = false
+    await Promise.all([fetchEstate(), fetchAllPqUnits()])
+    success(res.data.message ?? 'PQs cleared.')
+  } catch (e) {
+    toastError(e?.response?.data?.message ?? 'Failed to clear PQs.')
+  } finally {
+    clearingPq.value = false
+  }
 }
 
 const pqRows = computed(() => {
@@ -1801,6 +1907,24 @@ const estateTabs = computed(() => {
 
             <AppDropdownItem :divider="true" />
 
+            <AppDropdownItem label="Import Units" @click="close(); setTab('units'); showBulkImport = true">
+              <template #icon>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>
+                </svg>
+              </template>
+            </AppDropdownItem>
+
+            <AppDropdownItem label="Import Unit PQs" @click="close(); setTab('pq'); showPqImportModal = true">
+              <template #icon>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="12" x2="12" y1="18" y2="12"/><line x1="9" x2="15" y1="15" y2="15"/>
+                </svg>
+              </template>
+            </AppDropdownItem>
+
+            <AppDropdownItem :divider="true" />
+
             <AppDropdownItem label="Delete Estate" variant="danger" @click="close(); openDeleteEstate()">
               <template #icon>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
@@ -1907,16 +2031,17 @@ const estateTabs = computed(() => {
 
         <!-- Run Now button (always visible when schedule exists) -->
         <div v-if="billingSchedule && computedStats.units > 0" class="shrink-0 flex items-center px-5 py-3">
-          <AppButton
-            variant="primary"
-            size="sm"
-            @click="openRunBilling"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>
-            </svg>
-            Run Now
-          </AppButton>
+          <AppPoptip position="top" max-width="240px">
+            <template #trigger>
+              <AppButton variant="primary" size="sm" @click="openRunBilling">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+                Run Now
+              </AppButton>
+            </template>
+            <p class="px-3 py-2 text-xs">Trigger billing for all active units now</p>
+          </AppPoptip>
         </div>
 
         <!-- Countdown section (hidden when paused) -->
@@ -1944,7 +2069,7 @@ const estateTabs = computed(() => {
         </template>
 
         <!-- Pause / Resume toggle -->
-        <div v-if="billingSchedule" class="shrink-0 flex items-center ml-4">
+        <div v-if="billingSchedule && computedStats.units > 0" class="shrink-0 flex items-center ml-4">
           <!-- When paused: single "Resume" pill button -->
           <button
             v-if="estate.billing_paused"
@@ -1959,29 +2084,36 @@ const estateTabs = computed(() => {
             Resume Schedule
           </button>
           <!-- When active: icon-only pause button -->
-          <button
-            v-else
-            @click="toggleBillingPaused"
-            :disabled="billingPauseToggling"
-            title="Pause automatic billing"
-            class="inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
-            </svg>
-          </button>
+          <AppPoptip v-else position="top" max-width="240px">
+            <template #trigger>
+              <button
+                @click="toggleBillingPaused"
+                :disabled="billingPauseToggling"
+                class="inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+                </svg>
+              </button>
+            </template>
+            <p class="px-3 py-2 text-xs whitespace-nowrap">Pause automatic billing schedule</p>
+          </AppPoptip>
         </div>
 
         <!-- Edit button -->
-        <button
-          @click="openBillingDay"
-          title="Edit billing day"
-          class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors ml-2 mr-4"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-          </svg>
-        </button>
+        <AppPoptip position="top" max-width="240px">
+          <template #trigger>
+            <button
+              @click="openBillingDay"
+              class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors ml-2 mr-4"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+              </svg>
+            </button>
+          </template>
+          <p class="px-3 py-2 text-xs whitespace-nowrap">Edit billing day</p>
+        </AppPoptip>
 
       </div>
     </div>
@@ -2134,9 +2266,20 @@ const estateTabs = computed(() => {
           v-if="selectedCount > 0"
           class="mx-6 mb-3 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5"
         >
-          <span class="text-sm font-medium text-primary">
-            {{ selectedCount }} unit{{ selectedCount === 1 ? '' : 's' }} selected
-          </span>
+          <div class="flex flex-col gap-0.5">
+            <span class="text-sm font-medium text-primary">
+              {{ selectedCount }} unit{{ selectedCount === 1 ? '' : 's' }} selected
+            </span>
+            <span v-if="showSelectAllBanner" class="text-xs text-muted-foreground">
+              All {{ allUnits.length }} on this page are selected.
+              <button class="underline font-medium text-primary hover:text-foreground transition-colors" @click="activateSelectAllAcrossPages">
+                Select all {{ totalUnitsInQuery }} units in this estate
+              </button>
+            </span>
+            <span v-else-if="selectAllAcrossPages" class="text-xs text-muted-foreground">
+              All {{ totalUnitsInQuery }} units in this estate are selected.
+            </span>
+          </div>
           <div class="flex items-center gap-3">
             <button
               class="text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -2467,18 +2610,30 @@ const estateTabs = computed(() => {
         <div class="flex items-center gap-2">
           <!-- View mode actions -->
           <template v-if="!pqEditMode">
-            <AppButton variant="outline" size="sm" @click="showPqImportModal = true">
+            <AppButton variant="outline" size="sm" :disabled="pqAllUnitsLoading || pqAllUnits.length === 0" @click="showPqImportModal = true">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>
               </svg>
               Bulk Import PQs
             </AppButton>
-            <AppButton variant="outline" size="sm" @click="enterPqEditMode" :disabled="pqAllUnitsLoading">
+            <AppButton v-if="pqAllUnits.length > 0" variant="outline" size="sm" @click="enterPqEditMode" :disabled="pqAllUnitsLoading">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/>
               </svg>
               Edit PQs
+            </AppButton>
+            <AppButton
+              v-if="pqAllUnits.some(u => u.pq !== null || u.levyOverride !== null)"
+              variant="outline-danger"
+              size="sm"
+              :disabled="pqAllUnitsLoading"
+              @click="showClearPqModal = true"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Clear PQs
             </AppButton>
           </template>
           <!-- Edit mode actions -->
@@ -2625,8 +2780,27 @@ const estateTabs = computed(() => {
           <col class="w-[8%]" /><col class="w-[11%]" /><col /><col class="w-[11%]" /><col class="w-[16%]" /><col class="w-[14%]" /><col class="w-[13%]" />
         </colgroup>
         <tbody class="divide-y divide-border">
-            <tr v-if="!allUnits.length">
-              <td colspan="7" class="py-8 text-center text-sm text-muted-foreground">No units found.</td>
+            <tr v-if="pqAllUnitsLoading">
+              <td colspan="7" class="py-12 text-center">
+                <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Loading participation quotas…
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="pqAllUnits.length === 0 && !pqAllUnitsLoading">
+              <td colspan="7" class="py-12 text-center">
+                <div class="flex flex-col items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/40">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                  <p class="text-sm font-medium text-foreground">No units yet</p>
+                  <p class="text-xs text-muted-foreground max-w-xs">Add units first before setting up Participation Quotas. Go to the <button class="underline hover:text-foreground transition-colors" @click="setTab('units')">Units tab</button> to get started.</p>
+                </div>
+              </td>
             </tr>
             <tr v-else-if="!pqFilteredRows.length">
               <td colspan="7" class="py-12 text-center">
@@ -2645,8 +2819,13 @@ const estateTabs = computed(() => {
             <tr v-for="row in pqFilteredRows" :key="row.id"
               :class="['transition-colors', pqEditMode ? 'hover:bg-muted/10' : 'hover:bg-muted/20']">
               <td class="py-3 px-4 text-muted-foreground">{{ row.section ?? '—' }}</td>
-              <td class="py-3 px-4 font-medium text-foreground">{{ row.unit }}</td>
-              <td class="py-3 px-4 text-muted-foreground">{{ row.ownerName }}</td>
+              <td class="py-3 px-4 font-medium">
+                <button type="button" class="text-primary hover:underline font-medium" @click="goToUnit(row.id)">{{ row.unit }}</button>
+              </td>
+              <td class="py-3 px-4">
+                <button v-if="row.ownerId" type="button" class="text-primary hover:underline" @click="router.push({ name: 'owner-detail', params: { ownerId: row.ownerId } })">{{ row.ownerName }}</button>
+                <span v-else class="text-muted-foreground">{{ row.ownerName }}</span>
+              </td>
               <!-- PQ cell -->
               <td class="py-2 px-4 text-right">
                 <input v-if="pqEditMode"
@@ -3175,7 +3354,7 @@ const estateTabs = computed(() => {
         <!-- Levy Override + PQ -->
         <div v-if="editUnitShowLevy" class="grid grid-cols-2 gap-4">
           <AppInput v-model="editUnitForm.levyOverride" label="Levy Override" type="number" placeholder="Calculated from PQ" :min="0" :max="9999999999.99" />
-          <AppInput v-model="editUnitForm.pq" label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" hint="% of total. All units must sum to 100." :min="0" :max="100" />
+          <AppInput v-model="editUnitForm.pq" label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" hint="Proportional share — levies are distributed relative to the sum of all unit PQ values." :min="0" />
         </div>
 
         <!-- Rent Amount (shown when tenant-occupied — not applicable for sectional title) -->
@@ -3389,7 +3568,7 @@ const estateTabs = computed(() => {
         <AppSelect v-model="newUnit.occupancy" label="Occupancy Type" :options="editUnitOccupancyOptions" required />
 
         <template v-if="editUnitShowLevy">
-          <AppInput v-model="newUnit.pq" label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" hint="% of total. All units must sum to 100." :min="0" :max="100" />
+          <AppInput v-model="newUnit.pq" label="Participation Quota (PQ)" type="number" placeholder="e.g. 8.53" hint="Proportional share — levies are distributed relative to the sum of all unit PQ values." :min="0" />
 
           <!-- Levy Override toggle -->
           <div class="flex items-center justify-between">
@@ -3640,10 +3819,20 @@ const estateTabs = computed(() => {
 
         <AppInput
           v-model="paymentTermsForm"
-          label="Payment Terms (days)"
+          label="Days Until Due"
           type="number"
-          placeholder="e.g. 7"
+          placeholder="e.g. 30"
           hint="Days from invoice date until payment is due"
+          :min="1"
+          :max="365"
+        />
+
+        <AppInput
+          v-model="paymentReminderDaysForm"
+          label="Payment Reminder (days after due date)"
+          type="number"
+          placeholder="e.g. 3 — leave blank to disable"
+          hint="Send a reminder this many days after the due date (leave blank to disable)"
           :min="1"
           :max="365"
         />
@@ -3839,98 +4028,170 @@ const estateTabs = computed(() => {
     <AppModal :show="showRunBilling" title="Run Billing Now" size="lg" @close="closeRunBilling">
       <div class="space-y-4 py-4">
 
-        <!-- Period context -->
-        <div class="rounded-lg border border-border bg-muted/40 px-4 py-3 flex items-center gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0">
-            <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
-          </svg>
-          <div>
-            <p class="text-sm font-medium text-foreground">{{ estate?.name }}</p>
-            <p class="text-xs text-muted-foreground">Billing period: <span class="font-medium">{{ runBillingPeriodLabel }}</span></p>
-          </div>
-        </div>
+        <!-- ── STEP 1: Preview ──────────────────────────────────── -->
+        <template v-if="!runBillingConfirmStep">
 
-        <!-- Error -->
-        <p v-if="runBillingError" class="text-sm text-danger">{{ runBillingError }}</p>
-
-        <!-- Preview loading -->
-        <div v-if="runBillingLoading" class="border rounded border-border p-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-          </svg>
-          Loading billing preview…
-        </div>
-
-        <!-- Preview table -->
-        <template v-else-if="runBillingPreview.length > 0">
-          <div class="border rounded border-border overflow-hidden">
-            <div class="bg-muted px-4 py-2 border-b border-border flex items-center justify-between">
-              <p class="text-sm font-medium text-foreground">
-                Billing Preview — {{ nonDuplicateRun.length }} invoice{{ nonDuplicateRun.length !== 1 ? 's' : '' }} to generate
-              </p>
-              <span v-if="duplicateRunCount > 0" class="text-xs text-muted-foreground">
-                {{ duplicateRunCount }} duplicate{{ duplicateRunCount !== 1 ? 's' : '' }} skipped
-              </span>
+          <!-- Period selector -->
+          <div class="rounded-lg border border-border bg-muted/40 px-4 py-3 flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0">
+              <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
+            </svg>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-foreground">{{ estate?.name }}</p>
+              <p class="text-xs text-muted-foreground mt-0.5">Billing period</p>
             </div>
-            <div class="max-h-72 overflow-y-auto">
-              <table class="w-full text-sm">
-                <thead class="sticky top-0 bg-muted/80">
-                  <tr class="border-b border-border">
-                    <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Unit</th>
-                    <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Charge Type</th>
-                    <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Recipient</th>
-                    <th class="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(row, idx) in runBillingPreview"
-                    :key="idx"
-                    :class="['border-b border-border', row.duplicate ? 'opacity-40' : '']"
-                  >
-                    <td class="py-2 px-3 font-medium text-foreground">{{ row.unit_number }}</td>
-                    <td class="py-2 px-3 text-foreground">{{ row.charge_type }}</td>
-                    <td class="py-2 px-3 text-foreground">
-                      {{ row.recipient_name || (row.billed_to_type === 'owner' ? 'Owner' : 'Tenant') }}
-                      <span v-if="row.duplicate" class="ml-1 text-xs text-muted-foreground">(duplicate)</span>
-                    </td>
-                    <td class="py-2 px-3 text-right font-medium text-foreground whitespace-nowrap">{{ formatAmount(row.amount) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <AppSelect
+              v-model="runBillingPeriod"
+              :options="runBillingPeriodOptions"
+              :disabled="runBillingLoading"
+              class="w-52"
+              @change="loadRunBillingPreview"
+            />
           </div>
 
-          <!-- Total -->
-          <div class="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
-            <p class="text-sm font-medium text-foreground">Total to be invoiced</p>
-            <p class="text-lg font-bold font-body text-foreground">{{ formatAmount(runBillingTotal) }}</p>
-          </div>
-        </template>
+          <!-- Error -->
+          <p v-if="runBillingError" class="text-sm text-danger">{{ runBillingError }}</p>
 
-        <!-- No invoices to generate -->
-        <div
-          v-else-if="!runBillingLoading"
-          class="border rounded border-border p-6 text-center text-sm text-muted-foreground"
-        >
-          No invoices to generate for this estate and period.
-        </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <AppButton variant="outline" @click="closeRunBilling">Cancel</AppButton>
-          <AppButton
-            variant="primary"
-            :disabled="nonDuplicateRun.length === 0 || runBillingConfirm"
-            @click="confirmRunBilling"
-          >
-            <svg v-if="runBillingConfirm" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <!-- Preview loading -->
+          <div v-if="runBillingLoading" class="border rounded border-border p-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
-            Confirm &amp; Send Invoices
-          </AppButton>
-        </div>
+            Loading billing preview…
+          </div>
+
+          <!-- Preview table -->
+          <template v-else-if="runBillingPreview.length > 0">
+            <div class="border rounded border-border overflow-hidden">
+              <div class="bg-muted px-4 py-2 border-b border-border flex items-center justify-between">
+                <p class="text-sm font-medium text-foreground">
+                  Billing Preview — {{ nonDuplicateRun.length }} invoice{{ nonDuplicateRun.length !== 1 ? 's' : '' }} to generate
+                </p>
+                <span v-if="duplicateRunCount > 0" class="text-xs text-muted-foreground">
+                  {{ duplicateRunCount }} duplicate{{ duplicateRunCount !== 1 ? 's' : '' }} skipped
+                </span>
+              </div>
+              <div class="max-h-72 overflow-y-auto">
+                <table class="w-full text-sm">
+                  <thead class="sticky top-0 bg-muted">
+                    <tr class="border-b border-border">
+                      <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Unit</th>
+                      <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Charge Type</th>
+                      <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Recipient</th>
+                      <th class="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, idx) in runBillingPreview"
+                      :key="idx"
+                      :class="['border-b border-border', row.duplicate ? 'opacity-40' : '']"
+                    >
+                      <td class="py-2 px-3 font-medium text-foreground">{{ row.unit_number }}</td>
+                      <td class="py-2 px-3 text-foreground">{{ row.charge_type }}</td>
+                      <td class="py-2 px-3 text-foreground">
+                        {{ row.recipient_name || (row.billed_to_type === 'owner' ? 'Owner' : 'Tenant') }}
+                        <span v-if="row.duplicate" class="ml-1 text-xs text-muted-foreground">(duplicate)</span>
+                      </td>
+                      <td class="py-2 px-3 text-right font-medium text-foreground whitespace-nowrap">{{ formatAmount(row.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Total -->
+            <div class="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <p class="text-sm font-medium text-foreground">Total to be invoiced</p>
+              <p class="text-lg font-bold font-body text-foreground">{{ formatAmount(runBillingTotal) }}</p>
+            </div>
+          </template>
+
+          <!-- No invoices to generate -->
+          <div
+            v-else-if="!runBillingLoading"
+            class="border rounded border-border p-6 text-center text-sm text-muted-foreground"
+          >
+            No invoices to generate for this estate and period.
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <AppButton variant="outline" @click="closeRunBilling">Cancel</AppButton>
+            <AppButton
+              variant="primary"
+              :disabled="nonDuplicateRun.length === 0 || runBillingLoading"
+              @click="promptRunBillingConfirm"
+            >
+              Confirm
+            </AppButton>
+          </div>
+
+        </template>
+
+        <!-- ── STEP 2: Final confirmation ───────────────────────── -->
+        <template v-else>
+
+          <!-- Warning icon + heading -->
+          <div class="flex items-start gap-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
+            <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-amber-600">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-amber-900">You are about to send {{ nonDuplicateRun.length }} invoice email{{ nonDuplicateRun.length !== 1 ? 's' : '' }}</p>
+              <p class="mt-1 text-xs text-amber-700 leading-relaxed">Invoices will be generated and emailed to {{ nonDuplicateRun.length }} recipients. This cannot be undone.</p>
+            </div>
+          </div>
+
+          <!-- Summary card -->
+          <div class="border rounded-lg border-border overflow-hidden">
+            <div class="bg-muted px-4 py-2 border-b border-border">
+              <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Send Summary</p>
+            </div>
+            <div class="divide-y divide-border">
+              <div class="flex items-center justify-between px-4 py-3">
+                <p class="text-sm text-muted-foreground">Estate</p>
+                <p class="text-sm font-medium text-foreground">{{ estate?.name }}</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-3">
+                <p class="text-sm text-muted-foreground">Billing Period</p>
+                <p class="text-sm font-medium text-foreground">{{ runBillingPeriodLabel }}</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-3">
+                <p class="text-sm text-muted-foreground">Invoices to Generate</p>
+                <p class="text-sm font-semibold text-foreground">{{ nonDuplicateRun.length }}</p>
+              </div>
+              <div v-if="duplicateRunCount > 0" class="flex items-center justify-between px-4 py-3">
+                <p class="text-sm text-muted-foreground">Duplicates Skipped</p>
+                <p class="text-sm text-muted-foreground">{{ duplicateRunCount }}</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-3 bg-muted/40">
+                <p class="text-sm font-semibold text-foreground">Total Amount</p>
+                <p class="text-base font-bold text-foreground">{{ formatAmount(runBillingTotal) }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Error (if the actual submit fails) -->
+          <p v-if="runBillingError" class="text-sm text-danger">{{ runBillingError }}</p>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <AppButton variant="outline" :disabled="runBillingConfirm" @click="runBillingConfirmStep = false">
+              Go Back
+            </AppButton>
+            <AppButton variant="primary" :disabled="runBillingConfirm" @click="confirmRunBilling">
+              <svg v-if="runBillingConfirm" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              Send Invoices
+            </AppButton>
+          </div>
+
+        </template>
+
       </div>
     </AppModal>
 
@@ -3950,6 +4211,30 @@ const estateTabs = computed(() => {
       @close="showPqImportModal = false"
       @imported="onPqImported"
     />
+
+    <!-- Clear All PQs Confirmation Modal -->
+    <AppModal title="Clear All PQs" :show="showClearPqModal" size="sm" @close="showClearPqModal = false">
+      <p class="text-sm text-muted-foreground">
+        This will remove the PQ value and any levy overrides from all
+        <strong class="text-foreground">{{ pqAllUnits.length }} unit{{ pqAllUnits.length !== 1 ? 's' : '' }}</strong>
+        in this estate. Units will fall back to equal-share levy distribution.
+      </p>
+      <p class="text-sm font-medium text-[#F75A68] mt-3">This action cannot be undone.</p>
+      <template #footer>
+        <AppButton variant="outline" @click="showClearPqModal = false" :disabled="clearingPq">Cancel</AppButton>
+        <AppButton
+          class="bg-[#F75A68] text-white hover:bg-[#e04455] border-[#F75A68]"
+          :disabled="clearingPq"
+          @click="clearAllPqs"
+        >
+          <svg v-if="clearingPq" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          {{ clearingPq ? 'Clearing…' : 'Yes, Clear All PQs' }}
+        </AppButton>
+      </template>
+    </AppModal>
 
     <!-- Export Units Modal -->
     <AppExportModal

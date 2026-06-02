@@ -20,10 +20,11 @@ class Tenant extends Model
      * @var array
      */
     protected $casts = [
-        'is_active'   => 'boolean',
-        'lease_start' => 'date',
-        'lease_end'   => 'date',
-        'move_out_date' => 'date',
+        'is_active'        => 'boolean',
+        'lease_start'      => 'date',
+        'lease_end'        => 'date',
+        'move_out_date'    => 'date',
+        'secondary_emails' => 'array',
     ];
 
     /**
@@ -34,6 +35,7 @@ class Tenant extends Model
     protected $fillable = [
         'full_name',
         'email',
+        'secondary_emails',
         'phone',
         'id_number',
         'is_active',

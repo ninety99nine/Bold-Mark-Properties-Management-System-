@@ -290,12 +290,17 @@ async function submitAddEstate() {
       payload.currency = countryStore.COUNTRY_MAP[estateCountry]?.currencyCode || null
     }
 
-    await api.post('/estates', payload)
+    const res = await api.post('/estates', payload)
+    const newId = res.data?.data?.id
     showAddModal.value = false
     resetAddForm()
-    currentPage.value = 1
-    await Promise.all([fetchEstates(true), fetchSummary()])
     success('Estate created successfully.')
+    if (newId) {
+      router.push(`/estates/${newId}`)
+    } else {
+      currentPage.value = 1
+      await Promise.all([fetchEstates(true), fetchSummary()])
+    }
   } catch (e) {
     addError.value = e.response?.data?.message || 'Failed to create estate. Please try again.'
   } finally {

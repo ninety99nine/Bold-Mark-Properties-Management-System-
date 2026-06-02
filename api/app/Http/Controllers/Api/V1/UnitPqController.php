@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Estate;
 use App\Models\Unit;
+use App\Models\UnitActivity;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -246,6 +249,12 @@ class UnitPqController extends Controller
             ], 422);
         }
 
+        // Snapshot before-state for activity logging
+        $unitIds      = array_column($updates, 'id');
+        $beforeStates = Unit::whereIn('id', $unitIds)
+            ->get(['id', 'pq', 'levy_override', 'organization_id'])
+            ->keyBy('id');
+
         $updated = 0;
         DB::transaction(function () use ($updates, &$updated) {
             foreach ($updates as $row) {
@@ -253,6 +262,38 @@ class UnitPqController extends Controller
                 $updated++;
             }
         });
+
+        // Log activity for each unit where pq or levy_override changed
+        $user    = Auth::user();
+        $batchId = (string) Str::uuid();
+        foreach ($updates as $row) {
+            $before     = $beforeStates->get($row['id']);
+            $beforePq   = $before?->pq;
+            $beforeOver = $before?->levy_override;
+            $afterPq    = array_key_exists('pq', $row['data']) ? $row['data']['pq'] : $beforePq;
+            $afterOver  = array_key_exists('levy_override', $row['data']) ? $row['data']['levy_override'] : $beforeOver;
+
+            $changes = [];
+            if ((string) $beforePq !== (string) $afterPq) {
+                $changes[] = ['field' => 'PQ', 'old' => $beforePq, 'new' => $afterPq];
+            }
+            if ((string) $beforeOver !== (string) $afterOver) {
+                $changes[] = ['field' => 'Levy Override', 'old' => $beforeOver, 'new' => $afterOver];
+            }
+
+            if (! empty($changes)) {
+                UnitActivity::create([
+                    'unit_id'         => $row['id'],
+                    'organization_id' => $before?->organization_id,
+                    'batch_id'        => $batchId,
+                    'user_id'         => $user?->id,
+                    'changed_by_name' => $user?->name ?? $user?->full_name ?? 'System',
+                    'event'           => 'Updated unit details',
+                    'category'        => 'unit',
+                    'changes'         => $changes,
+                ]);
+            }
+        }
 
         $message = "{$updated} unit" . ($updated !== 1 ? 's' : '') . ' updated successfully.';
         if (! empty($notFound)) {
@@ -263,6 +304,22 @@ class UnitPqController extends Controller
             'message'   => $message,
             'updated'   => $updated,
             'not_found' => $notFound,
+        ]);
+    }
+
+    public function clearAll(Estate $estate)
+    {
+        $count = Unit::where('estate_id', $estate->id)
+            ->where(function ($q) {
+                $q->whereNotNull('pq')->orWhereNotNull('levy_override');
+            })
+            ->count();
+
+        Unit::where('estate_id', $estate->id)->update(['pq' => null, 'levy_override' => null]);
+
+        return response()->json([
+            'message' => "PQs cleared for {$count} unit" . ($count !== 1 ? 's' : '') . '.',
+            'cleared' => $count,
         ]);
     }
 

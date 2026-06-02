@@ -22,6 +22,7 @@ Route::prefix('estates/{estate}/units')
         Route::get('/pq/export', [UnitPqController::class, 'export'])->name('pq.export');
         Route::post('/pq/parse', [UnitPqController::class, 'parse'])->name('pq.parse');
         Route::post('/pq/import', [UnitPqController::class, 'import'])->name('pq.import');
+        Route::delete('/pq', [UnitPqController::class, 'clearAll'])->name('pq.clear');
 
         // Explicit route model binding applied: AppServiceProvider.php
         Route::prefix('{unit}')->group(function () {

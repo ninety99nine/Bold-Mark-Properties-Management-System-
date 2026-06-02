@@ -20,10 +20,11 @@ class Owner extends Model
      * @var array
      */
     protected $casts = [
-        'full_name' => 'string',
-        'email'     => 'string',
-        'phone'     => 'string',
-        'id_number' => 'string',
+        'full_name'        => 'string',
+        'email'            => 'string',
+        'phone'            => 'string',
+        'id_number'        => 'string',
+        'secondary_emails' => 'array',
     ];
 
     /**
@@ -34,6 +35,7 @@ class Owner extends Model
     protected $fillable = [
         'full_name',
         'email',
+        'secondary_emails',
         'phone',
         'id_number',
         'address',

@@ -405,21 +405,23 @@ const showEditOwner   = ref(false)
 const editOwnerSaving = ref(false)
 const editOwnerError  = ref(null)
 const editOwnerForm   = ref({
-  full_name:  '',
-  email:      '',
-  phone:      '',
-  id_number:  '',
-  address:    '',
+  full_name:        '',
+  email:            '',
+  secondary_emails: [],
+  phone:            '',
+  id_number:        '',
+  address:          '',
 })
 
 function openEditOwner() {
   editOwnerError.value = null
   editOwnerForm.value = {
-    full_name: owner.value?.full_name  ?? '',
-    email:     owner.value?.email      ?? '',
-    phone:     owner.value?.phone      ?? '',
-    id_number: owner.value?.id_number  ?? '',
-    address:   owner.value?.address    ?? '',
+    full_name:        owner.value?.full_name        ?? '',
+    email:            owner.value?.email            ?? '',
+    secondary_emails: [...(owner.value?.secondary_emails ?? [])],
+    phone:            owner.value?.phone            ?? '',
+    id_number:        owner.value?.id_number        ?? '',
+    address:          owner.value?.address          ?? '',
   }
   showEditOwner.value = true
 }
@@ -541,11 +543,17 @@ async function saveEditOwner() {
             <h3 class="tracking-tight font-body font-semibold text-lg">Contact Details</h3>
           </div>
           <div class="p-6 pt-0 space-y-3">
-            <div class="flex items-center gap-3 text-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0">
+            <div class="flex items-start gap-3 text-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0 mt-0.5">
                 <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
               </svg>
-              <span class="text-foreground">{{ owner.email }}</span>
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-foreground">{{ owner.email }}</span>
+                  <span v-if="owner.secondary_emails?.length" class="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded uppercase tracking-wide">Primary</span>
+                </div>
+                <span v-for="email in (owner.secondary_emails ?? [])" :key="email" class="text-foreground">{{ email }}</span>
+              </div>
             </div>
             <div class="flex items-center gap-3 text-sm">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0">
@@ -1096,7 +1104,38 @@ async function saveEditOwner() {
       <p v-if="editOwnerError" class="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{{ editOwnerError }}</p>
 
       <AppInput v-model="editOwnerForm.full_name" label="Full Name" placeholder="e.g. Michael Ndaba" required />
-      <AppInput v-model="editOwnerForm.email" label="Email Address" type="email" placeholder="e.g. michael@email.com" required />
+
+      <!-- Primary email -->
+      <AppInput v-model="editOwnerForm.email" label="Primary Email" type="email" placeholder="e.g. michael@email.com" required />
+
+      <!-- Additional emails -->
+      <div class="space-y-2">
+        <label class="block text-sm font-medium">Additional Emails</label>
+        <div v-for="(_, i) in editOwnerForm.secondary_emails" :key="i" class="flex gap-2 items-center">
+          <AppInput
+            v-model="editOwnerForm.secondary_emails[i]"
+            type="email"
+            :placeholder="`e.g. other${i + 1}@email.com`"
+            class="flex-1"
+          />
+          <button
+            type="button"
+            class="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            @click="editOwnerForm.secondary_emails.splice(i, 1)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 text-sm text-primary hover:underline"
+          @click="editOwnerForm.secondary_emails.push('')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Add another email
+        </button>
+      </div>
+
       <AppInput v-model="editOwnerForm.phone" label="Phone Number" placeholder="e.g. +27 82 000 0000" />
       <AppInput v-model="editOwnerForm.id_number" label="ID / Passport Number" placeholder="e.g. 8001015800080" />
       <AppInput v-model="editOwnerForm.address" label="Address" placeholder="e.g. 12 Main Street, Johannesburg" />

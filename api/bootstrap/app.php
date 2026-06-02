@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
         \App\Console\Commands\RecalculateUnitBalances::class,
         \App\Console\Commands\RunScheduledBilling::class,
+        \App\Console\Commands\SendPaymentReminders::class,
     ])
     ->withSchedule(function (Schedule $schedule): void {
         // Run billing for all estates whose billing_day matches today.
@@ -25,6 +26,15 @@ return Application::configure(basePath: dirname(__DIR__))
                  ->withoutOverlapping()
                  ->runInBackground()
                  ->appendOutputTo(storage_path('logs/billing-scheduler.log'));
+
+        // Send payment reminders for overdue unpaid invoices.
+        // Fires at 08:00 Africa/Johannesburg — after billing runs.
+        $schedule->command('billing:send-payment-reminders')
+                 ->dailyAt('08:00')
+                 ->timezone('Africa/Johannesburg')
+                 ->withoutOverlapping()
+                 ->runInBackground()
+                 ->appendOutputTo(storage_path('logs/payment-reminders.log'));
     })
     ->withMiddleware(function (Middleware $middleware): void {
         //

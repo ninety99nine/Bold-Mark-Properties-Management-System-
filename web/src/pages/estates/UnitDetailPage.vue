@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/composables/useApi.js'
 import AppAlert  from '@/components/common/AppAlert.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge  from '@/components/common/AppBadge.vue'
 import AppModal  from '@/components/common/AppModal.vue'
+import AppPoptip from '@/components/common/AppPoptip.vue'
 import AppSelect     from '@/components/common/AppSelect.vue'
 import AppInput      from '@/components/common/AppInput.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
@@ -72,9 +73,49 @@ async function fetchActivities() {
   }
 }
 
+const countdownNow = ref(Date.now())
+let countdownTimer = null
+
 onMounted(() => {
   fetchAll()
   fetchActivities()
+  countdownTimer = setInterval(() => { countdownNow.value = Date.now() }, 1000)
+})
+
+onUnmounted(() => {
+  clearInterval(countdownTimer)
+})
+
+// ── Billing schedule (for next-invoice timer) ─────────────────────────
+const billingSchedule = computed(() => {
+  const day = unit.value?.estate?.billing_day
+  if (!day) return null
+  const today      = new Date()
+  const currentDay = today.getDate()
+  const yr         = today.getFullYear()
+  const mo         = today.getMonth()
+  const nextDate   = day > currentDay ? new Date(yr, mo, day) : new Date(yr, mo + 1, day)
+  const s = ['th','st','nd','rd']
+  const v = day % 100
+  return {
+    nextDate,
+    formatted: nextDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+    ordinal:   day + (s[(v - 20) % 10] || s[v] || s[0]),
+  }
+})
+
+const billingCountdown = computed(() => {
+  if (!billingSchedule.value) return ''
+  const diff = billingSchedule.value.nextDate - countdownNow.value
+  if (diff <= 0) return 'Today'
+  const totalSecs = Math.floor(diff / 1000)
+  const days  = Math.floor(totalSecs / 86400)
+  const hours = Math.floor((totalSecs % 86400) / 3600)
+  const mins  = Math.floor((totalSecs % 3600) / 60)
+  const secs  = totalSecs % 60
+  if (days >= 1)  return `${days}d ${hours}h`
+  if (hours >= 1) return `${hours}h ${String(mins).padStart(2, '0')}m`
+  return `${mins}m ${String(secs).padStart(2, '0')}s`
 })
 
 // ── Copy to clipboard ─────────────────────────────────────────────────
@@ -360,8 +401,9 @@ const paymentTotals = computed(() => {
 const chargeConfigDisplay = computed(() => {
   if (!unit.value) return []
   const items = []
-  if (unit.value.effective_levy_amount) {
-    items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, configured: true, deletable: false })
+  const totalLevy = (unit.value.effective_levy_amount ?? 0) + (unit.value.effective_reserve_levy ?? 0)
+  if (totalLevy) {
+    items.push({ name: 'Levy', amount: totalLevy, configured: true, deletable: false })
   }
   if (unit.value.occupancy_type === 'tenant_occupied' && unit.value.rent_amount) {
     items.push({ name: 'Rent', amount: unit.value.rent_amount, configured: true, deletable: false })
@@ -454,8 +496,9 @@ const filteredChargeConfigDisplay = computed(() => {
   if (!unit.value) return []
   const items = []
   if (activeTab.value === 'owner') {
-    if (unit.value.effective_levy_amount) {
-      items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, configured: true, deletable: false })
+    const ownerTotalLevy = (unit.value.effective_levy_amount ?? 0) + (unit.value.effective_reserve_levy ?? 0)
+    if (ownerTotalLevy) {
+      items.push({ name: 'Levy', amount: ownerTotalLevy, configured: true, deletable: false })
     }
     ;(unit.value.charge_configs ?? []).forEach(cfg => {
       if (cfg.is_active && cfg.charge_type) {
@@ -640,9 +683,10 @@ async function confirmMoveIn() {
 }
 
 // ── Send Message modal ────────────────────────────────────────────────
-const showSendMessage  = ref(false)
-const messageRecipient = ref(null)
-const messageForm      = ref({ template: '', subject: '', body: '' })
+const showSendMessage   = ref(false)
+const messageRecipient  = ref(null)
+const messageSelectedEmail = ref('')
+const messageForm       = ref({ template: '', subject: '', body: '' })
 
 const OWNER_TEMPLATES = [
   { value: 'payment_reminder', label: 'Payment Reminder',    subject: 'Outstanding Payment Reminder', body: 'Dear {name},\n\nThis is a friendly reminder that your account has an outstanding balance. Please arrange payment at your earliest convenience.\n\nKind regards,\nBold Mark Properties' },
@@ -668,12 +712,16 @@ function openSendMessage(recipientType) {
   const person = recipientType === 'owner' ? unit.value?.owner : unit.value?.current_tenant
   if (!person) return
   const parts = (person.full_name ?? '').split(' ')
+  const allEmails = [person.email, ...(person.secondary_emails ?? [])].filter(Boolean)
   messageRecipient.value = {
-    name:     person.full_name,
-    email:    person.email,
-    role:     recipientType,
-    initials: parts.map(p => p[0]).join('').slice(0, 2).toUpperCase(),
+    name:      person.full_name,
+    email:     person.email,
+    role:      recipientType,
+    initials:  parts.map(p => p[0]).join('').slice(0, 2).toUpperCase(),
+    allEmails,
+    emailOptions: allEmails.map((e, i) => ({ value: e, label: i === 0 ? `${e} (Primary)` : e })),
   }
+  messageSelectedEmail.value = person.email ?? ''
   messageForm.value = { template: '', subject: '', body: '' }
   showSendMessage.value = true
 }
@@ -696,7 +744,7 @@ async function sendEmail() {
   try {
     await api.post('/messages/send', {
       recipient_name:  messageRecipient.value.name,
-      recipient_email: messageRecipient.value.email,
+      recipient_email: messageSelectedEmail.value || messageRecipient.value.email,
       subject:         messageForm.value.subject,
       body:            messageForm.value.body,
     })
@@ -1008,13 +1056,14 @@ const addChargeError   = ref(null)
 const addChargeTarget  = ref('owner') // 'owner' | 'tenant'
 const addChargeForm    = ref({ chargeTypeId: '', amount: '' })
 
-// Owner section: levy + owner + either configs
+// Owner section: admin levy + reserve levy + owner/either configs
 const ownerChargesDisplay = computed(() => {
   if (!unit.value) return []
   const items = []
-  if (unit.value.effective_levy_amount) {
-    items.push({ name: 'Levy', amount: unit.value.effective_levy_amount, deletable: false })
-  }
+  const adminLevy   = unit.value.effective_levy_amount  ?? 0
+  const reserveLevy = unit.value.effective_reserve_levy ?? 0
+  if (adminLevy)   items.push({ name: 'Admin Levy',   amount: adminLevy,   deletable: false })
+  if (reserveLevy) items.push({ name: 'Reserve Levy', amount: reserveLevy, deletable: false })
   ;(unit.value.charge_configs ?? []).forEach(cfg => {
     if (cfg.is_active && cfg.charge_type) {
       const a = cfg.charge_type.applies_to
@@ -1025,6 +1074,8 @@ const ownerChargesDisplay = computed(() => {
   })
   return items
 })
+
+const ownerChargesTotal = computed(() => ownerChargesDisplay.value.reduce((s, c) => s + c.amount, 0))
 
 // Tenant section: rent + tenant-only configs
 const tenantChargesDisplay = computed(() => {
@@ -1040,6 +1091,8 @@ const tenantChargesDisplay = computed(() => {
   })
   return items
 })
+
+const tenantChargesTotal = computed(() => tenantChargesDisplay.value.reduce((s, c) => s + c.amount, 0))
 
 const addChargeTypeOptions = computed(() => {
   const assigned = new Set((unit.value?.charge_configs ?? []).map(c => c.charge_type_id))
@@ -1459,7 +1512,7 @@ async function submitAddPayment() {
               >{{ unit.owner?.full_name ?? '—' }}</router-link>
               <p v-else class="font-semibold text-foreground">{{ unit.owner?.full_name ?? '—' }}</p>
               <div class="space-y-1.5 text-sm">
-                <!-- Email row with copy -->
+                <!-- Primary email row with copy -->
                 <div class="group flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2 text-muted-foreground min-w-0">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1475,6 +1528,28 @@ async function submitAddPayment() {
                     @click.stop="copyText(unit.owner.email, 'owner-email')"
                   >
                     <svg v-if="copiedKey === 'owner-email'" class="w-3.5 h-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                    <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  </button>
+                </div>
+                <!-- Secondary email rows -->
+                <div
+                  v-for="secEmail in (unit.owner?.secondary_emails ?? [])"
+                  :key="secEmail"
+                  class="group flex items-center justify-between gap-2"
+                >
+                  <div class="flex items-center gap-2 text-muted-foreground min-w-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 opacity-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                    </svg>
+                    <span class="truncate">{{ secEmail }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded"
+                    :title="copiedKey === `owner-sec-${secEmail}` ? 'Copied!' : 'Copy email'"
+                    @click.stop="copyText(secEmail, `owner-sec-${secEmail}`)"
+                  >
+                    <svg v-if="copiedKey === `owner-sec-${secEmail}`" class="w-3.5 h-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
                     <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                   </button>
                 </div>
@@ -1505,7 +1580,7 @@ async function submitAddPayment() {
                 </div>
                 <div class="pt-2 border-t border-border">
                   <p class="text-xs text-muted-foreground">Monthly Levy</p>
-                  <p class="text-lg font-bold font-body text-foreground">{{ fmtAmount(unit.effective_levy_amount) }}</p>
+                  <p class="text-lg font-bold font-body text-foreground">{{ fmtAmount((unit.effective_levy_amount ?? 0) + (unit.effective_reserve_levy ?? 0)) }}</p>
                 </div>
                 <AppButton variant="outline" size="sm" :full="true" @click="openSendMessage('owner')">
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
@@ -1531,13 +1606,22 @@ async function submitAddPayment() {
                 class="font-semibold text-foreground hover:text-primary hover:underline underline-offset-2 transition-colors"
               >{{ unit.current_tenant.full_name }}</router-link>
               <div class="space-y-1.5 text-sm">
-                <!-- Email row with copy -->
+                <!-- Email row with copy + secondary badge -->
                 <div class="group flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2 text-muted-foreground min-w-0">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
                     </svg>
                     <span class="truncate">{{ unit.current_tenant.email ?? '—' }}</span>
+                    <AppPoptip v-if="unit.current_tenant.secondary_emails?.length" position="top" max-width="240px">
+                      <template #trigger>
+                        <span class="shrink-0 cursor-default text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">+{{ unit.current_tenant.secondary_emails.length }}</span>
+                      </template>
+                      <div class="space-y-1.5 py-0.5">
+                        <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Secondary emails</p>
+                        <p v-for="email in unit.current_tenant.secondary_emails" :key="email" class="text-xs text-foreground break-all">{{ email }}</p>
+                      </div>
+                    </AppPoptip>
                   </div>
                   <button
                     v-if="unit.current_tenant.email"
@@ -1788,14 +1872,12 @@ async function submitAddPayment() {
                 </div>
                 <div v-if="ownerChargesDisplay.length > 0">
                   <div
-                    v-for="(charge, i) in ownerChargesDisplay"
+                    v-for="charge in ownerChargesDisplay"
                     :key="charge.id ?? charge.name"
-                    class="group flex items-center justify-between py-2"
-                    :class="i < ownerChargesDisplay.length - 1 ? 'border-b border-border' : ''"
+                    class="group flex items-center justify-between py-2 border-b border-border"
                   >
                     <span class="text-sm text-foreground">{{ charge.name }}</span>
                     <div class="flex items-center gap-1.5">
-                      <span class="text-sm font-medium text-foreground">{{ fmtAmount(charge.amount) }}</span>
                       <button
                         v-if="charge.deletable"
                         type="button"
@@ -1806,7 +1888,12 @@ async function submitAddPayment() {
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                       </button>
                       <span v-else class="w-[21px]" />
+                      <span class="text-sm font-medium text-foreground text-right tabular-nums">{{ fmtAmount(charge.amount) }}</span>
                     </div>
+                  </div>
+                  <div class="flex items-center justify-between pt-2">
+                    <span class="text-sm font-semibold text-foreground">Total</span>
+                    <span class="text-sm font-semibold text-foreground text-right tabular-nums">{{ fmtAmount(ownerChargesTotal) }}</span>
                   </div>
                 </div>
                 <p v-else class="text-sm text-muted-foreground py-1">No owner charges</p>
@@ -1834,14 +1921,12 @@ async function submitAddPayment() {
                 </div>
                 <div v-if="tenantChargesDisplay.length > 0">
                   <div
-                    v-for="(charge, i) in tenantChargesDisplay"
+                    v-for="charge in tenantChargesDisplay"
                     :key="charge.id ?? charge.name"
-                    class="group flex items-center justify-between py-2"
-                    :class="i < tenantChargesDisplay.length - 1 ? 'border-b border-border' : ''"
+                    class="group flex items-center justify-between py-2 border-b border-border"
                   >
                     <span class="text-sm text-foreground">{{ charge.name }}</span>
                     <div class="flex items-center gap-1.5">
-                      <span class="text-sm font-medium text-foreground">{{ fmtAmount(charge.amount) }}</span>
                       <button
                         v-if="charge.deletable"
                         type="button"
@@ -1852,12 +1937,41 @@ async function submitAddPayment() {
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                       </button>
                       <span v-else class="w-[21px]" />
+                      <span class="text-sm font-medium text-foreground text-right tabular-nums">{{ fmtAmount(charge.amount) }}</span>
                     </div>
+                  </div>
+                  <div class="flex items-center justify-between pt-2">
+                    <span class="text-sm font-semibold text-foreground">Total</span>
+                    <span class="text-sm font-semibold text-foreground text-right tabular-nums">{{ fmtAmount(tenantChargesTotal) }}</span>
                   </div>
                 </div>
                 <p v-else class="text-sm text-muted-foreground py-1">No tenant charges</p>
               </div>
 
+            </div>
+          </div>
+
+          <!-- Next Invoice timer — only shown when billing schedule is active (not paused) -->
+          <div
+            v-if="billingSchedule && unit.estate && !unit.estate.billing_paused"
+            class="rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 flex items-center justify-between gap-3"
+          >
+            <div class="flex items-center gap-2.5 min-w-0">
+              <svg class="w-4 h-4 shrink-0 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <div class="min-w-0">
+                <p class="text-xs text-muted-foreground">Next invoice</p>
+                <p class="text-sm font-medium text-foreground truncate">{{ billingSchedule.formatted }}</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <div class="text-right">
+                <p class="text-sm font-semibold text-accent tabular-nums">{{ billingCountdown }}</p>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-semibold text-foreground tabular-nums">{{ fmtAmount(ownerChargesTotal) }}</p>
+              </div>
             </div>
           </div>
 
@@ -2439,8 +2553,17 @@ async function submitAddPayment() {
           </div>
           <div>
             <p class="text-sm font-medium text-foreground">{{ messageRecipient.name }}</p>
-            <p class="text-xs text-muted-foreground">{{ messageRecipient.email }} · <span class="capitalize">{{ messageRecipient.role }}</span></p>
+            <p class="text-xs text-muted-foreground">{{ messageSelectedEmail || messageRecipient.email }} · <span class="capitalize">{{ messageRecipient.role }}</span></p>
           </div>
+        </div>
+
+        <!-- Email selector (only when multiple emails exist) -->
+        <div v-if="messageRecipient?.allEmails?.length > 1">
+          <label class="text-sm font-medium text-foreground mb-1.5 block">Send to</label>
+          <AppSelect
+            v-model="messageSelectedEmail"
+            :options="messageRecipient.emailOptions"
+          />
         </div>
 
         <!-- Error -->

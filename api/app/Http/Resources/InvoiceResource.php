@@ -27,6 +27,7 @@ class InvoiceResource extends JsonResource
             'due_date'       => $this->due_date?->toDateString(),
             'sent_at'            => $this->sent_at?->toDateTimeString(),
             'email_failed_at'    => $this->email_failed_at?->toDateTimeString(),
+            'reminder_sent_at'   => $this->reminder_sent_at?->toDateTimeString(),
             'issued_by_type'     => $this->issued_by_type,
             'issued_by_user_id'  => $this->issued_by_user_id,
             'created_at'         => $this->created_at?->toDateTimeString(),
