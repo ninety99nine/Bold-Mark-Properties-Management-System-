@@ -1,0 +1,33 @@
+name: Reset Database (DESTRUCTIVE)
+
+# ⚠️  WARNING: This drops ALL tables and re-runs every migration from scratch.
+# All estates, units, owners, tenants, invoices, and user data will be permanently deleted.
+# Only the production seed data (org, roles, charge types, compliance templates, admin users) will remain.
+#
+# Run manually from the GitHub Actions tab — only when you explicitly want a clean slate.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    name: "⚠️ Drop all tables, migrate fresh, seed production"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/do_key
+          chmod 600 ~/.ssh/do_key
+          ssh-keyscan -H "${{ secrets.DO_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Reset and seed
+        run: |
+          ssh -i ~/.ssh/do_key \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=5 \
+            root@${{ secrets.DO_HOST }} \
+            'cd /opt/boldmark && docker compose exec -T app php artisan migrate:fresh --seed --seeder=ProductionSeeder --force'
