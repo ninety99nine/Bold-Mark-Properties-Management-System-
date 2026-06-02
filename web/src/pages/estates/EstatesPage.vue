@@ -178,10 +178,10 @@ let observer = null
 
 // ── Empty state slideshow ─────────────────────────────────────────────
 const ESTATE_SLIDES = [
-  '/estates/property-1.jpg',
-  '/estates/property-2.png',
-  '/estates/property-3.jpeg',
-  '/estates/property-4.jpg',
+  '/property-images/property-1.jpg',
+  '/property-images/property-2.png',
+  '/property-images/property-3.jpeg',
+  '/property-images/property-4.jpg',
 ]
 const slideIndex = ref(0)
 const slideFading = ref(false)
