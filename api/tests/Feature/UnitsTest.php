@@ -1378,7 +1378,7 @@ it('imports valid rows, detects duplicates, and reports per-row errors that esca
     expect($body['duplicates'])->toBe(1);  // a01 ↔ existing A01
     expect($body['error_count'])->toBe(1); // C03 has invalid tenant_email
     expect($body['errors'][0]['row'])->toBe(3);
-    expect($body['errors'][0]['errors'])->toContain('Tenant email is invalid.');
+    expect($body['errors'][0]['errors'])->toContain("Tenant email 'not-an-email' is invalid.");
 
     $this->assertDatabaseHas('units', ['estate_id' => $estate->id, 'unit_number' => 'B02']);
     $this->assertDatabaseHas('units', ['estate_id' => $estate->id, 'unit_number' => 'D04']);
@@ -1439,14 +1439,17 @@ it('rejects bulk import row with invalid owner_email', function () {
     $user   = adminUser();
     $estate = makeEstate($user);
 
-    $this->actingAs($user, 'api')
+    $body = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.bulk.import.units', $estate), [
             'rows' => [
                 ['unit_number' => 'A1', 'occupancy_type' => 'owner_occupied', 'owner_full_name' => 'X', 'owner_email' => 'not-email'],
             ],
         ])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['rows.0.owner_email']);
+        ->assertOk()
+        ->json();
+
+    expect($body['error_count'])->toBe(1);
+    expect($body['errors'][0]['errors'])->toContain("Owner email 'not-email' is not a valid email address.");
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
