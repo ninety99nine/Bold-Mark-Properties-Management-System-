@@ -46,7 +46,7 @@ ok "App container started"
 
 # ── 4/5: Run migrations + warm caches ────────────────────────────────
 step "[4/5] Running migrations (fresh + production seed)..."
-docker compose exec -T app php artisan migrate:fresh --seed --class=ProductionSeeder --force
+docker compose exec -T app php artisan migrate:fresh --seed --seeder=ProductionSeeder --force
 ok "Migrations and production seed complete"
 
 step "[4/5] Warming caches..."
