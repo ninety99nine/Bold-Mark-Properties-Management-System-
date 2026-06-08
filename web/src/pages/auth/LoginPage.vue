@@ -14,10 +14,14 @@ const route = useRoute()
 
 const email       = ref('')
 const password    = ref('')
+const remember    = ref(false)
 const showPassword = ref(false)
 const error       = ref('')
 const loading     = ref(false)
 const mounted     = ref(false)
+
+// Set when the user was bounced here by an expired/invalid session (BM-006).
+const sessionExpired = ref(route.query.expired === '1')
 
 // 2FA challenge state
 const twoFactorCode    = ref('')
@@ -32,10 +36,11 @@ onMounted(() => {
 })
 
 async function handleLogin() {
-  error.value   = ''
-  loading.value = true
+  error.value          = ''
+  sessionExpired.value = false
+  loading.value        = true
   try {
-    const result = await auth.login(email.value, password.value)
+    const result = await auth.login(email.value, password.value, remember.value)
     if (result.two_factor_required) {
       showTwoFa.value = true
     } else {
@@ -168,6 +173,16 @@ function cancelTwoFactor() {
           </button>
         </div>
 
+        <!-- Session expired notice (BM-006) -->
+        <div
+          v-if="sessionExpired && !showTwoFa"
+          class="flex items-start gap-2.5 px-4 py-3 mb-5 rounded border text-sm"
+          style="background-color:#FFFBEB;border-color:#F59E0B;color:#92400E;"
+        >
+          <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L11 9.586V6z" clip-rule="evenodd" /></svg>
+          Your session expired due to inactivity. Sign in again to pick up where you left off.
+        </div>
+
         <!-- Form -->
         <form v-if="!showTwoFa" @submit.prevent="handleLogin" class="space-y-5">
           <AppInput
@@ -224,6 +239,18 @@ function cancelTwoFactor() {
               </AppButton>
             </div>
           </div>
+
+          <!-- Remember me -->
+          <label class="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              id="remember"
+              v-model="remember"
+              type="checkbox"
+              class="h-4 w-4 rounded border-2 border-border text-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
+              style="accent-color: #D89B4B;"
+            />
+            <span class="text-sm text-muted-fg">Keep me signed in</span>
+          </label>
 
           <!-- Error -->
           <Transition

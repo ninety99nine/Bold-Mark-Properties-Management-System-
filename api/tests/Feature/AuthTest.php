@@ -4,14 +4,17 @@ use App\Enums\LoginFailureReason;
 use App\Enums\UserStatus;
 use App\Models\User;
 use App\Models\UserLoginLog;
+use App\Models\UserSession;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Laravel\Passport\Client;
 use Laravel\Passport\ClientRepository;
+use PragmaRX\Google2FA\Google2FA;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Setup helpers
@@ -68,6 +71,30 @@ function loginAndGetToken(string $email, string $password): string
 function forgetAuth(): void
 {
     \Illuminate\Support\Facades\Auth::forgetGuards();
+}
+
+/**
+ * Enable confirmed TOTP 2FA for a user and return the plaintext secret so the
+ * test can generate valid codes with Google2FA::getCurrentOtp().
+ */
+function enableTwoFactorFor(User $user): string
+{
+    $secret = (new Google2FA())->generateSecretKey();
+
+    $user->forceFill([
+        'two_factor_secret'       => Crypt::encryptString($secret),
+        'two_factor_confirmed_at' => now(),
+    ])->save();
+
+    return $secret;
+}
+
+/**
+ * Generate the current valid 6-digit TOTP code for a secret.
+ */
+function totp(string $secret): string
+{
+    return (new Google2FA())->getCurrentOtp($secret);
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -1020,4 +1047,551 @@ it('prunes anonymous login log records beyond the anonymous limit', function () 
     ]);
 
     expect(UserLoginLog::whereNull('user_id')->count())->toBe(3);
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ BM-008 — Multi-Factor Authentication (TOTP 2FA)                          ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Setup
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('requires authentication to start 2FA setup', function () {
+    $this->postJson(route('api.v1.auth.2fa.setup'))->assertUnauthorized();
+});
+
+it('returns a secret and QR URI when starting 2FA setup', function () {
+    userWithPassword('2fa-setup@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-setup@boldmark.test', 'password123');
+
+    $res = $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.setup'))
+        ->assertOk()
+        ->assertJsonStructure(['data' => ['qr_uri', 'secret', 'enabled']]);
+
+    expect($res->json('data.enabled'))->toBeFalse();
+    expect($res->json('data.secret'))->toBeString()->not->toBeEmpty();
+    expect($res->json('data.qr_uri'))->toContain('otpauth://');
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Confirm
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('enables 2FA when confirming setup with a valid code', function () {
+    $user  = userWithPassword('2fa-confirm@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-confirm@boldmark.test', 'password123');
+
+    $secret = $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.setup'))
+        ->json('data.secret');
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.confirm'), ['code' => totp($secret)])
+        ->assertOk()
+        ->assertJson(['message' => 'Two-factor authentication enabled.']);
+
+    $fresh = $user->fresh();
+    expect($fresh->hasTwoFactorEnabled())->toBeTrue();
+    expect($fresh->two_factor_secret)->not->toBe($secret); // stored encrypted
+});
+
+it('rejects 2FA confirmation with an invalid code', function () {
+    userWithPassword('2fa-bad@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-bad@boldmark.test', 'password123');
+
+    $secret = $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.setup'))
+        ->json('data.secret');
+
+    $valid = totp($secret);
+    $wrong = $valid === '000000' ? '111111' : '000000';
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.confirm'), ['code' => $wrong])
+        ->assertStatus(422)
+        ->assertJson(['message' => 'Invalid code. Please try again.']);
+});
+
+it('rejects 2FA confirmation when the setup session has expired', function () {
+    userWithPassword('2fa-expired@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-expired@boldmark.test', 'password123');
+
+    // No setup call → no pending secret cached.
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.confirm'), ['code' => '123456'])
+        ->assertStatus(422)
+        ->assertJson(['message' => 'Setup session expired. Please start again.']);
+});
+
+it('validates the 2FA confirmation code format', function (array $payload) {
+    userWithPassword('2fa-validate@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-validate@boldmark.test', 'password123');
+
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.confirm'), $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['code']);
+})->with([
+    'missing'      => [[]],
+    'not digits'   => [['code' => 'abcdef']],
+    'too short'    => [['code' => '123']],
+    'too long'     => [['code' => '1234567']],
+]);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Disable
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('disables 2FA with a valid code', function () {
+    $user   = userWithPassword('2fa-disable@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $this->actingAs($user, 'api')
+        ->deleteJson(route('api.v1.auth.2fa.disable'), ['code' => totp($secret)])
+        ->assertOk()
+        ->assertJson(['message' => 'Two-factor authentication disabled.']);
+
+    expect($user->fresh()->hasTwoFactorEnabled())->toBeFalse();
+});
+
+it('rejects disabling 2FA with an invalid code', function () {
+    $user   = userWithPassword('2fa-disable-bad@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $valid = totp($secret);
+    $wrong = $valid === '000000' ? '111111' : '000000';
+
+    $this->actingAs($user, 'api')
+        ->deleteJson(route('api.v1.auth.2fa.disable'), ['code' => $wrong])
+        ->assertStatus(422);
+
+    expect($user->fresh()->hasTwoFactorEnabled())->toBeTrue();
+});
+
+it('returns 422 when disabling 2FA that is not enabled', function () {
+    $user = userWithPassword('2fa-not-on@boldmark.test', 'password123');
+
+    $this->actingAs($user, 'api')
+        ->deleteJson(route('api.v1.auth.2fa.disable'), ['code' => '123456'])
+        ->assertStatus(422)
+        ->assertJson(['message' => '2FA is not enabled.']);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Login challenge flow
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('returns a 2FA challenge instead of a token when 2FA is enabled', function () {
+    $user = userWithPassword('2fa-login@boldmark.test', 'password123');
+    enableTwoFactorFor($user);
+
+    $res = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => '2fa-login@boldmark.test',
+        'password' => 'password123',
+    ])->assertOk();
+
+    expect($res->json('data.two_factor_required'))->toBeTrue();
+    expect($res->json('data.challenge'))->toBeString()->not->toBeEmpty();
+    expect($res->json('data.token'))->toBeNull();
+
+    // No token or session is issued until the challenge is passed.
+    expect(DB::table('oauth_access_tokens')->count())->toBe(0);
+    expect(UserSession::count())->toBe(0);
+});
+
+it('issues a token after a valid 2FA challenge and grants access', function () {
+    $user   = userWithPassword('2fa-pass@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $challenge = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => '2fa-pass@boldmark.test',
+        'password' => 'password123',
+    ])->json('data.challenge');
+
+    $res = $this->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => $challenge,
+        'code'      => totp($secret),
+    ])
+        ->assertOk()
+        ->assertJsonStructure(['data' => ['token', 'user' => ['id', 'email']]]);
+
+    expect($res->json('data.user.email'))->toBe('2fa-pass@boldmark.test');
+    expect(UserSession::where('user_id', $user->id)->count())->toBe(1);
+
+    // The issued token works on a protected route.
+    $token = $res->json('data.token');
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk()
+        ->assertJsonPath('data.email', '2fa-pass@boldmark.test');
+});
+
+it('rejects a 2FA challenge with an invalid code', function () {
+    $user   = userWithPassword('2fa-wrong@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $challenge = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => '2fa-wrong@boldmark.test',
+        'password' => 'password123',
+    ])->json('data.challenge');
+
+    $valid = totp($secret);
+    $wrong = $valid === '000000' ? '111111' : '000000';
+
+    $this->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => $challenge,
+        'code'      => $wrong,
+    ])->assertStatus(422)->assertJson(['message' => 'Invalid code. Please try again.']);
+
+    expect(DB::table('oauth_access_tokens')->count())->toBe(0);
+});
+
+it('rejects an expired 2FA challenge', function () {
+    $user   = userWithPassword('2fa-stale@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $expired = Crypt::encryptString(json_encode([
+        'user_id'    => $user->id,
+        'remember'   => false,
+        'expires_at' => now()->subMinute()->timestamp,
+    ]));
+
+    $this->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => $expired,
+        'code'      => totp($secret),
+    ])->assertStatus(422)->assertJson(['message' => 'Session expired. Please log in again.']);
+});
+
+it('rejects a tampered / unreadable 2FA challenge', function () {
+    $this->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => 'not-a-valid-encrypted-payload',
+        'code'      => '123456',
+    ])->assertStatus(422);
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ BM-009 — Remember me / persistent login                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('stores a non-persistent session by default (remember = false)', function () {
+    $user = userWithPassword('no-remember@boldmark.test', 'password123');
+
+    loginAndGetToken('no-remember@boldmark.test', 'password123');
+
+    expect(UserSession::where('user_id', $user->id)->first()->remember)->toBeFalse();
+});
+
+it('stores a persistent session when remember is true', function () {
+    $user = userWithPassword('yes-remember@boldmark.test', 'password123');
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'yes-remember@boldmark.test',
+        'password' => 'password123',
+        'remember' => true,
+    ])->assertOk();
+
+    expect(UserSession::where('user_id', $user->id)->first()->remember)->toBeTrue();
+});
+
+it('rejects a non-boolean remember value', function () {
+    userWithPassword('remember-bad@boldmark.test', 'password123');
+
+    $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'remember-bad@boldmark.test',
+        'password' => 'password123',
+        'remember' => 'maybe',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['remember']);
+});
+
+it('preserves the remember flag through the 2FA challenge', function () {
+    $user   = userWithPassword('remember-2fa@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $challenge = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'remember-2fa@boldmark.test',
+        'password' => 'password123',
+        'remember' => true,
+    ])->json('data.challenge');
+
+    $this->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => $challenge,
+        'code'      => totp($secret),
+    ])->assertOk();
+
+    expect(UserSession::where('user_id', $user->id)->first()->remember)->toBeTrue();
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ BM-006 — Session timeout after inactivity                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('refreshes the inactivity clock on each authenticated request', function () {
+    $user  = userWithPassword('active@boldmark.test', 'password123');
+    $token = loginAndGetToken('active@boldmark.test', 'password123');
+
+    // Backdate, then make a request — activity should reset to ~now.
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(30)]);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk();
+
+    $session = UserSession::where('user_id', $user->id)->first();
+    expect($session->last_activity_at->diffInMinutes(now()))->toBeLessThan(1);
+});
+
+it('revokes a session that has been idle past the inactivity timeout', function () {
+    config()->set('auth.session_inactivity_timeout', 120);
+
+    $user  = userWithPassword('idle@boldmark.test', 'password123');
+    $token = loginAndGetToken('idle@boldmark.test', 'password123');
+
+    // Idle for longer than the timeout.
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(121)]);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertUnauthorized()
+        ->assertJson(['message' => 'Your session has expired due to inactivity. Please log in again.']);
+
+    // Token is revoked and the session row is cleaned up.
+    expect(DB::table('oauth_access_tokens')->where('revoked', true)->count())->toBe(1);
+    expect(UserSession::where('user_id', $user->id)->exists())->toBeFalse();
+});
+
+it('keeps a session alive when activity is within the inactivity window', function () {
+    config()->set('auth.session_inactivity_timeout', 120);
+
+    $user  = userWithPassword('within@boldmark.test', 'password123');
+    $token = loginAndGetToken('within@boldmark.test', 'password123');
+
+    // Idle, but still inside the window.
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(60)]);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk();
+});
+
+it('does not time out a remember-me session even after long inactivity', function () {
+    config()->set('auth.session_inactivity_timeout', 120);
+
+    $user = userWithPassword('persistent@boldmark.test', 'password123');
+
+    $token = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'persistent@boldmark.test',
+        'password' => 'password123',
+        'remember' => true,
+    ])->json('data.token');
+
+    // Far beyond the inactivity window.
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(600)]);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk();
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ BM-011 — Direct URL access after logout                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('blocks direct access to protected URLs after logout', function () {
+    userWithPassword('bm011@boldmark.test', 'password123');
+    $token = loginAndGetToken('bm011@boldmark.test', 'password123');
+
+    // Sanity: the token works before logout.
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk();
+
+    // Log out.
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.logout'))
+        ->assertOk();
+
+    // Re-using the same token to hit protected URLs directly must now fail.
+    foreach (['api.v1.auth.me', 'api.v1.sessions.index'] as $routeName) {
+        forgetAuth();
+        $this->withHeader('Authorization', "Bearer $token")
+            ->getJson(route($routeName))
+            ->assertUnauthorized();
+    }
+});
+
+it('blocks direct access to a protected URL with no token at all', function () {
+    $this->getJson(route('api.v1.sessions.index'))->assertUnauthorized();
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ Active sessions (SessionController) — BM-006 / BM-009 surfacing           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('requires authentication to list sessions', function () {
+    $this->getJson(route('api.v1.sessions.index'))->assertUnauthorized();
+});
+
+it('lists the current session with the new remember and last_activity_at fields', function () {
+    userWithPassword('sess-list@boldmark.test', 'password123');
+    $token = loginAndGetToken('sess-list@boldmark.test', 'password123');
+
+    $res = $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.sessions.index'))
+        ->assertOk()
+        ->assertJsonStructure([
+            'data' => [
+                ['id', 'token_id', 'is_current', 'ip_address', 'user_agent', 'remember', 'last_activity_at', 'created_at'],
+            ],
+        ]);
+
+    expect($res->json('data'))->toHaveCount(1);
+    expect($res->json('data.0.is_current'))->toBeTrue();
+    expect($res->json('data.0.remember'))->toBeFalse();
+    expect($res->json('data.0.last_activity_at'))->not->toBeNull();
+});
+
+it('reports remember = true for a persistent session', function () {
+    userWithPassword('sess-remember@boldmark.test', 'password123');
+
+    $token = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'sess-remember@boldmark.test',
+        'password' => 'password123',
+        'remember' => true,
+    ])->json('data.token');
+
+    $this->withHeader('Authorization', "Bearer $token")
+        ->getJson(route('api.v1.sessions.index'))
+        ->assertOk()
+        ->assertJsonPath('data.0.remember', true);
+});
+
+it('lists multiple sessions and flags only the current one', function () {
+    userWithPassword('sess-multi@boldmark.test', 'password123');
+    loginAndGetToken('sess-multi@boldmark.test', 'password123');         // other device
+    $current = loginAndGetToken('sess-multi@boldmark.test', 'password123'); // this device
+
+    forgetAuth();
+    $res = $this->withHeader('Authorization', "Bearer $current")
+        ->getJson(route('api.v1.sessions.index'))
+        ->assertOk();
+
+    expect($res->json('data'))->toHaveCount(2);
+    expect(collect($res->json('data'))->where('is_current', true))->toHaveCount(1);
+});
+
+it('excludes revoked sessions from the listing', function () {
+    userWithPassword('sess-revoked@boldmark.test', 'password123');
+    $token1 = loginAndGetToken('sess-revoked@boldmark.test', 'password123');
+    $token2 = loginAndGetToken('sess-revoked@boldmark.test', 'password123');
+
+    // Log token1 out → its session should drop off the list seen from token2.
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token1")
+        ->postJson(route('api.v1.auth.logout'))
+        ->assertOk();
+
+    forgetAuth();
+    $res = $this->withHeader('Authorization', "Bearer $token2")
+        ->getJson(route('api.v1.sessions.index'))
+        ->assertOk();
+
+    expect($res->json('data'))->toHaveCount(1);
+    expect($res->json('data.0.is_current'))->toBeTrue();
+});
+
+it('revokes a specific session and the targeted token stops working', function () {
+    userWithPassword('sess-destroy@boldmark.test', 'password123');
+    $token1 = loginAndGetToken('sess-destroy@boldmark.test', 'password123');
+    $token2 = loginAndGetToken('sess-destroy@boldmark.test', 'password123');
+
+    // From token2, find the OTHER (token1's) session id.
+    forgetAuth();
+    $sessions = $this->withHeader('Authorization', "Bearer $token2")
+        ->getJson(route('api.v1.sessions.index'))
+        ->json('data');
+
+    $other = collect($sessions)->firstWhere('is_current', false);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token2")
+        ->deleteJson(route('api.v1.sessions.destroy', ['session' => $other['id']]))
+        ->assertOk();
+
+    // token1 is now dead, token2 still works.
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token1")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertUnauthorized();
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token2")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk();
+});
+
+it('forbids revoking a session that belongs to another user', function () {
+    userWithPassword('owner-a@boldmark.test', 'password123');
+    userWithPassword('owner-b@boldmark.test', 'password123');
+
+    $tokenA = loginAndGetToken('owner-a@boldmark.test', 'password123');
+    $tokenB = loginAndGetToken('owner-b@boldmark.test', 'password123');
+
+    // B's session id, as seen by B.
+    forgetAuth();
+    $bSession = $this->withHeader('Authorization', "Bearer $tokenB")
+        ->getJson(route('api.v1.sessions.index'))
+        ->json('data.0.id');
+
+    // A tries to revoke B's session → 403, and B still works.
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $tokenA")
+        ->deleteJson(route('api.v1.sessions.destroy', ['session' => $bSession]))
+        ->assertForbidden();
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $tokenB")
+        ->getJson(route('api.v1.auth.me'))
+        ->assertOk();
+});
+
+it('revokes all other sessions but keeps the current one', function () {
+    userWithPassword('sess-all@boldmark.test', 'password123');
+    $token1 = loginAndGetToken('sess-all@boldmark.test', 'password123');
+    $token2 = loginAndGetToken('sess-all@boldmark.test', 'password123');
+    $current = loginAndGetToken('sess-all@boldmark.test', 'password123');
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $current")
+        ->deleteJson(route('api.v1.sessions.destroy.all'))
+        ->assertOk();
+
+    // Both other tokens are dead.
+    foreach ([$token1, $token2] as $dead) {
+        forgetAuth();
+        $this->withHeader('Authorization', "Bearer $dead")
+            ->getJson(route('api.v1.auth.me'))
+            ->assertUnauthorized();
+    }
+
+    // The current token still works and is the only remaining session.
+    forgetAuth();
+    $res = $this->withHeader('Authorization', "Bearer $current")
+        ->getJson(route('api.v1.sessions.index'))
+        ->assertOk();
+
+    expect($res->json('data'))->toHaveCount(1);
+    expect($res->json('data.0.is_current'))->toBeTrue();
 });

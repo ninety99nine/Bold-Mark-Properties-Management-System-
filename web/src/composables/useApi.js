@@ -22,13 +22,36 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle auth errors globally
+// Handle auth errors globally. On a 401 the session is over (expired through
+// inactivity, revoked, or the token is invalid): clear it and bounce to the
+// login page via the router — preserving the page the user was on so they
+// land back on it after signing in (BM-006). We use the router rather than a
+// hard `window.location` reload so the SPA stays warm and the redirect query
+// survives. Imports are dynamic to avoid a circular dependency with the store.
+let redirecting = false
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token')
-      window.location.href = '/login'
+  async (error) => {
+    if (error.response?.status === 401 && !redirecting) {
+      redirecting = true
+      try {
+        const [{ useAuthStore }, { default: router }] = await Promise.all([
+          import('@/stores/auth'),
+          import('@/router'),
+        ])
+        useAuthStore().clearSession()
+
+        const current = router.currentRoute.value
+        if (current.name !== 'login') {
+          await router.replace({
+            name: 'login',
+            query: { redirect: current.fullPath, expired: '1' },
+          })
+        }
+      } finally {
+        redirecting = false
+      }
     }
     return Promise.reject(error)
   }

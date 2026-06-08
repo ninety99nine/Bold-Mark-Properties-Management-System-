@@ -37,7 +37,10 @@ return Application::configure(basePath: dirname(__DIR__))
                  ->appendOutputTo(storage_path('logs/payment-reminders.log'));
     })
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Enforce the API session inactivity timeout (BM-006) on every API
+        // request. The middleware is a no-op for unauthenticated requests and
+        // for "remember me" sessions (BM-009).
+        $middleware->appendToGroup('api', \App\Http\Middleware\EnforceSessionTimeout::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

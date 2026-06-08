@@ -21,12 +21,14 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required'],
+            'remember' => ['sometimes', 'boolean'],
         ]);
 
-        $email    = $request->input('email');
+        $email = $request->input('email');
         $password = $request->input('password');
+        $remember = $request->boolean('remember');
 
         $user = User::where('email', $email)->first();
 
@@ -69,14 +71,15 @@ class AuthController extends Controller
         // If 2FA is enabled, return a challenge token instead of a full access token
         if ($user->hasTwoFactorEnabled()) {
             $challenge = Crypt::encryptString(json_encode([
-                'user_id'    => $user->id,
+                'user_id' => $user->id,
+                'remember' => $remember,
                 'expires_at' => now()->addMinutes(5)->timestamp,
             ]));
 
             return response()->json([
                 'data' => [
                     'two_factor_required' => true,
-                    'challenge'           => $challenge,
+                    'challenge' => $challenge,
                 ],
             ]);
         }
@@ -86,16 +89,18 @@ class AuthController extends Controller
         $tokenResult = $user->createToken('api-token');
 
         UserSession::create([
-            'user_id'    => $user->id,
-            'token_id'   => $tokenResult->token->id,
+            'user_id' => $user->id,
+            'token_id' => $tokenResult->token->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
+            'last_activity_at' => now(),
+            'remember' => $remember,
             'created_at' => now(),
         ]);
 
         return response()->json([
             'data' => [
-                'user'  => $user,
+                'user' => $user,
                 'token' => $tokenResult->accessToken,
             ],
         ]);
@@ -131,8 +136,8 @@ class AuthController extends Controller
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
-            'token'    => ['required'],
-            'email'    => ['required', 'email'],
+            'token' => ['required'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'min:8', 'confirmed'],
         ]);
 
@@ -164,12 +169,12 @@ class AuthController extends Controller
         ?LoginFailureReason $reason
     ): void {
         UserLoginLog::create([
-            'user_id'          => $user?->id,
-            'email'            => $request->input('email'),
-            'ip_address'       => $request->ip(),
-            'user_agent'       => $request->userAgent(),
+            'user_id' => $user?->id,
+            'email' => $request->input('email'),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
             'login_successful' => $successful,
-            'failure_reason'   => $reason,
+            'failure_reason' => $reason,
         ]);
     }
 }

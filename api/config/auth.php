@@ -128,4 +128,17 @@ return [
     'login_log_per_user_limit'  => env('LOGIN_LOG_PER_USER_LIMIT',  100),
     'login_log_anonymous_limit' => env('LOGIN_LOG_ANONYMOUS_LIMIT', 500),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Session Inactivity Timeout
+    |--------------------------------------------------------------------------
+    |
+    | Number of minutes of inactivity after which an API session (access token)
+    | is automatically revoked. The clock resets on every authenticated
+    | request. Sessions created with "remember me" are exempt (BM-009).
+    |
+    */
+
+    'session_inactivity_timeout' => (int) env('SESSION_INACTIVITY_TIMEOUT', 120),
+
 ];

@@ -14,10 +14,14 @@ class UserSession extends Model
         'token_id',
         'ip_address',
         'user_agent',
+        'last_activity_at',
+        'remember',
         'created_at',
     ];
 
     protected $casts = [
+        'last_activity_at' => 'datetime',
+        'remember' => 'boolean',
         'created_at' => 'datetime',
     ];
 

@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Models\UserSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
 
 class TwoFactorController extends Controller
@@ -15,7 +16,7 @@ class TwoFactorController extends Controller
 
     public function __construct()
     {
-        $this->google2fa = new Google2FA();
+        $this->google2fa = new Google2FA;
     }
 
     /**
@@ -24,7 +25,7 @@ class TwoFactorController extends Controller
      */
     public function setup(Request $request): JsonResponse
     {
-        $user   = $request->user();
+        $user = $request->user();
         $secret = $this->google2fa->generateSecretKey();
 
         // Store the pending secret encrypted in cache until confirmed
@@ -42,9 +43,9 @@ class TwoFactorController extends Controller
 
         return response()->json([
             'data' => [
-                'qr_uri'    => $qrUri,
-                'secret'    => $secret,
-                'enabled'   => $user->hasTwoFactorEnabled(),
+                'qr_uri' => $qrUri,
+                'secret' => $secret,
+                'enabled' => $user->hasTwoFactorEnabled(),
             ],
         ]);
     }
@@ -56,21 +57,21 @@ class TwoFactorController extends Controller
     {
         $request->validate(['code' => ['required', 'string', 'digits:6']]);
 
-        $user   = $request->user();
+        $user = $request->user();
         $secret = cache()->get("2fa_pending:{$user->id}");
 
-        if (!$secret) {
+        if (! $secret) {
             return response()->json(['message' => 'Setup session expired. Please start again.'], 422);
         }
 
         $valid = $this->google2fa->verifyKey($secret, $request->input('code'));
 
-        if (!$valid) {
+        if (! $valid) {
             return response()->json(['message' => 'Invalid code. Please try again.'], 422);
         }
 
         $user->update([
-            'two_factor_secret'       => Crypt::encryptString($secret),
+            'two_factor_secret' => Crypt::encryptString($secret),
             'two_factor_confirmed_at' => now(),
         ]);
 
@@ -88,19 +89,19 @@ class TwoFactorController extends Controller
 
         $user = $request->user();
 
-        if (!$user->hasTwoFactorEnabled()) {
+        if (! $user->hasTwoFactorEnabled()) {
             return response()->json(['message' => '2FA is not enabled.'], 422);
         }
 
         $secret = Crypt::decryptString($user->two_factor_secret);
-        $valid  = $this->google2fa->verifyKey($secret, $request->input('code'));
+        $valid = $this->google2fa->verifyKey($secret, $request->input('code'));
 
-        if (!$valid) {
+        if (! $valid) {
             return response()->json(['message' => 'Invalid code. Please try again.'], 422);
         }
 
         $user->update([
-            'two_factor_secret'       => null,
+            'two_factor_secret' => null,
             'two_factor_confirmed_at' => null,
         ]);
 
@@ -115,7 +116,7 @@ class TwoFactorController extends Controller
     {
         $request->validate([
             'challenge' => ['required', 'string'],
-            'code'      => ['required', 'string', 'digits:6'],
+            'code' => ['required', 'string', 'digits:6'],
         ]);
 
         try {
@@ -124,7 +125,7 @@ class TwoFactorController extends Controller
             return response()->json(['message' => 'Invalid or expired session.'], 422);
         }
 
-        if (!$payload || !isset($payload['user_id'], $payload['expires_at'])) {
+        if (! $payload || ! isset($payload['user_id'], $payload['expires_at'])) {
             return response()->json(['message' => 'Invalid challenge.'], 422);
         }
 
@@ -132,16 +133,16 @@ class TwoFactorController extends Controller
             return response()->json(['message' => 'Session expired. Please log in again.'], 422);
         }
 
-        $user = \App\Models\User::find($payload['user_id']);
+        $user = User::find($payload['user_id']);
 
-        if (!$user || !$user->hasTwoFactorEnabled()) {
+        if (! $user || ! $user->hasTwoFactorEnabled()) {
             return response()->json(['message' => 'Invalid session.'], 422);
         }
 
         $secret = Crypt::decryptString($user->two_factor_secret);
-        $valid  = $this->google2fa->verifyKey($secret, $request->input('code'));
+        $valid = $this->google2fa->verifyKey($secret, $request->input('code'));
 
-        if (!$valid) {
+        if (! $valid) {
             return response()->json(['message' => 'Invalid code. Please try again.'], 422);
         }
 
@@ -149,17 +150,19 @@ class TwoFactorController extends Controller
 
         $tokenResult = $user->createToken('api-token');
 
-        \App\Models\UserSession::create([
-            'user_id'    => $user->id,
-            'token_id'   => $tokenResult->token->id,
+        UserSession::create([
+            'user_id' => $user->id,
+            'token_id' => $tokenResult->token->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
+            'last_activity_at' => now(),
+            'remember' => (bool) ($payload['remember'] ?? false),
             'created_at' => now(),
         ]);
 
         return response()->json([
             'data' => [
-                'user'  => $user,
+                'user' => $user,
                 'token' => $tokenResult->accessToken,
             ],
         ]);

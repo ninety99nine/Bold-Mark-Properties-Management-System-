@@ -15,7 +15,7 @@ class SessionController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $user           = $request->user();
+        $user = $request->user();
         $currentTokenId = $user->token()->id;
 
         $sessions = UserSession::where('user_id', $user->id)
@@ -27,12 +27,14 @@ class SessionController extends Controller
             })
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn($s) => [
-                'id'         => $s->id,
-                'token_id'   => $s->token_id,
+            ->map(fn ($s) => [
+                'id' => $s->id,
+                'token_id' => $s->token_id,
                 'is_current' => $s->token_id === $currentTokenId,
                 'ip_address' => $s->ip_address ?? '—',
                 'user_agent' => $s->user_agent,
+                'remember' => (bool) $s->remember,
+                'last_activity_at' => $s->last_activity_at?->toIso8601String(),
                 'created_at' => $s->created_at?->toIso8601String(),
             ]);
 
@@ -62,7 +64,7 @@ class SessionController extends Controller
      */
     public function destroyAll(Request $request): JsonResponse
     {
-        $user           = $request->user();
+        $user = $request->user();
         $currentTokenId = $user->token()->id;
 
         $tokenIds = UserSession::where('user_id', $user->id)
@@ -70,7 +72,7 @@ class SessionController extends Controller
             ->pluck('token_id')
             ->toArray();
 
-        if (!empty($tokenIds)) {
+        if (! empty($tokenIds)) {
             DB::table('oauth_access_tokens')
                 ->whereIn('id', $tokenIds)
                 ->update(['revoked' => true]);
