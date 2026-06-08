@@ -97,6 +97,17 @@ jobs:
     timeout-minutes: 60
     environment: production
 
+    # Serialize deploys onto the single production Droplet. A fixed group means
+    # deploys from ANY branch queue behind one another instead of running
+    # concurrently (overlapping on-server builds is what exhausted memory and
+    # took the box down). cancel-in-progress is FALSE on purpose: cancelling a
+    # deploy mid-run orphans the remote build process — the exact failure we hit.
+    # New pushes wait for the in-flight deploy to finish; only the latest queued
+    # one survives (intermediate pending deploys are superseded).
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
