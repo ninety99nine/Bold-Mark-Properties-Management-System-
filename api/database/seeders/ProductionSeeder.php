@@ -357,9 +357,10 @@ class ProductionSeeder extends Seeder
         $role     = Role::findByName('company-admin', 'api');
 
         $users = [
-            ['name' => 'Julian Tabona',  'email' => 'julian@boldmarkprop.co.za',  'phone' => '+27 82 555 0000'],
-            ['name' => 'Justin Justin',  'email' => 'justin@boldmarkprop.co.za',  'phone' => '+27 82 555 0001'],
-            ['name' => 'Ayanda Dlamini', 'email' => 'ayanda@boldmarkprop.co.za',  'phone' => '+27 82 555 0002'],
+            ['name' => 'Julian Tabona',    'email' => 'julian@boldmarkprop.co.za',  'phone' => '+27 82 555 0000'],
+            ['name' => 'Justin Justin',    'email' => 'justin@boldmarkprop.co.za',  'phone' => '+27 82 555 0001'],
+            ['name' => 'Ayanda Dlamini',   'email' => 'ayanda@boldmarkprop.co.za',  'phone' => '+27 82 555 0002'],
+            ['name' => 'Mduduzi Mhlanga',  'email' => 'mduduzi@boldmarkprop.co.za', 'phone' => '+27 79 917 8596'],
         ];
 
         foreach ($users as $data) {
