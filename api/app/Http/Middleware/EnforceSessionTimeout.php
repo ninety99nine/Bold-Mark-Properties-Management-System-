@@ -41,7 +41,7 @@ class EnforceSessionTimeout
             return $next($request);
         }
 
-        $timeout = (int) config('auth.session_inactivity_timeout', 120);
+        $timeout = (int) config('auth.session_inactivity_timeout', 30);
 
         $expired = ! $session->remember
             && $timeout > 0

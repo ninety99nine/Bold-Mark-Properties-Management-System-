@@ -20,7 +20,7 @@ export function useIdleLogout() {
   const auth   = useAuthStore()
 
   // Keep in lockstep with the server's auth.session_inactivity_timeout.
-  const minutes   = Number(import.meta.env.VITE_SESSION_INACTIVITY_MINUTES) || 120
+  const minutes   = Number(import.meta.env.VITE_SESSION_INACTIVITY_MINUTES) || 30
   const timeoutMs = Math.max(1, minutes) * 60 * 1000
 
   let timer = null

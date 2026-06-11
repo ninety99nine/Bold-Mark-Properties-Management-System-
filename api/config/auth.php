@@ -139,6 +139,6 @@ return [
     |
     */
 
-    'session_inactivity_timeout' => (int) env('SESSION_INACTIVITY_TIMEOUT', 120),
+    'session_inactivity_timeout' => (int) env('SESSION_INACTIVITY_TIMEOUT', 30),
 
 ];

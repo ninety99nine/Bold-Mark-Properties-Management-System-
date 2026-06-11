@@ -1337,7 +1337,7 @@ it('refreshes the inactivity clock on each authenticated request', function () {
     $token = loginAndGetToken('active@boldmark.test', 'password123');
 
     // Backdate, then make a request — activity should reset to ~now.
-    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(30)]);
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(15)]);
 
     forgetAuth();
     $this->withHeader('Authorization', "Bearer $token")
@@ -1349,13 +1349,13 @@ it('refreshes the inactivity clock on each authenticated request', function () {
 });
 
 it('revokes a session that has been idle past the inactivity timeout', function () {
-    config()->set('auth.session_inactivity_timeout', 120);
+    config()->set('auth.session_inactivity_timeout', 30);
 
     $user  = userWithPassword('idle@boldmark.test', 'password123');
     $token = loginAndGetToken('idle@boldmark.test', 'password123');
 
     // Idle for longer than the timeout.
-    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(121)]);
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(31)]);
 
     forgetAuth();
     $this->withHeader('Authorization', "Bearer $token")
@@ -1369,13 +1369,13 @@ it('revokes a session that has been idle past the inactivity timeout', function 
 });
 
 it('keeps a session alive when activity is within the inactivity window', function () {
-    config()->set('auth.session_inactivity_timeout', 120);
+    config()->set('auth.session_inactivity_timeout', 30);
 
     $user  = userWithPassword('within@boldmark.test', 'password123');
     $token = loginAndGetToken('within@boldmark.test', 'password123');
 
     // Idle, but still inside the window.
-    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(60)]);
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(15)]);
 
     forgetAuth();
     $this->withHeader('Authorization', "Bearer $token")
@@ -1384,7 +1384,7 @@ it('keeps a session alive when activity is within the inactivity window', functi
 });
 
 it('does not time out a remember-me session even after long inactivity', function () {
-    config()->set('auth.session_inactivity_timeout', 120);
+    config()->set('auth.session_inactivity_timeout', 30);
 
     $user = userWithPassword('persistent@boldmark.test', 'password123');
 

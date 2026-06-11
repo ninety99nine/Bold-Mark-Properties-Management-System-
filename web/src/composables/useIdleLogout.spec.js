@@ -5,10 +5,10 @@ import { useIdleLogout } from '@/composables/useIdleLogout'
 
 // ──────────────────────────────────────────────────────────────────────────────
 // useIdleLogout — proactive inactivity auto-logout (BM-006).
-// Default timeout is 120 min (no VITE override in the test env).
+// Default timeout is 30 min (no VITE override in the test env).
 // ──────────────────────────────────────────────────────────────────────────────
 
-const TIMEOUT_MS = 120 * 60 * 1000
+const TIMEOUT_MS = 30 * 60 * 1000
 
 const replaceMock = vi.fn()
 let authState
