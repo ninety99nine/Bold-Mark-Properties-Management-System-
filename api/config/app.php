@@ -17,6 +17,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Two-Factor Authentication Branding
+    |--------------------------------------------------------------------------
+    |
+    | The issuer label shown next to the account inside authenticator apps
+    | (Microsoft Authenticator, Apple Passwords / Verification Codes, etc.) and
+    | a logo URL embedded in the otpauth QR via the non-standard "image"
+    | parameter — honoured by apps that support it and ignored otherwise. When
+    | the logo URL is blank, the app's built-in symbol
+    | (FRONTEND_URL/authenticator-icon.png) is used so no separate asset needs hosting.
+    |
+    */
+
+    'two_factor_issuer' => env('TWO_FACTOR_ISSUER', 'Bold Mark Properties'),
+
+    'two_factor_logo_url' => env('TWO_FACTOR_LOGO_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

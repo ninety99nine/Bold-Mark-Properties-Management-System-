@@ -44,6 +44,7 @@ it('returns 401 on every user route when unauthenticated', function (string $met
     ['put',    'api.v1.update.user',         ['user' => 99999]],
     ['delete', 'api.v1.delete.user',         ['user' => 99999]],
     ['post',   'api.v1.send.password.reset', ['user' => 99999]],
+    ['post',   'api.v1.reset.two.factor',    ['user' => 99999]],
     ['put',    'api.v1.sync.user.estates',   ['user' => 99999]],
 ]);
 
@@ -1042,4 +1043,70 @@ it('cross-tenant user update returns 404', function () {
     $this->actingAs($actor, 'api')
         ->putJson(route('api.v1.update.user', $foreign), ['name' => 'Hijacked'])
         ->assertNotFound();
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ POST /v1/users/{user}/reset-2fa  —  admin 2FA recovery (BUG-003)         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+/** Enrol confirmed 2FA on a user so the reset has something to clear. */
+function enrol2fa(User $user): void
+{
+    $user->forceFill([
+        'two_factor_secret'       => \Illuminate\Support\Facades\Crypt::encryptString('TESTSECRET234567'),
+        'two_factor_confirmed_at' => now(),
+    ])->save();
+}
+
+it('lets a company admin reset another user\'s 2FA, forcing re-enrolment', function () {
+    $actor  = adminUser();
+    $target = makeUserInTenant($actor->organization_id);
+    enrol2fa($target);
+
+    expect($target->fresh()->hasTwoFactorEnabled())->toBeTrue();
+
+    $this->actingAs($actor, 'api')
+        ->postJson(route('api.v1.reset.two.factor', $target))
+        ->assertOk()
+        ->assertJsonStructure(['message']);
+
+    $fresh = $target->fresh();
+    expect($fresh->hasTwoFactorEnabled())->toBeFalse();
+    expect($fresh->two_factor_secret)->toBeNull();
+    expect($fresh->two_factor_confirmed_at)->toBeNull();
+});
+
+it('revokes the target\'s sessions when their 2FA is reset', function () {
+    $actor  = adminUser();
+    $target = makeUserInTenant($actor->organization_id);
+    enrol2fa($target);
+
+    \App\Models\UserSession::create([
+        'user_id'          => $target->id,
+        'token_id'         => 'tok-reset-1',
+        'ip_address'       => '127.0.0.1',
+        'user_agent'       => 'phpunit',
+        'last_activity_at' => now(),
+        'remember'         => false,
+        'created_at'       => now(),
+    ]);
+
+    $this->actingAs($actor, 'api')
+        ->postJson(route('api.v1.reset.two.factor', $target))
+        ->assertOk();
+
+    expect(\App\Models\UserSession::where('user_id', $target->id)->count())->toBe(0);
+});
+
+it('forbids a non-admin from resetting another user\'s 2FA', function () {
+    $tenant = createTenant();
+    $actor  = createUser($tenant, 'portfolio-manager');
+    $target = makeUserInTenant($tenant->id);
+    enrol2fa($target);
+
+    $this->actingAs($actor, 'api')
+        ->postJson(route('api.v1.reset.two.factor', $target))
+        ->assertForbidden();
+
+    expect($target->fresh()->hasTwoFactorEnabled())->toBeTrue();
 });

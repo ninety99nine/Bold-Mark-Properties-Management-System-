@@ -20,6 +20,7 @@ Route::prefix('users')
             Route::put('/', 'updateUser')->name('update.user');
             Route::delete('/', 'deleteUser')->name('delete.user');
             Route::post('/send-password-reset', 'sendPasswordResetLink')->name('send.password.reset');
+            Route::post('/reset-2fa', 'resetTwoFactor')->name('reset.two.factor');
             Route::put('/estates', 'syncUserEstates')->name('sync.user.estates');
             Route::get('/login-logs', [LoginLogController::class, 'showUserLoginLogs'])->name('show.user.login.logs');
         });

@@ -33,6 +33,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/forgot-password', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'forgotPassword'])->name('forgot-password');
         Route::post('/reset-password', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'resetPassword'])->name('reset-password');
         Route::post('/2fa/challenge', [\App\Http\Controllers\Api\V1\Auth\TwoFactorController::class, 'challenge'])->name('2fa.challenge');
+
+        // Forced 2FA enrollment during login (gated by the encrypted setup
+        // challenge, not a bearer token) — for users who have not set up 2FA yet.
+        Route::post('/2fa/enroll/start',   [\App\Http\Controllers\Api\V1\Auth\TwoFactorController::class, 'enrollStart'])->name('2fa.enroll.start');
+        Route::post('/2fa/enroll/confirm', [\App\Http\Controllers\Api\V1\Auth\TwoFactorController::class, 'enrollConfirm'])->name('2fa.enroll.confirm');
     });
 
     // Authenticated — me, logout, 2FA management, sessions
@@ -40,10 +45,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('/me', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'me'])->name('me');
         Route::post('/logout', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'logout'])->name('logout');
 
+        // 2FA is mandatory and can never be disabled by a user (BUG-003), so no
+        // disable route is exposed. setup/confirm remain for re-keying an
+        // authenticator from an already-authenticated session.
         Route::prefix('2fa')->name('2fa.')->group(function () {
             Route::post('/setup',   [\App\Http\Controllers\Api\V1\Auth\TwoFactorController::class, 'setup'])->name('setup');
             Route::post('/confirm', [\App\Http\Controllers\Api\V1\Auth\TwoFactorController::class, 'confirm'])->name('confirm');
-            Route::delete('/',      [\App\Http\Controllers\Api\V1\Auth\TwoFactorController::class, 'disable'])->name('disable');
         });
     });
 

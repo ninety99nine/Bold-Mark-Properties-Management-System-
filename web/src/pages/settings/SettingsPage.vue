@@ -127,17 +127,17 @@ async function changePassword() {
 }
 
 // ─── Account — Security: 2FA ─────────────────────────────────────────────────
+// 2FA is mandatory and can never be disabled (BUG-003). The setup flow remains
+// only to re-key an authenticator; there is no disable path.
 const twoFaEnabled        = computed(() => !!authStore.user?.two_factor_enabled)
 const twoFaSetupLoading   = ref(false)
 const twoFaConfirmLoading = ref(false)
-const twoFaDisableLoading = ref(false)
 const twoFaQrUri          = ref('')
 const twoFaSecret         = ref('')
 const twoFaCode           = ref('')
-const twoFaDisableCode    = ref('')
 const twoFaError          = ref('')
 const twoFaSuccess        = ref('')
-const twoFaStep           = ref('idle') // idle | setup | disable
+const twoFaStep           = ref('idle') // idle | setup
 
 async function startTwoFaSetup() {
   twoFaError.value        = ''
@@ -174,30 +174,12 @@ async function confirmTwoFa() {
   }
 }
 
-async function disableTwoFa() {
-  twoFaError.value          = ''
-  twoFaDisableLoading.value = true
-  try {
-    await api.delete('/auth/2fa', { data: { code: twoFaDisableCode.value } })
-    await authStore.fetchUser()
-    twoFaStep.value        = 'idle'
-    twoFaDisableCode.value = ''
-    twoFaSuccess.value     = 'Two-factor authentication disabled.'
-    setTimeout(() => { twoFaSuccess.value = '' }, 5000)
-  } catch (err) {
-    twoFaError.value = err?.response?.data?.message ?? 'Invalid code.'
-  } finally {
-    twoFaDisableLoading.value = false
-  }
-}
-
 function cancelTwoFaFlow() {
-  twoFaStep.value        = 'idle'
-  twoFaCode.value        = ''
-  twoFaDisableCode.value = ''
-  twoFaQrUri.value       = ''
-  twoFaSecret.value      = ''
-  twoFaError.value       = ''
+  twoFaStep.value   = 'idle'
+  twoFaCode.value   = ''
+  twoFaQrUri.value  = ''
+  twoFaSecret.value = ''
+  twoFaError.value  = ''
 }
 
 // ─── Account — Security: QR rendering ───────────────────────────────────────
@@ -1040,20 +1022,20 @@ async function executeFlush() {
               <div>
                 <p class="text-sm font-medium text-foreground">Two-Factor Authentication</p>
                 <p class="text-xs text-muted-foreground mt-0.5">
-                  <span v-if="twoFaEnabled" class="text-green-600 font-medium">Enabled</span>
-                  <span v-else>Add an extra layer of security to your account</span>
+                  <span v-if="twoFaEnabled" class="text-green-600 font-medium">Enabled · Required — cannot be disabled</span>
+                  <span v-else>Required on every account — set it up to continue</span>
                 </p>
               </div>
             </div>
             <div class="flex gap-2">
-              <AppButton v-if="twoFaStep === 'idle' && !twoFaEnabled" variant="outline" size="sm" :loading="twoFaSetupLoading" @click="startTwoFaSetup">Enable</AppButton>
-              <AppButton v-if="twoFaStep === 'idle' && twoFaEnabled"  variant="outline" size="sm" @click="twoFaStep = 'disable'">Disable</AppButton>
+              <AppButton v-if="twoFaStep === 'idle' && !twoFaEnabled" variant="outline" size="sm" :loading="twoFaSetupLoading" @click="startTwoFaSetup">Set up</AppButton>
             </div>
           </div>
 
           <!-- Setup flow: QR + code entry -->
           <div v-if="twoFaStep === 'setup'" class="border-t p-5 space-y-4">
             <p class="text-sm text-foreground font-medium">Scan this QR code with your authenticator app</p>
+            <p class="text-xs text-muted-foreground -mt-2">Use Microsoft Authenticator or Apple Passwords (Verification Codes).</p>
             <div class="flex gap-6 items-start flex-wrap">
               <div class="bg-white p-3 rounded-lg border inline-block">
                 <img v-if="qrDataUrl" :src="qrDataUrl" alt="2FA QR Code" class="w-48 h-48" />
@@ -1074,16 +1056,6 @@ async function executeFlush() {
             </div>
           </div>
 
-          <!-- Disable flow: code entry -->
-          <div v-if="twoFaStep === 'disable'" class="border-t p-5 space-y-4 max-w-sm">
-            <p class="text-sm text-foreground">Enter your current authenticator code to confirm disabling 2FA.</p>
-            <AppInput v-model="twoFaDisableCode" label="Authentication Code" placeholder="000000" inputmode="numeric" maxlength="6" />
-            <p v-if="twoFaError" class="text-sm text-destructive">{{ twoFaError }}</p>
-            <div class="flex gap-2">
-              <AppButton variant="danger" size="sm" :loading="twoFaDisableLoading" @click="disableTwoFa">Disable 2FA</AppButton>
-              <AppButton variant="ghost"  size="sm" @click="cancelTwoFaFlow">Cancel</AppButton>
-            </div>
-          </div>
         </div>
 
         <!-- Active Sessions card -->

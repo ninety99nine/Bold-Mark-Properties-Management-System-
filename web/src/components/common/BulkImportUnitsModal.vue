@@ -513,6 +513,7 @@ import AppModal from './AppModal.vue'
 import AppButton from './AppButton.vue'
 import AppPoptip from './AppPoptip.vue'
 import AppSelect from './AppSelect.vue'
+import { getToken } from '@/composables/authStorage'
 
 const props = defineProps<{
   show: boolean
@@ -736,7 +737,7 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('auth_token')
+  const token = getToken()
   return { Authorization: `Bearer ${token}` }
 }
 

@@ -29,6 +29,16 @@ const twoFaError       = ref('')
 const twoFaLoading     = ref(false)
 const showTwoFa        = ref(false)
 
+// Forced 2FA enrollment state (mandatory — BUG-003). Shown when a user who has
+// not set up 2FA signs in; they cannot reach the app until they enroll.
+const showTwoFaSetup   = ref(false)
+const setupQrDataUrl   = ref('')
+const setupSecret      = ref('')
+const setupCode        = ref('')
+const setupError       = ref('')
+const setupStarting    = ref(false)
+const setupConfirming  = ref(false)
+
 onMounted(() => {
   requestAnimationFrame(() => {
     mounted.value = true
@@ -41,10 +51,11 @@ async function handleLogin() {
   loading.value        = true
   try {
     const result = await auth.login(email.value, password.value, remember.value)
-    if (result.two_factor_required) {
-      showTwoFa.value = true
+    if (result.two_factor_setup_required) {
+      showTwoFaSetup.value = true
+      await beginTwoFaSetup()
     } else {
-      router.push(route.query.redirect || '/dashboard')
+      showTwoFa.value = true
     }
   } catch (e) {
     error.value = e.response?.data?.message || 'The email or password you entered is incorrect.'
@@ -66,10 +77,44 @@ async function handleTwoFactor() {
   }
 }
 
+// Fetch a fresh secret + QR for the forced enrollment step.
+async function beginTwoFaSetup() {
+  setupError.value    = ''
+  setupStarting.value = true
+  try {
+    const { qr_uri, secret } = await auth.startTwoFactorEnrollment()
+    setupSecret.value = secret
+    const QRCode = (await import('qrcode')).default
+    setupQrDataUrl.value = await QRCode.toDataURL(qr_uri, { width: 200, margin: 2 })
+  } catch (e) {
+    setupError.value = e.response?.data?.message || 'Could not start setup. Please sign in again.'
+  } finally {
+    setupStarting.value = false
+  }
+}
+
+async function confirmTwoFaSetup() {
+  setupError.value      = ''
+  setupConfirming.value = true
+  try {
+    await auth.completeTwoFactorEnrollment(setupCode.value)
+    router.push(route.query.redirect || '/dashboard')
+  } catch (e) {
+    setupError.value = e.response?.data?.message || 'Invalid code. Please try again.'
+  } finally {
+    setupConfirming.value = false
+  }
+}
+
 function cancelTwoFactor() {
-  showTwoFa.value   = false
-  twoFactorCode.value = ''
-  twoFaError.value    = ''
+  showTwoFa.value       = false
+  showTwoFaSetup.value  = false
+  twoFactorCode.value   = ''
+  twoFaError.value      = ''
+  setupCode.value       = ''
+  setupSecret.value     = ''
+  setupQrDataUrl.value  = ''
+  setupError.value      = ''
   auth.cancelTwoFactor()
 }
 </script>
@@ -173,9 +218,56 @@ function cancelTwoFactor() {
           </button>
         </div>
 
+        <!-- Forced 2FA setup (mandatory — BUG-003) -->
+        <div v-if="showTwoFaSetup" class="space-y-5">
+          <div class="p-4 rounded-lg border bg-amber-50 border-amber-200">
+            <p class="text-sm font-semibold text-amber-900 mb-1">Set up Two-Factor Authentication</p>
+            <p class="text-xs text-amber-700">
+              Two-factor authentication is required on every account. Scan the QR code with
+              <strong>Microsoft Authenticator</strong> or <strong>Apple Passwords</strong> (Verification Codes),
+              then enter the 6-digit code to finish signing in.
+            </p>
+          </div>
+
+          <div class="flex flex-col items-center gap-3">
+            <div class="bg-white p-3 rounded-lg border">
+              <img v-if="setupQrDataUrl" :src="setupQrDataUrl" alt="2FA QR Code" class="w-44 h-44" />
+              <div v-else class="w-44 h-44 flex items-center justify-center text-muted-fg text-xs">
+                {{ setupStarting ? 'Generating…' : 'Loading…' }}
+              </div>
+            </div>
+            <div v-if="setupSecret" class="w-full">
+              <p class="text-xs text-muted-fg mb-1">Or enter this code manually:</p>
+              <code class="text-xs font-mono bg-muted px-3 py-2 rounded block break-all select-all">{{ setupSecret }}</code>
+            </div>
+          </div>
+
+          <AppInput
+            v-model="setupCode"
+            label="Enter the 6-digit code from your app"
+            placeholder="000000"
+            inputmode="numeric"
+            maxlength="6"
+          />
+
+          <Transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0 -translate-y-1" enter-to-class="opacity-100 translate-y-0">
+            <div v-if="setupError" class="flex items-start gap-2.5 px-4 py-3 rounded border text-sm" style="background-color:#FFF5F5;border-color:#F75A68;color:#C01C2C;">
+              <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              {{ setupError }}
+            </div>
+          </Transition>
+
+          <AppButton type="button" variant="primary" size="lg" :loading="setupConfirming" :disabled="!setupSecret" full @click="confirmTwoFaSetup">
+            {{ setupConfirming ? 'Verifying…' : 'Verify & Continue' }}
+          </AppButton>
+          <button type="button" class="w-full text-center text-xs text-muted-fg hover:underline mt-2" @click="cancelTwoFactor">
+            ← Back to login
+          </button>
+        </div>
+
         <!-- Session expired notice (BM-006) -->
         <div
-          v-if="sessionExpired && !showTwoFa"
+          v-if="sessionExpired && !showTwoFa && !showTwoFaSetup"
           class="flex items-start gap-2.5 px-4 py-3 mb-5 rounded border text-sm"
           style="background-color:#FFFBEB;border-color:#F59E0B;color:#92400E;"
         >
@@ -184,7 +276,7 @@ function cancelTwoFactor() {
         </div>
 
         <!-- Form -->
-        <form v-if="!showTwoFa" @submit.prevent="handleLogin" class="space-y-5">
+        <form v-if="!showTwoFa && !showTwoFaSetup" @submit.prevent="handleLogin" class="space-y-5">
           <AppInput
             id="email"
             v-model="email"

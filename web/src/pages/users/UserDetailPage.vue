@@ -62,6 +62,10 @@ const deleteLoading   = ref(false)
 const resetLoading = ref(false)
 const resetSent    = ref(false)
 
+// Two-factor reset (admin recovery for a lost device)
+const showReset2faModal = ref(false)
+const reset2faLoading   = ref(false)
+
 // Login history
 const loginLogs   = ref([])
 const logsLoading = ref(false)
@@ -223,6 +227,21 @@ async function sendPasswordReset() {
     showToast('Failed to send password reset link. Please try again.', 'error')
   } finally {
     resetLoading.value = false
+  }
+}
+
+// ─── Two-factor reset ──────────────────────────────────────────────────────────
+async function confirmReset2fa() {
+  reset2faLoading.value = true
+  try {
+    const res = await api.post(`/users/${user.value.id}/reset-2fa`)
+    user.value.two_factor_enabled = false
+    showReset2faModal.value = false
+    showToast(res.data.message ?? 'Two-factor authentication reset.')
+  } catch (e) {
+    showToast('Failed to reset two-factor authentication. Please try again.', 'error')
+  } finally {
+    reset2faLoading.value = false
   }
 }
 
@@ -413,6 +432,31 @@ onMounted(() => { loadUser(); loadLoginLogs() })
             </div>
           </div>
 
+          <!-- Two-Factor Authentication card -->
+          <div class="rounded-lg border bg-card shadow-sm p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="font-semibold text-sm text-foreground">Two-Factor Authentication</h2>
+                <p class="text-xs text-muted-foreground mt-1">
+                  <span v-if="user.two_factor_enabled" class="text-success font-medium">Enabled.</span>
+                  <span v-else class="text-warning font-medium">Not yet set up.</span>
+                  Resetting clears this user's authenticator and signs them out. They'll be required to set up 2FA again at their next login — use this if they've lost their device.
+                </p>
+              </div>
+              <AppButton
+                variant="outline"
+                class="shrink-0"
+                :disabled="!user.two_factor_enabled"
+                @click="showReset2faModal = true"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+                </svg>
+                Reset 2FA
+              </AppButton>
+            </div>
+          </div>
+
           <!-- Danger zone card -->
           <div class="rounded-lg border border-danger/20 bg-danger/5 p-4">
             <h2 class="font-semibold text-sm text-danger">Danger Zone</h2>
@@ -545,6 +589,18 @@ onMounted(() => { loadUser(); loadLoginLogs() })
     <template #footer>
       <AppButton variant="outline" @click="showDeleteModal = false">Cancel</AppButton>
       <AppButton variant="danger" :loading="deleteLoading" @click="confirmDelete">Remove User</AppButton>
+    </template>
+  </AppModal>
+
+  <!-- ── Reset 2FA confirmation modal ──────────────────────────────────────── -->
+  <AppModal :show="showReset2faModal" title="Reset Two-Factor Authentication" size="sm" @close="showReset2faModal = false">
+    <p class="text-sm text-foreground">
+      This will clear <span class="font-semibold">{{ user?.name }}</span>'s two-factor authentication and sign them out of all sessions.
+      They will be required to set up 2FA again the next time they log in. Continue?
+    </p>
+    <template #footer>
+      <AppButton variant="outline" @click="showReset2faModal = false">Cancel</AppButton>
+      <AppButton variant="danger" :loading="reset2faLoading" @click="confirmReset2fa">Reset 2FA</AppButton>
     </template>
   </AppModal>
 </template>

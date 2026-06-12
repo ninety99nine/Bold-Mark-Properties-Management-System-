@@ -68,40 +68,31 @@ class AuthController extends Controller
 
         $this->logLoginAttempt($request, $user, true, null);
 
-        // If 2FA is enabled, return a challenge token instead of a full access token
-        if ($user->hasTwoFactorEnabled()) {
-            $challenge = Crypt::encryptString(json_encode([
-                'user_id' => $user->id,
-                'remember' => $remember,
-                'expires_at' => now()->addMinutes(5)->timestamp,
-            ]));
+        // Two-factor authentication is mandatory for every user and can never be
+        // bypassed (BUG-003). A correct password is only the first factor — no
+        // access token is issued here under any circumstance. We mint a short-lived
+        // encrypted challenge and hand the user to the appropriate second step:
+        //   - enrolled users          -> verify a TOTP code (two_factor_required)
+        //   - users without 2FA yet   -> set up 2FA now    (two_factor_setup_required)
+        $payload = [
+            'user_id'    => $user->id,
+            'remember'   => $remember,
+            'expires_at' => now()->addMinutes(5)->timestamp,
+        ];
 
+        if ($user->hasTwoFactorEnabled()) {
             return response()->json([
                 'data' => [
                     'two_factor_required' => true,
-                    'challenge' => $challenge,
+                    'challenge' => Crypt::encryptString(json_encode($payload + ['purpose' => 'login'])),
                 ],
             ]);
         }
 
-        $user->update(['last_login_at' => now()]);
-
-        $tokenResult = $user->createToken('api-token');
-
-        UserSession::create([
-            'user_id' => $user->id,
-            'token_id' => $tokenResult->token->id,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'last_activity_at' => now(),
-            'remember' => $remember,
-            'created_at' => now(),
-        ]);
-
         return response()->json([
             'data' => [
-                'user' => $user,
-                'token' => $tokenResult->accessToken,
+                'two_factor_setup_required' => true,
+                'challenge' => Crypt::encryptString(json_encode($payload + ['purpose' => 'setup'])),
             ],
         ]);
     }
@@ -147,8 +138,16 @@ class AuthController extends Controller
 
         $status = Password::broker($brokerName)->reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                $user->forceFill(['password' => $password])->save();
+            function ($user, $password) use ($brokerName) {
+                $attributes = ['password' => $password];
+
+                // Completing an invitation activates the account so the user can
+                // reach the login gate, where they are forced to set up 2FA.
+                if ($brokerName === 'invitations' && $user->status === UserStatus::INVITED) {
+                    $attributes['status'] = UserStatus::ACTIVE;
+                }
+
+                $user->forceFill($attributes)->save();
                 $user->tokens()->delete();
             }
         );

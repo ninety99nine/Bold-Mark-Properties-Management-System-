@@ -26,6 +26,7 @@ class UserResource extends JsonResource
             'updated_at'          => $this->updated_at?->toDateTimeString(),
 
             'email_verified'      => !is_null($this->email_verified_at),
+            'two_factor_enabled'  => $this->two_factor_enabled,
 
             'organization'  => OrganizationResource::make($this->whenLoaded('organization')),
             'roles'   => $this->whenLoaded('roles', fn () => $this->roles->map(fn ($r) => [

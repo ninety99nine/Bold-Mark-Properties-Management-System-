@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import LoginPage from '@/pages/auth/LoginPage.vue'
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -15,8 +15,11 @@ import LoginPage from '@/pages/auth/LoginPage.vue'
 // flow (notice + return-to-last-page redirect after re-login).
 // ──────────────────────────────────────────────────────────────────────────────
 
-const loginMock = vi.fn().mockResolvedValue({ two_factor_required: false })
-const pushMock  = vi.fn()
+// 2FA is mandatory (BUG-003): login always resolves to a second-factor step,
+// never straight through. Enrolled users get a TOTP challenge.
+const loginMock              = vi.fn().mockResolvedValue({ two_factor_required: true })
+const loginWithTwoFactorMock = vi.fn().mockResolvedValue()
+const pushMock               = vi.fn()
 
 // Mutable route query so individual tests can simulate ?expired / ?redirect.
 let routeQuery = {}
@@ -28,9 +31,11 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    login:             loginMock,
-    loginWithTwoFactor: vi.fn(),
-    cancelTwoFactor:   vi.fn(),
+    login:              loginMock,
+    loginWithTwoFactor: loginWithTwoFactorMock,
+    startTwoFactorEnrollment:    vi.fn(),
+    completeTwoFactorEnrollment: vi.fn(),
+    cancelTwoFactor:    vi.fn(),
   }),
 }))
 
@@ -57,10 +62,20 @@ function mountLogin() {
 
 describe('LoginPage', () => {
   beforeEach(() => {
-    loginMock.mockClear().mockResolvedValue({ two_factor_required: false })
+    loginMock.mockClear().mockResolvedValue({ two_factor_required: true })
+    loginWithTwoFactorMock.mockClear().mockResolvedValue()
     pushMock.mockClear()
     routeQuery = {}
   })
+
+  // Drive a login through the mandatory TOTP challenge step.
+  async function completeLoginWith2fa(wrapper) {
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    const verifyBtn = wrapper.findAll('button').find(b => b.text().includes('Verify'))
+    await verifyBtn.trigger('click')
+    await flushPromises()
+  }
 
   // ── BM-010 ────────────────────────────────────────────────────────────────
   it('marks the email field with autocomplete="email"', () => {
@@ -107,15 +122,15 @@ describe('LoginPage', () => {
     expect(mountLogin().text()).not.toContain('Your session expired due to inactivity')
   })
 
-  it('returns the user to the page they were on (redirect query) after login', async () => {
+  it('returns the user to the page they were on (redirect query) after completing 2FA', async () => {
     routeQuery = { redirect: '/billing/invoices/42', expired: '1' }
     const wrapper = mountLogin()
 
     await wrapper.find('#email').setValue('manager@boldmark.test')
     await wrapper.find('#password').setValue('password123')
-    await wrapper.find('form').trigger('submit.prevent')
-    await Promise.resolve()
+    await completeLoginWith2fa(wrapper)
 
+    expect(loginWithTwoFactorMock).toHaveBeenCalled()
     expect(pushMock).toHaveBeenCalledWith('/billing/invoices/42')
   })
 
@@ -123,9 +138,19 @@ describe('LoginPage', () => {
     const wrapper = mountLogin()
     await wrapper.find('#email').setValue('manager@boldmark.test')
     await wrapper.find('#password').setValue('password123')
-    await wrapper.find('form').trigger('submit.prevent')
-    await Promise.resolve()
+    await completeLoginWith2fa(wrapper)
 
     expect(pushMock).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('does not issue a redirect on the password step alone — it shows the 2FA challenge first (BUG-003)', async () => {
+    const wrapper = mountLogin()
+    await wrapper.find('#email').setValue('manager@boldmark.test')
+    await wrapper.find('#password').setValue('password123')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(pushMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Two-Factor Authentication')
   })
 })

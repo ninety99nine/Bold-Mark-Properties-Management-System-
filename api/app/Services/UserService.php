@@ -232,6 +232,30 @@ class UserService extends BaseService
     }
 
     /**
+     * Reset a user's two-factor authentication (admin recovery for a lost
+     * device). Clears their TOTP secret and revokes all of their tokens and
+     * sessions so they must sign in again and re-enrol 2FA — it is never
+     * disabled, only reset.
+     *
+     * @param User $user
+     * @return array
+     */
+    public function resetTwoFactor(User $user): array
+    {
+        $user->update([
+            'two_factor_secret'       => null,
+            'two_factor_confirmed_at' => null,
+        ]);
+
+        $user->tokens()->delete();
+        $user->sessions()->delete();
+
+        return [
+            'message' => "Two-factor authentication reset for {$user->name}. They will be required to set it up again at their next login.",
+        ];
+    }
+
+    /**
      * Change the authenticated user's own password and notify them by email.
      *
      * @param array $data  ['current_password', 'password']

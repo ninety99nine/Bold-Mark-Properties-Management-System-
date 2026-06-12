@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Client;
 use Laravel\Passport\ClientRepository;
 use PragmaRX\Google2FA\Google2FA;
@@ -49,12 +50,28 @@ function userWithPassword(string $email = 'user@boldmark.test', string $password
  * Log in via the real endpoint and return the access token string.
  * Use this anywhere a test needs an authenticated request that exercises
  * the full Passport pipeline (rather than the actingAs() shortcut).
+ *
+ * 2FA is mandatory (BUG-003), so login never returns a token directly. This
+ * helper ensures the user is enrolled, then completes the password + TOTP
+ * challenge to obtain a real access token.
  */
-function loginAndGetToken(string $email, string $password): string
+function loginAndGetToken(string $email, string $password, bool $remember = false): string
 {
-    return test()->postJson(route('api.v1.auth.login'), [
+    $user = User::where('email', $email)->firstOrFail();
+
+    $secret = $user->hasTwoFactorEnabled()
+        ? Crypt::decryptString($user->two_factor_secret)
+        : enableTwoFactorFor($user);
+
+    $challenge = test()->postJson(route('api.v1.auth.login'), [
         'email'    => $email,
         'password' => $password,
+        'remember' => $remember,
+    ])->json('data.challenge');
+
+    return test()->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => $challenge,
+        'code'      => totp($secret),
     ])->json('data.token');
 }
 
@@ -189,31 +206,49 @@ it('returns 422 when both login fields are missing', function () {
 // Credentials & success path
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns a token and user on successful login', function () {
-    userWithPassword('admin@boldmark.test', 'password123');
+it('never issues a token on password alone — an enrolled user gets a TOTP challenge (BUG-003)', function () {
+    $user = userWithPassword('admin@boldmark.test', 'password123');
+    enableTwoFactorFor($user);
 
     $response = $this->postJson(route('api.v1.auth.login'), [
         'email'    => 'admin@boldmark.test',
         'password' => 'password123',
     ])
         ->assertOk()
-        ->assertJsonStructure([
-            'data' => [
-                'token',
-                'user' => ['id', 'name', 'email', 'organization_id'],
-            ],
-        ]);
+        ->assertJsonPath('data.two_factor_required', true)
+        ->assertJsonStructure(['data' => ['two_factor_required', 'challenge']]);
 
-    expect($response->json('data.token'))->toBeString()->not->toBeEmpty();
-    expect($response->json('data.user.email'))->toBe('admin@boldmark.test');
+    // The password step must NOT leak an access token or user object.
+    expect($response->json('data.token'))->toBeNull();
+    expect($response->json('data.user'))->toBeNull();
 });
 
-it('does not include password or remember_token in login response', function () {
-    userWithPassword('admin@boldmark.test', 'password123');
+it('forces 2FA setup (no token) when a user without 2FA logs in (BUG-003)', function () {
+    userWithPassword('newbie@boldmark.test', 'password123');
 
     $response = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'newbie@boldmark.test',
+        'password' => 'password123',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.two_factor_setup_required', true)
+        ->assertJsonStructure(['data' => ['two_factor_setup_required', 'challenge']]);
+
+    expect($response->json('data.token'))->toBeNull();
+});
+
+it('does not include password or remember_token in the authenticated user payload', function () {
+    $user   = userWithPassword('admin@boldmark.test', 'password123');
+    $secret = enableTwoFactorFor($user);
+
+    $challenge = $this->postJson(route('api.v1.auth.login'), [
         'email'    => 'admin@boldmark.test',
         'password' => 'password123',
+    ])->json('data.challenge');
+
+    $response = $this->postJson(route('api.v1.auth.2fa.challenge'), [
+        'challenge' => $challenge,
+        'code'      => totp($secret),
     ])->assertOk();
 
     expect($response->json('data.user'))
@@ -893,15 +928,14 @@ it('creates a login log entry with correct fields on successful login', function
     expect($log->failure_reason)->toBeNull();
 });
 
-it('updates last_login_at on successful login', function () {
+it('updates last_login_at once the login is completed via 2FA', function () {
     $user = userWithPassword('lastseen@boldmark.test', 'password123');
 
     expect($user->last_login_at)->toBeNull();
 
-    $this->postJson(route('api.v1.auth.login'), [
-        'email'    => 'lastseen@boldmark.test',
-        'password' => 'password123',
-    ])->assertOk();
+    // The password step alone does not complete login, so last_login_at is only
+    // stamped once the second factor is satisfied (handled by loginAndGetToken).
+    loginAndGetToken('lastseen@boldmark.test', 'password123');
 
     expect($user->fresh()->last_login_at)->not->toBeNull();
 });
@@ -1070,9 +1104,41 @@ it('returns a secret and QR URI when starting 2FA setup', function () {
         ->assertOk()
         ->assertJsonStructure(['data' => ['qr_uri', 'secret', 'enabled']]);
 
-    expect($res->json('data.enabled'))->toBeFalse();
+    // Authenticated users always already have 2FA (it is mandatory); setup here
+    // re-keys their authenticator.
+    expect($res->json('data.enabled'))->toBeTrue();
     expect($res->json('data.secret'))->toBeString()->not->toBeEmpty();
     expect($res->json('data.qr_uri'))->toContain('otpauth://');
+    // Branded issuer label shown in Microsoft Authenticator / Apple Passwords.
+    expect(urldecode($res->json('data.qr_uri')))->toContain(config('app.two_factor_issuer'));
+});
+
+it('embeds the logo via the image parameter when a logo URL is configured', function () {
+    config()->set('app.two_factor_logo_url', 'https://cdn.example.test/custom-logo.png');
+
+    userWithPassword('2fa-logo@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-logo@boldmark.test', 'password123');
+
+    $res = $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.setup'))
+        ->assertOk();
+
+    expect($res->json('data.qr_uri'))->toContain('image=' . urlencode('https://cdn.example.test/custom-logo.png'));
+});
+
+it('falls back to the built-in app logo when no logo URL is configured', function () {
+    config()->set('app.two_factor_logo_url', null);
+    config()->set('app.frontend_url', 'https://portal.boldmarkprop.co.za');
+
+    userWithPassword('2fa-deflogo@boldmark.test', 'password123');
+    $token = loginAndGetToken('2fa-deflogo@boldmark.test', 'password123');
+
+    $res = $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.2fa.setup'))
+        ->assertOk();
+
+    expect($res->json('data.qr_uri'))
+        ->toContain('image=' . urlencode('https://portal.boldmarkprop.co.za/authenticator-icon.png'));
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1143,42 +1209,85 @@ it('validates the 2FA confirmation code format', function (array $payload) {
 ]);
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Disable
+// Mandatory: no self-service disable (BUG-003)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('disables 2FA with a valid code', function () {
-    $user   = userWithPassword('2fa-disable@boldmark.test', 'password123');
-    $secret = enableTwoFactorFor($user);
-
-    $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.auth.2fa.disable'), ['code' => totp($secret)])
-        ->assertOk()
-        ->assertJson(['message' => 'Two-factor authentication disabled.']);
-
-    expect($user->fresh()->hasTwoFactorEnabled())->toBeFalse();
+it('exposes no route for a user to disable their own 2FA', function () {
+    expect(Route::has('api.v1.auth.2fa.disable'))->toBeFalse();
 });
 
-it('rejects disabling 2FA with an invalid code', function () {
-    $user   = userWithPassword('2fa-disable-bad@boldmark.test', 'password123');
-    $secret = enableTwoFactorFor($user);
+// ──────────────────────────────────────────────────────────────────────────────
+// Forced enrollment during login (un-enrolled users)
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('enrolls 2FA mid-login and issues a token, completing the flow', function () {
+    userWithPassword('enroll@boldmark.test', 'password123');
+
+    // Step 1: password — receive the setup challenge, no token yet.
+    $challenge = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'enroll@boldmark.test',
+        'password' => 'password123',
+    ])->assertOk()
+      ->assertJsonPath('data.two_factor_setup_required', true)
+      ->json('data.challenge');
+
+    // Step 2: start enrollment — receive a secret to scan.
+    $secret = $this->postJson(route('api.v1.auth.2fa.enroll.start'), [
+        'challenge' => $challenge,
+    ])->assertOk()
+      ->assertJsonStructure(['data' => ['qr_uri', 'secret']])
+      ->json('data.secret');
+
+    // Step 3: confirm with a valid TOTP — now (and only now) a token is issued.
+    $res = $this->postJson(route('api.v1.auth.2fa.enroll.confirm'), [
+        'challenge' => $challenge,
+        'code'      => totp($secret),
+    ])->assertOk()
+      ->assertJsonStructure(['data' => ['token', 'user' => ['id', 'email']]]);
+
+    expect($res->json('data.token'))->toBeString()->not->toBeEmpty();
+
+    $fresh = User::where('email', 'enroll@boldmark.test')->first();
+    expect($fresh->hasTwoFactorEnabled())->toBeTrue();
+});
+
+it('rejects enrollment confirmation with an invalid code (no token issued)', function () {
+    userWithPassword('enroll-bad@boldmark.test', 'password123');
+
+    $challenge = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'enroll-bad@boldmark.test',
+        'password' => 'password123',
+    ])->json('data.challenge');
+
+    $secret = $this->postJson(route('api.v1.auth.2fa.enroll.start'), [
+        'challenge' => $challenge,
+    ])->json('data.secret');
 
     $valid = totp($secret);
     $wrong = $valid === '000000' ? '111111' : '000000';
 
-    $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.auth.2fa.disable'), ['code' => $wrong])
-        ->assertStatus(422);
+    $this->postJson(route('api.v1.auth.2fa.enroll.confirm'), [
+        'challenge' => $challenge,
+        'code'      => $wrong,
+    ])->assertStatus(422);
 
-    expect($user->fresh()->hasTwoFactorEnabled())->toBeTrue();
+    expect(User::where('email', 'enroll-bad@boldmark.test')->first()->hasTwoFactorEnabled())->toBeFalse();
 });
 
-it('returns 422 when disabling 2FA that is not enabled', function () {
-    $user = userWithPassword('2fa-not-on@boldmark.test', 'password123');
+it('rejects an enrollment challenge whose purpose does not match', function () {
+    $user   = userWithPassword('purpose@boldmark.test', 'password123');
+    enableTwoFactorFor($user);
 
-    $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.auth.2fa.disable'), ['code' => '123456'])
-        ->assertStatus(422)
-        ->assertJson(['message' => '2FA is not enabled.']);
+    // An enrolled user's login mints a "login" challenge, not a "setup" one;
+    // it must be rejected by the enrollment endpoints.
+    $loginChallenge = $this->postJson(route('api.v1.auth.login'), [
+        'email'    => 'purpose@boldmark.test',
+        'password' => 'password123',
+    ])->json('data.challenge');
+
+    $this->postJson(route('api.v1.auth.2fa.enroll.start'), [
+        'challenge' => $loginChallenge,
+    ])->assertStatus(422);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1258,13 +1367,14 @@ it('rejects an expired 2FA challenge', function () {
     $expired = Crypt::encryptString(json_encode([
         'user_id'    => $user->id,
         'remember'   => false,
+        'purpose'    => 'login',
         'expires_at' => now()->subMinute()->timestamp,
     ]));
 
     $this->postJson(route('api.v1.auth.2fa.challenge'), [
         'challenge' => $expired,
         'code'      => totp($secret),
-    ])->assertStatus(422)->assertJson(['message' => 'Session expired. Please log in again.']);
+    ])->assertStatus(422)->assertJson(['message' => 'Invalid or expired session.']);
 });
 
 it('rejects a tampered / unreadable 2FA challenge', function () {
@@ -1289,11 +1399,7 @@ it('stores a non-persistent session by default (remember = false)', function () 
 it('stores a persistent session when remember is true', function () {
     $user = userWithPassword('yes-remember@boldmark.test', 'password123');
 
-    $this->postJson(route('api.v1.auth.login'), [
-        'email'    => 'yes-remember@boldmark.test',
-        'password' => 'password123',
-        'remember' => true,
-    ])->assertOk();
+    loginAndGetToken('yes-remember@boldmark.test', 'password123', remember: true);
 
     expect(UserSession::where('user_id', $user->id)->first()->remember)->toBeTrue();
 });
@@ -1388,11 +1494,7 @@ it('does not time out a remember-me session even after long inactivity', functio
 
     $user = userWithPassword('persistent@boldmark.test', 'password123');
 
-    $token = $this->postJson(route('api.v1.auth.login'), [
-        'email'    => 'persistent@boldmark.test',
-        'password' => 'password123',
-        'remember' => true,
-    ])->json('data.token');
+    $token = loginAndGetToken('persistent@boldmark.test', 'password123', remember: true);
 
     // Far beyond the inactivity window.
     UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(600)]);
@@ -1466,11 +1568,7 @@ it('lists the current session with the new remember and last_activity_at fields'
 it('reports remember = true for a persistent session', function () {
     userWithPassword('sess-remember@boldmark.test', 'password123');
 
-    $token = $this->postJson(route('api.v1.auth.login'), [
-        'email'    => 'sess-remember@boldmark.test',
-        'password' => 'password123',
-        'remember' => true,
-    ])->json('data.token');
+    $token = loginAndGetToken('sess-remember@boldmark.test', 'password123', remember: true);
 
     $this->withHeader('Authorization', "Bearer $token")
         ->getJson(route('api.v1.sessions.index'))

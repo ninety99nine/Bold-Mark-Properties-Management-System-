@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Auth;
 
+use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserSession;
@@ -35,15 +36,9 @@ class TwoFactorController extends Controller
             now()->addMinutes(15)
         );
 
-        $qrUri = $this->google2fa->getQRCodeUrl(
-            config('app.name', 'BoldMark PMS'),
-            $user->email,
-            $secret
-        );
-
         return response()->json([
             'data' => [
-                'qr_uri' => $qrUri,
+                'qr_uri' => $this->buildQrUri($user, $secret),
                 'secret' => $secret,
                 'enabled' => $user->hasTwoFactorEnabled(),
             ],
@@ -81,31 +76,70 @@ class TwoFactorController extends Controller
     }
 
     /**
-     * Disable 2FA for the authenticated user.
+     * Start the forced 2FA enrollment that happens during login for a user who
+     * has not yet set up two-factor authentication. Gated by the encrypted
+     * "setup" challenge issued by AuthController@login (no bearer token yet).
+     * Generates a pending secret and returns the QR URI for the authenticator app.
      */
-    public function disable(Request $request): JsonResponse
+    public function enrollStart(Request $request): JsonResponse
     {
-        $request->validate(['code' => ['required', 'string', 'digits:6']]);
+        $request->validate(['challenge' => ['required', 'string']]);
 
-        $user = $request->user();
+        $user = $this->resolveChallenge($request->input('challenge'), 'setup');
 
-        if (! $user->hasTwoFactorEnabled()) {
-            return response()->json(['message' => '2FA is not enabled.'], 422);
+        if (! $user) {
+            return response()->json(['message' => 'Invalid or expired session. Please log in again.'], 422);
         }
 
-        $secret = Crypt::decryptString($user->two_factor_secret);
-        $valid = $this->google2fa->verifyKey($secret, $request->input('code'));
+        $secret = $this->google2fa->generateSecretKey();
 
-        if (! $valid) {
+        cache()->put("2fa_pending:{$user->id}", $secret, now()->addMinutes(15));
+
+        return response()->json([
+            'data' => [
+                'qr_uri' => $this->buildQrUri($user, $secret),
+                'secret' => $secret,
+            ],
+        ]);
+    }
+
+    /**
+     * Complete forced enrollment during login: verify the user's first TOTP
+     * code, persist the secret, and — only now that the second factor is set
+     * up — issue the access token. This both enables 2FA and finishes login.
+     */
+    public function enrollConfirm(Request $request): JsonResponse
+    {
+        $request->validate([
+            'challenge' => ['required', 'string'],
+            'code' => ['required', 'string', 'digits:6'],
+        ]);
+
+        $payload = $this->decodeChallenge($request->input('challenge'), 'setup');
+
+        if (! $payload) {
+            return response()->json(['message' => 'Invalid or expired session. Please log in again.'], 422);
+        }
+
+        $user = User::find($payload['user_id']);
+        $secret = $user ? cache()->get("2fa_pending:{$user->id}") : null;
+
+        if (! $user || ! $secret) {
+            return response()->json(['message' => 'Setup session expired. Please log in again.'], 422);
+        }
+
+        if (! $this->google2fa->verifyKey($secret, $request->input('code'))) {
             return response()->json(['message' => 'Invalid code. Please try again.'], 422);
         }
 
         $user->update([
-            'two_factor_secret' => null,
-            'two_factor_confirmed_at' => null,
+            'two_factor_secret' => Crypt::encryptString($secret),
+            'two_factor_confirmed_at' => now(),
         ]);
 
-        return response()->json(['message' => 'Two-factor authentication disabled.']);
+        cache()->forget("2fa_pending:{$user->id}");
+
+        return $this->issueSession($user, (bool) ($payload['remember'] ?? false), $request);
     }
 
     /**
@@ -119,18 +153,10 @@ class TwoFactorController extends Controller
             'code' => ['required', 'string', 'digits:6'],
         ]);
 
-        try {
-            $payload = json_decode(Crypt::decryptString($request->input('challenge')), true);
-        } catch (\Exception) {
+        $payload = $this->decodeChallenge($request->input('challenge'), 'login');
+
+        if (! $payload) {
             return response()->json(['message' => 'Invalid or expired session.'], 422);
-        }
-
-        if (! $payload || ! isset($payload['user_id'], $payload['expires_at'])) {
-            return response()->json(['message' => 'Invalid challenge.'], 422);
-        }
-
-        if (now()->timestamp > $payload['expires_at']) {
-            return response()->json(['message' => 'Session expired. Please log in again.'], 422);
         }
 
         $user = User::find($payload['user_id']);
@@ -140,13 +166,89 @@ class TwoFactorController extends Controller
         }
 
         $secret = Crypt::decryptString($user->two_factor_secret);
-        $valid = $this->google2fa->verifyKey($secret, $request->input('code'));
 
-        if (! $valid) {
+        if (! $this->google2fa->verifyKey($secret, $request->input('code'))) {
             return response()->json(['message' => 'Invalid code. Please try again.'], 422);
         }
 
-        $user->update(['last_login_at' => now()]);
+        return $this->issueSession($user, (bool) ($payload['remember'] ?? false), $request);
+    }
+
+    /**
+     * Build the otpauth:// QR URI for an authenticator app. Uses a clean,
+     * branded issuer label and — for apps that support the non-standard "image"
+     * parameter — embeds the BoldMark logo. The TOTP standard works with
+     * Microsoft Authenticator and Apple Passwords (Verification Codes); SMS is
+     * never used.
+     */
+    private function buildQrUri(User $user, string $secret): string
+    {
+        $issuer = config('app.two_factor_issuer', config('app.name', 'BoldMark PMS'));
+
+        $uri = $this->google2fa->getQRCodeUrl($issuer, $user->email, $secret);
+
+        // Reuse the BoldMark symbol the app already ships (served at the
+        // frontend root) unless an explicit override is configured. A square
+        // symbol reads better as an authenticator icon than the wordmark.
+        // Authenticator apps that support the non-standard "image" parameter
+        // render it.
+        $logo = config('app.two_factor_logo_url')
+            ?: rtrim((string) config('app.frontend_url'), '/') . '/authenticator-icon.png';
+
+        if ($logo) {
+            $uri .= '&image=' . urlencode($logo);
+        }
+
+        return $uri;
+    }
+
+    /**
+     * Decode and validate an encrypted login challenge for the expected purpose.
+     * Returns the payload array, or null if the token is malformed, tampered
+     * with, expired, or issued for a different purpose.
+     */
+    private function decodeChallenge(string $challenge, string $expectedPurpose): ?array
+    {
+        try {
+            $payload = json_decode(Crypt::decryptString($challenge), true);
+        } catch (\Exception) {
+            return null;
+        }
+
+        if (! $payload || ! isset($payload['user_id'], $payload['expires_at'], $payload['purpose'])) {
+            return null;
+        }
+
+        if ($payload['purpose'] !== $expectedPurpose || now()->timestamp > $payload['expires_at']) {
+            return null;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Resolve the user referenced by a challenge of the given purpose.
+     */
+    private function resolveChallenge(string $challenge, string $expectedPurpose): ?User
+    {
+        $payload = $this->decodeChallenge($challenge, $expectedPurpose);
+
+        return $payload ? User::find($payload['user_id']) : null;
+    }
+
+    /**
+     * Issue an access token + session once both authentication factors have
+     * been satisfied, activating an invited account on first sign-in.
+     */
+    private function issueSession(User $user, bool $remember, Request $request): JsonResponse
+    {
+        $attributes = ['last_login_at' => now()];
+
+        if ($user->status === UserStatus::INVITED) {
+            $attributes['status'] = UserStatus::ACTIVE;
+        }
+
+        $user->update($attributes);
 
         $tokenResult = $user->createToken('api-token');
 
@@ -156,7 +258,7 @@ class TwoFactorController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'last_activity_at' => now(),
-            'remember' => (bool) ($payload['remember'] ?? false),
+            'remember' => $remember,
             'created_at' => now(),
         ]);
 
