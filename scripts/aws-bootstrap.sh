@@ -60,6 +60,8 @@ INSTANCE_TYPE="${INSTANCE_TYPE:-t3.small}"
 INSTANCE_NAME="${PROJECT}-prod"
 ECR_APP_REPO="${PROJECT}-app"
 ECR_NGINX_REPO="${PROJECT}-nginx"
+EC2_ROLE_NAME="${PROJECT}-ec2-ecr-role"
+EC2_INSTANCE_PROFILE="${PROJECT}-ec2-ecr-role"
 DOMAIN="portal.boldmarkprop.co.za"
 
 # Where this script is being run (so we can write the key file & secrets file there)
@@ -320,6 +322,48 @@ else
   echo "  ✓ Inbound rules: SSH (22), HTTP (80), HTTPS (443) from 0.0.0.0/0"
 fi
 
+# ── 5.5 IAM instance profile for ECR pull ─────────────────────────────
+# The EC2 box pulls images from ECR using this role (no long-lived keys on
+# the server). Mirrors the telcoflo-ec2-ecr-role / perfectorder-ec2-ecr-role
+# pattern already in this account.
+banner "5.5 Creating EC2 instance profile '$EC2_ROLE_NAME' (ECR read)..."
+EC2_TRUST_POLICY='{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Service": "ec2.amazonaws.com"},
+    "Action": "sts:AssumeRole"
+  }]
+}'
+if aws iam get-role --role-name "$EC2_ROLE_NAME" >/dev/null 2>&1; then
+  echo "  ✓ Role exists"
+else
+  echo "$EC2_TRUST_POLICY" > /tmp/ec2-trust-policy.json
+  docker run --rm \
+    -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+    -e AWS_DEFAULT_REGION="$REGION" -e AWS_PAGER="" \
+    -v /tmp:/tmp amazon/aws-cli:latest \
+    iam create-role --role-name "$EC2_ROLE_NAME" \
+      --assume-role-policy-document file:///tmp/ec2-trust-policy.json >/dev/null
+  echo "  ✓ Role created"
+fi
+aws iam attach-role-policy --role-name "$EC2_ROLE_NAME" \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly >/dev/null
+echo "  ✓ AmazonEC2ContainerRegistryReadOnly attached"
+
+if aws iam get-instance-profile --instance-profile-name "$EC2_INSTANCE_PROFILE" >/dev/null 2>&1; then
+  echo "  ✓ Instance profile exists"
+else
+  aws iam create-instance-profile --instance-profile-name "$EC2_INSTANCE_PROFILE" >/dev/null
+  echo "  ✓ Instance profile created"
+fi
+# Add role to profile (ignore error if already added), then wait for propagation
+aws iam add-role-to-instance-profile \
+  --instance-profile-name "$EC2_INSTANCE_PROFILE" \
+  --role-name "$EC2_ROLE_NAME" >/dev/null 2>&1 || true
+echo "  ✓ Role bound to instance profile (allowing 10s for IAM propagation)"
+sleep 10
+
 # ── 6. EC2 instance ───────────────────────────────────────────────────
 banner "6. Launching EC2 instance '$INSTANCE_NAME'..."
 
@@ -347,6 +391,7 @@ else
     --instance-type "$INSTANCE_TYPE" \
     --key-name "$KEY_PAIR_NAME" \
     --security-group-ids "$SG_ID" \
+    --iam-instance-profile "Name=$EC2_INSTANCE_PROFILE" \
     --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":30,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME},{Key=Project,Value=$PROJECT}]" \
     --query 'Instances[0].InstanceId' --output text)
@@ -354,6 +399,22 @@ else
   echo "  Waiting for instance to enter running state..."
   aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
   echo "  ✓ Instance is running"
+fi
+
+# Ensure the ECR instance profile is associated (covers pre-existing instances
+# created before this role was added — safe no-op if already associated).
+CURRENT_PROFILE=$(aws ec2 describe-iam-instance-profile-associations \
+  --filters "Name=instance-id,Values=$INSTANCE_ID" \
+  --query 'IamInstanceProfileAssociations[?State==`associated`].IamInstanceProfile.Arn' \
+  --output text 2>/dev/null || echo "")
+if echo "$CURRENT_PROFILE" | grep -q "$EC2_INSTANCE_PROFILE"; then
+  echo "  ✓ Instance profile already associated"
+else
+  aws ec2 associate-iam-instance-profile \
+    --instance-id "$INSTANCE_ID" \
+    --iam-instance-profile "Name=$EC2_INSTANCE_PROFILE" >/dev/null 2>&1 \
+    && echo "  ✓ Instance profile associated with $INSTANCE_ID" \
+    || echo "  ⚠ Could not associate instance profile (may already be attached)"
 fi
 
 # ── 7. Elastic IP ─────────────────────────────────────────────────────

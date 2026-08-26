@@ -105,6 +105,25 @@ else
   ok "Certbot installed"
 fi
 
+# ── 4.5 Swap file (2 GB) ─────────────────────────────────────────────
+# t3.small has only 2 GB RAM. MySQL + Redis + PHP-FPM + Horizon + scheduler
+# + nginx together can spike past that; a swap file prevents the OOM killer
+# from taking down containers under load.
+step "4.5 Swap file (2 GB)"
+if swapon --show | grep -q '/swapfile'; then
+  skip "Swap already active"
+else
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  # Prefer RAM; only swap under real pressure (better for a DB box)
+  sysctl -w vm.swappiness=10 >/dev/null
+  grep -q 'vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=10' >> /etc/sysctl.conf
+  ok "2 GB swap enabled (swappiness=10)"
+fi
+
 # ── 5. Deploy directory ──────────────────────────────────────────────
 step "5. Deploy directory at $DEPLOY_DIR"
 mkdir -p "$DEPLOY_DIR"

@@ -1,16 +1,20 @@
-name: CI/CD Pipeline
+name: DigitalOcean CI/CD Pipeline
 
+# ─────────────────────────────────────────────────────────────────────
+# DigitalOcean channel — builds images on the Droplet (no registry) and
+# restarts services via rsync + SSH.
+#
 # Triggers:
-#   - PR to main: runs test job only
-#   - Push to any branch (except deploy branches): runs test job only
-#   - Push to phase-2 or main: runs test → deploy to DigitalOcean
-#   - Manual dispatch: test → deploy
+#   - push to phase-2   → test → deploy to DigitalOcean
+#   - manual dispatch   → test → deploy
+#
+# The AWS/EC2 channel lives in aws-ci-cd.yml (main branch). The two
+# never overlap: main deploys to EC2, phase-2 deploys to DigitalOcean.
+# ─────────────────────────────────────────────────────────────────────
 
 on:
   push:
-    branches: ['**']
-  pull_request:
-    branches: [main]
+    branches: [phase-2]
   workflow_dispatch:
 
 env:
@@ -85,14 +89,14 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────
   # JOB 2: Deploy to DigitalOcean
-  # Runs on push to phase-2 or main (after tests pass).
+  # Runs on push to phase-2 (after tests pass).
   # Rsyncs the full source to the Droplet, builds Docker images on-server,
   # and restarts all services — no image registry required.
   # ─────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to DigitalOcean
     needs: test
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/phase-2') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/phase-2' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: production

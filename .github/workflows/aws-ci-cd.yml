@@ -1,0 +1,272 @@
+name: AWS CI/CD Pipeline
+
+# ─────────────────────────────────────────────────────────────────────
+# AWS channel — deploys to the EC2 box by building images in GitHub
+# Actions, pushing them to ECR, and pulling them on the server.
+#
+# Triggers:
+#   - push to Redesign        → test → build/push ECR → deploy to EC2
+#   - manual dispatch         → test → build/push ECR → deploy to EC2
+#
+# Deploys the Redesign branch (the app the team is testing). When Redesign
+# eventually merges to main, change the branch below to `main`.
+#
+# The DigitalOcean channel lives in do-ci-cd.yml (phase-2 branch) and
+# never overlaps with this one.
+# ─────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [Redesign]
+  workflow_dispatch:
+
+env:
+  PHP_VERSION: '8.4'
+  NODE_VERSION: '20'
+  AWS_REGION: 'eu-west-2'
+  APP_REPO: 'boldmark-app'
+  NGINX_REPO: 'boldmark-nginx'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 1: Test (Pest + Vite) — runs on every push, PR and dispatch
+  # ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Pest + Vite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ env.PHP_VERSION }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo, pdo_sqlite, sqlite3, pdo_mysql, mbstring, xml, bcmath, zip, gd, intl, opcache, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: api/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        working-directory: api
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend (Vite)
+        working-directory: web
+        run: npm run build
+        env:
+          VITE_API_URL: ''
+          VITE_APP_NAME: 'BoldMark PMS'
+          VITE_SESSION_INACTIVITY_MINUTES: '30'
+
+      - name: Prepare test environment
+        working-directory: api
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php artisan passport:keys --force
+
+      - name: Run Pest tests
+        working-directory: api
+        run: php artisan test --parallel --processes=4
+
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 2: Build images & push to ECR
+  # Runs only on push to main / manual dispatch (never on PRs).
+  # ─────────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Push to ECR
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      image_tag: ${{ github.sha }}
+      registry: ${{ steps.ecr.outputs.registry }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repositories exist
+        run: |
+          for repo in "$APP_REPO" "$NGINX_REPO"; do
+            aws ecr describe-repositories --repository-names "$repo" --region "$AWS_REGION" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "$repo" --region "$AWS_REGION" \
+              --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE >/dev/null
+          done
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push app image (PHP-FPM + Laravel)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.APP_REPO }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.APP_REPO }}:latest
+          build-args: |
+            VITE_API_URL=
+            VITE_APP_NAME=BoldMark PMS
+            VITE_PUSHER_APP_KEY=${{ secrets.VITE_PUSHER_APP_KEY }}
+            VITE_PUSHER_APP_CLUSTER=${{ secrets.VITE_PUSHER_APP_CLUSTER }}
+            VITE_SESSION_INACTIVITY_MINUTES=30
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push nginx image (Vue SPA baked in)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.nginx
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.NGINX_REPO }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.NGINX_REPO }}:latest
+          build-args: |
+            VITE_API_URL=
+            VITE_APP_NAME=BoldMark PMS
+            VITE_PUSHER_APP_KEY=${{ secrets.VITE_PUSHER_APP_KEY }}
+            VITE_PUSHER_APP_CLUSTER=${{ secrets.VITE_PUSHER_APP_CLUSTER }}
+            VITE_SESSION_INACTIVITY_MINUTES=30
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prune old ECR images (keep 5 most recent per repo)
+        run: |
+          for repo in "$APP_REPO" "$NGINX_REPO"; do
+            DIGESTS=$(aws ecr describe-images --repository-name "$repo" --region "$AWS_REGION" \
+              --query 'sort_by(imageDetails,& imagePushedAt)[:-5].imageDigest' --output text 2>/dev/null || true)
+            for d in $DIGESTS; do
+              aws ecr batch-delete-image --repository-name "$repo" --region "$AWS_REGION" \
+                --image-ids imageDigest="$d" >/dev/null 2>&1 || true
+            done
+          done
+
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 3: Deploy to EC2 (pull from ECR, restart, migrate, SSL)
+  # ─────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    # Serialize deploys onto the single EC2 box. cancel-in-progress is false so
+    # a running deploy is never interrupted mid-migration.
+    concurrency:
+      group: aws-production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "registry=${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Copy EC2 bootstrap script
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          source: "docker/scripts/setup-ec2.sh"
+          target: "/tmp/boldmark-bootstrap"
+
+      - name: Bootstrap EC2 (install Docker + AWS CLI + swap if missing)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          script: |
+            set -e
+            if ! command -v docker >/dev/null 2>&1 || ! command -v aws >/dev/null 2>&1; then
+              echo "Docker or AWS CLI missing — running one-time EC2 bootstrap..."
+              sudo bash /tmp/boldmark-bootstrap/docker/scripts/setup-ec2.sh
+            else
+              echo "Docker + AWS CLI already present — ensuring /opt/boldmark exists"
+              sudo mkdir -p /opt/boldmark && sudo chown "$USER":"$USER" /opt/boldmark
+            fi
+
+      - name: Copy compose + docker config to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          source: "docker-compose.yml,docker"
+          target: "/opt/boldmark"
+          overwrite: true
+
+      - name: Deploy on EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_IMAGE: ${{ steps.ecr.outputs.registry }}/boldmark-app:${{ github.sha }}
+          NGINX_IMAGE: ${{ steps.ecr.outputs.registry }}/boldmark-nginx:${{ github.sha }}
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          envs: APP_IMAGE,NGINX_IMAGE,PRODUCTION_ENV
+          command_timeout: 25m
+          script: |
+            set -e
+            cd /opt/boldmark
+            # Write the production .env from the secret (0600, never committed)
+            umask 077
+            printf '%s' "$PRODUCTION_ENV" > .env
+            chmod +x docker/scripts/*.sh
+            APP_IMAGE="$APP_IMAGE" NGINX_IMAGE="$NGINX_IMAGE" bash docker/scripts/deploy.sh
