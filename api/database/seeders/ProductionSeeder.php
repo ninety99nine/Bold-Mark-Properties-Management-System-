@@ -164,7 +164,7 @@ class ProductionSeeder extends Seeder
             ['email' => 'super@optimumquality.co.za'],
             [
                 'name'     => 'Optimum Quality Admin',
-                'password' => Hash::make(env('SUPER_ADMIN_PASSWORD', 'changeme-in-production')),
+                'password' => Hash::make(env('SUPER_ADMIN_PASSWORD', 'password')),
             ]
         );
 
@@ -353,7 +353,7 @@ class ProductionSeeder extends Seeder
         $this->command?->info('Seeding Bold Mark admin users...');
 
         $tenant   = Organization::where('slug', 'boldmark')->firstOrFail();
-        $password = Hash::make(env('BOLDMARK_ADMIN_PASSWORD', 'BoldMark@2026!'));
+        $password = Hash::make(env('BOLDMARK_ADMIN_PASSWORD', 'password'));
         $role     = Role::findByName('company-admin', 'api');
 
         $users = [
@@ -361,6 +361,7 @@ class ProductionSeeder extends Seeder
             ['name' => 'Justin Justin',    'email' => 'justin@boldmarkprop.co.za',  'phone' => '+27 82 555 0001'],
             ['name' => 'Ayanda Dlamini',   'email' => 'ayanda@boldmarkprop.co.za',  'phone' => '+27 82 555 0002'],
             ['name' => 'Mduduzi Mhlanga',  'email' => 'mduduzi@boldmarkprop.co.za', 'phone' => '+27 79 917 8596'],
+            ['name' => 'Brandon Tabona',   'email' => 'brandontabona@gmail.com',    'phone' => '+27 82 555 0003'],
         ];
 
         foreach ($users as $data) {
