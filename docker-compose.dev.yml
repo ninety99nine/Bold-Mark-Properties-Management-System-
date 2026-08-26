@@ -1,0 +1,109 @@
+# ──────────────────────────────────────────────────────────────────────────
+# FULL local development stack — one command boots everything, no host tooling.
+#
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   → open http://localhost:3000   (frontend; API is on http://localhost:8000)
+#
+#   docker compose -f docker-compose.dev.yml logs -f web api   # watch logs
+#   docker compose -f docker-compose.dev.yml down              # stop (keep data)
+#   docker compose -f docker-compose.dev.yml down -v           # stop + wipe data
+#
+# Services:
+#   web   — Vue + Vite dev server with hot-reload (host-mounted src)
+#   api   — Laravel dev server (php artisan serve, host-mounted code)
+#   db    — MySQL 8   (data persists in the boldmark_dev_mysql volume)
+#   redis — Redis 7
+#
+# Ports are overridable to avoid clashes with other projects, e.g.
+#   WEB_PORT=3100 API_PORT=8100 docker compose -f docker-compose.dev.yml up -d
+#
+# Production deploys use docker-compose.yml — do NOT use this file on servers.
+# ──────────────────────────────────────────────────────────────────────────
+services:
+
+  # ── Frontend: Vue 3 + Vite (hot reload) ──────────────────────────────
+  web:
+    image: node:20-alpine
+    container_name: boldmark-web
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      # Reliable file-watching for HMR on Docker Desktop (macOS bind mounts)
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./web:/app
+      - /app/node_modules   # keep the container's Linux node_modules isolated
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ── Backend: Laravel API (php artisan serve) ─────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile
+    container_name: boldmark-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      # Override api/.env networking so the app reaches the containers,
+      # not 127.0.0.1. (Dotenv does not overwrite real env vars.)
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: ${DB_DATABASE:-boldmark}
+      DB_USERNAME: ${DB_USERNAME:-boldmark}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      BROADCAST_CONNECTION: log   # no Pusher creds needed for local dev
+    volumes:
+      - ./api:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── MySQL 8 ──────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: boldmark-db
+    ports:
+      - "${DB_HOST_PORT:-3307}:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-boldmark}
+      MYSQL_USER: ${DB_USERNAME:-boldmark}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-secret}
+    volumes:
+      - boldmark_dev_mysql:/var/lib/mysql
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${DB_ROOT_PASSWORD:-secret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Redis 7 ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: boldmark-redis
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - boldmark_dev_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  boldmark_dev_mysql:
+  boldmark_dev_redis:
