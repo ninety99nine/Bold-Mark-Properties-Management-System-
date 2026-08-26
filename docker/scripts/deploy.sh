@@ -65,15 +65,20 @@ ok "ECR login OK"
 compose pull
 ok "Images pulled"
 
-# ── 1/6: Ensure DB + Redis are up and healthy ────────────────────────
-step "[1/6] Ensuring DB + Redis are healthy..."
+# ── 1/6: Ensure DB + Redis are up and truly accepting connections ────
+# NOTE: on a FRESH data volume, MySQL 8 first runs a temporary init server
+# (socket-only, networking disabled) then restarts. A plain `mysqladmin ping`
+# passes during that window even though TCP :3306 is still refused — which is
+# exactly what broke migrations on the first deploy. We force a TCP check
+# (-h 127.0.0.1) so "ready" means the real server is accepting connections.
+step "[1/6] Waiting for MySQL to accept TCP connections (fresh init can take ~40s)..."
 compose up -d db redis
-for i in $(seq 1 30); do
-  if compose exec -T db mysqladmin ping --silent 2>/dev/null; then
-    ok "DB is healthy"; break
+for i in $(seq 1 60); do
+  if compose exec -T db sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent' 2>/dev/null; then
+    ok "DB is accepting TCP connections"; break
   fi
-  if [ "$i" = "30" ]; then fail "DB did not become healthy in 60s"; fi
-  sleep 2
+  if [ "$i" = "60" ]; then fail "DB did not accept connections in 180s"; fi
+  sleep 3
 done
 
 # ── 2/6: Recreate app with the new image ─────────────────────────────
@@ -97,8 +102,13 @@ fi
 
 # ── 4/6: Migrations + cache warm ─────────────────────────────────────
 step "[4/6] Running migrations..."
-compose exec -T app php artisan migrate --force
-ok "Migrations complete"
+for i in $(seq 1 10); do
+  if compose exec -T app php artisan migrate --force; then
+    ok "Migrations complete"; break
+  fi
+  if [ "$i" = "10" ]; then fail "Migrations failed after 10 attempts"; fi
+  echo "  ⚠ migrate attempt $i failed (DB warming up?) — retrying in 5s..."; sleep 5
+done
 
 step "[4/6] Warming caches..."
 compose exec -T app bash -c "
