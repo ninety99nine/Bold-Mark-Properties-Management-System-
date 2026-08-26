@@ -127,12 +127,14 @@ step "[5/6] Starting nginx + issuing SSL certificate..."
 compose up -d --no-deps --force-recreate nginx
 sleep 5
 # --entrypoint certbot overrides the service's 12h renewal loop so certonly runs.
-timeout 120 compose run --rm --entrypoint certbot certbot certonly \
+# NOTE: call `docker compose` directly here (not the `compose` shell function) —
+# `timeout` execs a real binary and cannot run a shell function.
+timeout 150 docker compose -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot certonly \
     --webroot -w /var/www/certbot \
     -d "$DOMAIN" \
     --email "$CERT_EMAIL" \
     --agree-tos --no-eff-email \
-    --keep-until-expiring --quiet 2>&1 || true
+    --keep-until-expiring 2>&1 || echo "  ⚠ certbot did not issue a cert this run (see output above)"
 compose up -d --no-deps --force-recreate nginx
 sleep 3
 ok "Nginx up, SSL certificate ready"
@@ -145,7 +147,9 @@ ok "All services running"
 # ── SSL auto-renewal pickup ──────────────────────────────────────────
 # certbot renews in the background every 12h; nginx must reload to pick up the
 # new files. A daily 03:00 cron guarantees pickup within the 30-day window.
-echo "0 3 * * * root cd $DEPLOY_DIR && docker compose exec -T nginx nginx -s reload >/dev/null 2>&1" \
+# Uses plain `docker exec` (not compose) so it never depends on APP_IMAGE/
+# NGINX_IMAGE env being present in cron's environment.
+echo "0 3 * * * root docker restart boldmark-nginx-1 >/dev/null 2>&1" \
   | sudo tee /etc/cron.d/boldmark-ssl-reload >/dev/null
 sudo chmod 644 /etc/cron.d/boldmark-ssl-reload
 ok "Daily nginx SSL reload cron installed"
