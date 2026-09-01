@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Unit;
 use App\Models\UnitChargeConfig;
 use Illuminate\Http\JsonResponse;
@@ -33,7 +33,7 @@ class UnitChargeConfigController extends Controller
      * @param Unit                         $unit
      * @return UnitChargeConfigResources
      */
-    public function showUnitChargeConfigs(ShowUnitChargeConfigsRequest $request, Estate $estate, Unit $unit): UnitChargeConfigResources
+    public function showUnitChargeConfigs(ShowUnitChargeConfigsRequest $request, Community $community, Unit $unit): UnitChargeConfigResources
     {
         return $this->service->showUnitChargeConfigs($unit, $request->validated());
     }
@@ -45,7 +45,7 @@ class UnitChargeConfigController extends Controller
      * @param Unit                          $unit
      * @return array
      */
-    public function createUnitChargeConfig(CreateUnitChargeConfigRequest $request, Estate $estate, Unit $unit): JsonResponse
+    public function createUnitChargeConfig(CreateUnitChargeConfigRequest $request, Community $community, Unit $unit): JsonResponse
     {
         return response()->json($this->service->createUnitChargeConfig($unit, $request->validated()), 201);
     }
@@ -57,7 +57,7 @@ class UnitChargeConfigController extends Controller
      * @param Unit                           $unit
      * @return array
      */
-    public function deleteUnitChargeConfigs(DeleteUnitChargeConfigsRequest $request, Estate $estate, Unit $unit): array
+    public function deleteUnitChargeConfigs(DeleteUnitChargeConfigsRequest $request, Community $community, Unit $unit): array
     {
         return $this->service->deleteUnitChargeConfigs($unit, $request->input('charge_config_ids', []));
     }
@@ -70,7 +70,7 @@ class UnitChargeConfigController extends Controller
      * @param UnitChargeConfig            $unitChargeConfig
      * @return UnitChargeConfigResource
      */
-    public function showUnitChargeConfig(ShowUnitChargeConfigRequest $request, Estate $estate, Unit $unit, UnitChargeConfig $unitChargeConfig): UnitChargeConfigResource
+    public function showUnitChargeConfig(ShowUnitChargeConfigRequest $request, Community $community, Unit $unit, UnitChargeConfig $unitChargeConfig): UnitChargeConfigResource
     {
         return $this->service->showUnitChargeConfig($unit, $unitChargeConfig);
     }
@@ -83,7 +83,7 @@ class UnitChargeConfigController extends Controller
      * @param UnitChargeConfig              $unitChargeConfig
      * @return array
      */
-    public function updateUnitChargeConfig(UpdateUnitChargeConfigRequest $request, Estate $estate, Unit $unit, UnitChargeConfig $unitChargeConfig): array
+    public function updateUnitChargeConfig(UpdateUnitChargeConfigRequest $request, Community $community, Unit $unit, UnitChargeConfig $unitChargeConfig): array
     {
         return $this->service->updateUnitChargeConfig($unit, $unitChargeConfig, $request->validated());
     }
@@ -96,7 +96,7 @@ class UnitChargeConfigController extends Controller
      * @param UnitChargeConfig              $unitChargeConfig
      * @return array
      */
-    public function deleteUnitChargeConfig(DeleteUnitChargeConfigRequest $request, Estate $estate, Unit $unit, UnitChargeConfig $unitChargeConfig): array
+    public function deleteUnitChargeConfig(DeleteUnitChargeConfigRequest $request, Community $community, Unit $unit, UnitChargeConfig $unitChargeConfig): array
     {
         return $this->service->deleteUnitChargeConfig($unit, $unitChargeConfig);
     }

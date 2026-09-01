@@ -39,8 +39,8 @@ return new class extends Migration
             $table->date('date_range_end')->nullable();
 
             // Context-specific filter values, e.g.:
-            //   units:    {"occupancy_type": "tenant_occupied", "balance": "in_arrears"}
-            //   invoices: {"status": "overdue", "charge_type_id": "uuid"}
+            //   units:    {"occupancy_type": "occupant_occupied", "balance": "in_arrears"}
+            //   invoices: {"status": "overdue", "ledger_id": "uuid"}
             //   cashbook: {"allocation_status": "unallocated", "type": "credit"}
             $table->json('filters')->nullable();
 
@@ -54,7 +54,7 @@ return new class extends Migration
             $table->index(['user_id', 'context'], 'table_views_user_context_idx');
 
             // Organization-level index for data isolation checks
-            $table->index(['organization_id', 'context'], 'table_views_tenant_context_idx');
+            $table->index(['organization_id', 'context'], 'table_views_organization_context_idx');
         });
     }
 

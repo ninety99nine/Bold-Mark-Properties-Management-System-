@@ -166,7 +166,7 @@ const billedTo = computed(() => {
   if (!invoice.value) return null
   return invoice.value.billed_to_type === 'owner'
     ? invoice.value.billed_to_owner
-    : invoice.value.billed_to_unit_tenant
+    : invoice.value.billed_to_unit_occupant
 })
 
 const statusVariant = computed(() => {
@@ -332,7 +332,7 @@ function printInvoice() {
   const to  = billedTo.value
 
   const lineItems = (inv.line_items?.length ? inv.line_items : [{
-    description: `${inv.charge_type?.name ?? 'Charge'} — Unit ${inv.unit?.unit_number}`,
+    description: `${inv.ledger?.name ?? 'Charge'} — Unit ${inv.unit?.unit_number}`,
     period:      formatPeriod(inv.billing_period),
     amount:      inv.amount,
   }])
@@ -385,7 +385,7 @@ function printInvoice() {
       <td style="vertical-align:top;width:55%;">
         <div style="font-size:10px;font-weight:600;letter-spacing:2px;color:#717b99;margin-bottom:8px;">BILL TO</div>
         <div style="font-size:16px;font-weight:700;color:#1e2740;">${to?.full_name ?? '—'}</div>
-        <div style="font-size:12px;color:#717b99;margin-top:4px;">${inv.billed_to_type === 'owner' ? 'Owner' : 'Tenant'}</div>
+        <div style="font-size:12px;color:#717b99;margin-top:4px;">${inv.billed_to_type === 'owner' ? 'Owner' : 'Occupant'}</div>
         <div style="font-size:12px;color:#717b99;margin-top:2px;">${to?.email ?? ''}</div>
       </td>
       <td style="vertical-align:top;text-align:right;">
@@ -393,7 +393,7 @@ function printInvoice() {
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Invoice Date</td><td style="font-size:12px;font-weight:600;text-align:right;">${formatDateLong(inv.invoice_date ?? inv.created_at?.split('T')[0])}</td></tr>
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Due Date</td><td style="font-size:12px;font-weight:600;text-align:right;">${formatDateLong(inv.due_date)}</td></tr>
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Period</td><td style="font-size:12px;font-weight:600;text-align:right;">${formatPeriod(inv.billing_period)}</td></tr>
-          <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Estate</td><td style="font-size:12px;font-weight:600;text-align:right;">${inv.unit?.estate?.name ?? '—'}</td></tr>
+          <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Community</td><td style="font-size:12px;font-weight:600;text-align:right;">${inv.unit?.community?.name ?? '—'}</td></tr>
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Unit</td><td style="font-size:12px;font-weight:600;text-align:right;">${inv.unit?.unit_number ?? '—'}</td></tr>
         </table>
       </td>
@@ -456,7 +456,7 @@ const invoiceOptions = computed(() => {
   )
   const opts = outstanding.map(inv => ({
     value: inv.id,
-    label: `${inv.invoice_number} — ${inv.charge_type?.name ?? 'Charge'} (${formatCurrency(inv.outstanding ?? inv.amount)} outstanding)`,
+    label: `${inv.invoice_number} — ${inv.ledger?.name ?? 'Charge'} (${formatCurrency(inv.outstanding ?? inv.amount)} outstanding)`,
   }))
   return [{ value: '__none__', label: 'None — record as unallocated' }, ...opts]
 })
@@ -532,7 +532,7 @@ async function submitAddPayment() {
   addPaymentError.value  = null
   try {
     const fd = new FormData()
-    fd.append('estate_id',   invoice.value.unit?.estate_id ?? '')
+    fd.append('community_id',   invoice.value.unit?.community_id ?? '')
     fd.append('unit_id',     invoice.value.unit?.id ?? '')
     fd.append('type',        'credit')
     fd.append('date',        addPaymentForm.value.date)
@@ -742,7 +742,7 @@ async function submitRemovePayment() {
             </div>
           </div>
           <p class="text-sm text-muted-foreground">
-            {{ invoice.unit?.estate?.name }} · Unit {{ invoice.unit?.unit_number }}
+            {{ invoice.unit?.community?.name }} · Unit {{ invoice.unit?.unit_number }}
           </p>
         </div>
 
@@ -920,7 +920,7 @@ async function submitRemovePayment() {
                   <tbody>
                     <tr class="border-b border-border">
                       <td class="py-3 px-5 text-foreground">
-                        <p class="font-medium">{{ invoice.charge_type?.name }} — Unit {{ invoice.unit?.unit_number }}</p>
+                        <p class="font-medium">{{ invoice.ledger?.name }} — Unit {{ invoice.unit?.unit_number }}</p>
                         <p class="text-xs text-muted-foreground">{{ formatPeriod(invoice.billing_period) }}</p>
                       </td>
                       <td class="py-3 px-5 text-right font-medium text-foreground whitespace-nowrap">
@@ -1071,7 +1071,7 @@ async function submitRemovePayment() {
           <!-- Context card -->
           <AppCard padding="none" shadow="sm">
             <div class="p-5 space-y-3">
-              <!-- Estate -->
+              <!-- Community -->
               <div class="flex items-center gap-2 text-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
@@ -1082,12 +1082,12 @@ async function submitRemovePayment() {
                   <path d="M12 10h.01" /><path d="M12 14h.01" /><path d="M16 10h.01" />
                   <path d="M16 14h.01" /><path d="M8 10h.01" /><path d="M8 14h.01" />
                 </svg>
-                <span class="text-muted-foreground">Estate:</span>
+                <span class="text-muted-foreground">Community:</span>
                 <router-link
-                  :to="`/estates/${invoice.unit?.estate_id}`"
+                  :to="`/communities/${invoice.unit?.community_id}`"
                   class="text-primary font-medium hover:underline"
                 >
-                  {{ invoice.unit?.estate?.name ?? '—' }}
+                  {{ invoice.unit?.community?.name ?? '—' }}
                 </router-link>
               </div>
 
@@ -1102,7 +1102,7 @@ async function submitRemovePayment() {
                 <span class="text-muted-foreground">Unit:</span>
                 <router-link
                   v-if="invoice.unit"
-                  :to="`/estates/${invoice.unit.estate_id}/units/${invoice.unit.id}`"
+                  :to="`/communities/${invoice.unit.community_id}/units/${invoice.unit.id}`"
                   class="text-primary font-medium hover:underline"
                 >
                   {{ invoice.unit.unit_number }}

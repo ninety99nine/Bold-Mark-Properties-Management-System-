@@ -2,13 +2,13 @@
 
 namespace App\Notifications;
 
-use App\Models\Estate;
+use App\Models\Community;
 use Illuminate\Notifications\Notification;
 
 class BillingRunCompleted extends Notification
 {
     public function __construct(
-        public readonly Estate $estate,
+        public readonly Community $community,
         public readonly int $invoiceCount,
         public readonly string $billingPeriod,
     ) {}
@@ -21,11 +21,11 @@ class BillingRunCompleted extends Notification
     public function toArray(object $notifiable): array
     {
         return [
-            'estate_id'      => $this->estate->id,
-            'estate_name'    => $this->estate->name,
+            'community_id'      => $this->community->id,
+            'community_name'    => $this->community->name,
             'invoice_count'  => $this->invoiceCount,
             'billing_period' => $this->billingPeriod,
-            'message'        => "{$this->invoiceCount} invoices generated for {$this->estate->name} ({$this->billingPeriod})",
+            'message'        => "{$this->invoiceCount} invoices generated for {$this->community->name} ({$this->billingPeriod})",
         ];
     }
 }

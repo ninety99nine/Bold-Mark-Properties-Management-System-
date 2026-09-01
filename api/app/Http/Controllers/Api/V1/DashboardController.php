@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Helpers\CountryHelper;
 use App\Http\Controllers\Controller;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Organization;
 use App\Services\DashboardService;
 use Illuminate\Http\Request;
@@ -27,37 +27,39 @@ class DashboardController extends Controller
      */
     public function getDashboardSummary(Request $request): array
     {
-        return $this->service->getDashboardSummary($request->input('country'));
+        $year = $request->filled('year') ? (int) $request->input('year') : null;
+
+        return $this->service->getDashboardSummary($request->input('country'), $year);
     }
 
     /**
-     * Return the list of countries that have estates, plus supported options.
+     * Return the list of countries that have communities, plus supported options.
      *
      * @param Request $request
      * @return array
      */
     public function getCountries(Request $request): array
     {
-        $tenantId = Auth::user()->organization_id;
+        $organizationId = Auth::user()->organization_id;
 
-        $countsByCcode = Estate::where('organization_id', $tenantId)
+        $countsByCcode = Community::where('organization_id', $organizationId)
             ->whereNotNull('country')
-            ->selectRaw('country, count(*) as estate_count')
+            ->selectRaw('country, count(*) as community_count')
             ->groupBy('country')
-            ->pluck('estate_count', 'country')
+            ->pluck('community_count', 'country')
             ->toArray();
 
         $countries = [];
         foreach ($countsByCcode as $code => $count) {
             $info = CountryHelper::get($code);
             if ($info) {
-                $countries[] = array_merge(['code' => $code, 'estate_count' => $count], $info);
+                $countries[] = array_merge(['code' => $code, 'community_count' => $count], $info);
             }
         }
 
-        // Also include the tenant's default country
-        $tenant = Organization::find($tenantId);
-        $defaultCountry = $tenant?->country;
+        // Also include the organization's default country
+        $organization = Organization::find($organizationId);
+        $defaultCountry = $organization?->country;
 
         return [
             'countries'       => $countries,

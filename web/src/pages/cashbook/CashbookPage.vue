@@ -266,8 +266,8 @@ const pageNumbers = computed(() => {
 // ── Add Entry modal ───────────────────────────────────────────────────────
 const showAddEntry       = ref(false)
 const submittingEntry    = ref(false)
-const estateOptions      = ref([])
-const estatesLoading     = ref(false)
+const communityOptions      = ref([])
+const communitiesLoading     = ref(false)
 const unitOptionsForAdd  = ref([])
 const unitsLoadingForAdd = ref(false)
 
@@ -277,7 +277,7 @@ const ENTRY_TYPE_OPTS = [
 ]
 
 const newEntry = ref({
-  estate_id:   '',
+  community_id:   '',
   date:        '',
   type:        'credit',
   description: '',
@@ -286,25 +286,25 @@ const newEntry = ref({
   notes:       '',
 })
 
-async function fetchEstates() {
-  estatesLoading.value = true
+async function fetchCommunities() {
+  communitiesLoading.value = true
   try {
     const params = { _per_page: 100 }
     if (countryStore.activeCountry) params.country = countryStore.activeCountry
-    const { data } = await api.get('/estates', { params })
-    estateOptions.value = (data.data ?? []).map(e => ({ value: e.id, label: e.name }))
+    const { data } = await api.get('/communities', { params })
+    communityOptions.value = (data.data ?? []).map(e => ({ value: e.id, label: e.name }))
   } finally {
-    estatesLoading.value = false
+    communitiesLoading.value = false
   }
 }
 
-watch(() => newEntry.value.estate_id, async (estateId) => {
+watch(() => newEntry.value.community_id, async (communityId) => {
   newEntry.value.unit_id = ''
   unitOptionsForAdd.value = []
-  if (!estateId) return
+  if (!communityId) return
   unitsLoadingForAdd.value = true
   try {
-    const { data } = await api.get(`/estates/${estateId}/units`, { params: { _per_page: 200 } })
+    const { data } = await api.get(`/communities/${communityId}/units`, { params: { _per_page: 200 } })
     unitOptionsForAdd.value = (data.data ?? []).map(u => ({ value: u.id, label: u.unit_number }))
   } finally {
     unitsLoadingForAdd.value = false
@@ -312,17 +312,17 @@ watch(() => newEntry.value.estate_id, async (estateId) => {
 })
 
 function openAddEntry() {
-  fetchEstates()
+  fetchCommunities()
   showAddEntry.value = true
 }
 
 async function handleAddEntry() {
-  const { estate_id, date, type, description, amount } = newEntry.value
-  if (submittingEntry.value || !estate_id || !date || !description || !amount) return
+  const { community_id, date, type, description, amount } = newEntry.value
+  if (submittingEntry.value || !community_id || !date || !description || !amount) return
   submittingEntry.value = true
   try {
     await api.post('/cashbook', {
-      estate_id,
+      community_id,
       date,
       type,
       description,
@@ -331,7 +331,7 @@ async function handleAddEntry() {
       notes:   newEntry.value.notes   || undefined,
     })
     showAddEntry.value = false
-    newEntry.value = { estate_id: '', date: '', type: 'credit', description: '', amount: '', unit_id: '', notes: '' }
+    newEntry.value = { community_id: '', date: '', type: 'credit', description: '', amount: '', unit_id: '', notes: '' }
     success('Entry added successfully.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ } finally {
@@ -370,10 +370,10 @@ function scoreInvoice(inv, entry) {
   const amount      = parseFloat(entry.amount) || 0
   const outstanding = parseFloat(inv.outstanding ?? inv.amount) || 0
 
-  // 1. Charge type keyword match (highest weight — most predictive)
-  const chargeTypeKey = inv.charge_type?.type ?? ''
-  const typeName      = (inv.charge_type?.name ?? '').toLowerCase()
-  const kws           = CHARGE_KEYWORDS[chargeTypeKey] ?? [typeName]
+  // 1. Ledger keyword match (highest weight — most predictive)
+  const ledgerKey = inv.ledger?.type ?? ''
+  const typeName      = (inv.ledger?.name ?? '').toLowerCase()
+  const kws           = CHARGE_KEYWORDS[ledgerKey] ?? [typeName]
   for (const kw of kws) {
     if (desc.includes(kw)) { score += 30; break }
   }
@@ -422,14 +422,14 @@ function openAllocate(entry) {
   allocateInvoices.value  = []
   allocateUnits.value     = []
   showAllocate.value      = true
-  fetchAllocateUnits(entry.estate_id)
+  fetchAllocateUnits(entry.community_id)
 }
 
-async function fetchAllocateUnits(estateId) {
-  if (!estateId) return
+async function fetchAllocateUnits(communityId) {
+  if (!communityId) return
   allocateUnitsLoading.value = true
   try {
-    const { data } = await api.get(`/estates/${estateId}/units`, { params: { _per_page: 200 } })
+    const { data } = await api.get(`/communities/${communityId}/units`, { params: { _per_page: 200 } })
     allocateUnits.value = (data.data ?? []).map(u => ({ value: u.id, label: u.unit_number }))
   } finally {
     allocateUnitsLoading.value = false
@@ -1000,13 +1000,13 @@ const hasAllocationData = computed(() => allCount.value > 0)
     <AppModal :show="showAddEntry" title="Add Cashbook Entry" size="md" @close="showAddEntry = false">
       <div class="space-y-3">
 
-        <!-- Estate -->
+        <!-- Community -->
         <AppSelect
-          v-model="newEntry.estate_id"
-          label="Estate"
-          :options="estateOptions"
-          :placeholder="estatesLoading ? 'Loading estates...' : 'Select estate...'"
-          :disabled="estatesLoading"
+          v-model="newEntry.community_id"
+          label="Community"
+          :options="communityOptions"
+          :placeholder="communitiesLoading ? 'Loading communities...' : 'Select community...'"
+          :disabled="communitiesLoading"
           required
         />
 
@@ -1043,8 +1043,8 @@ const hasAllocationData = computed(() => allCount.value > 0)
             <AppSelect
               v-model="newEntry.unit_id"
               :options="unitOptionsForAdd"
-              :placeholder="unitsLoadingForAdd ? 'Loading units...' : (newEntry.estate_id ? 'Select unit...' : 'Select estate first')"
-              :disabled="!newEntry.estate_id || unitsLoadingForAdd"
+              :placeholder="unitsLoadingForAdd ? 'Loading units...' : (newEntry.community_id ? 'Select unit...' : 'Select community first')"
+              :disabled="!newEntry.community_id || unitsLoadingForAdd"
             />
           </div>
         </div>
@@ -1061,7 +1061,7 @@ const hasAllocationData = computed(() => allCount.value > 0)
         <AppButton variant="outline" @click="showAddEntry = false">Cancel</AppButton>
         <AppButton
           variant="primary"
-          :disabled="submittingEntry || !newEntry.estate_id || !newEntry.date || !newEntry.description || !newEntry.amount"
+          :disabled="submittingEntry || !newEntry.community_id || !newEntry.date || !newEntry.description || !newEntry.amount"
           @click="handleAddEntry"
         >
           {{ submittingEntry ? 'Adding...' : 'Add Entry' }}
@@ -1141,7 +1141,7 @@ const hasAllocationData = computed(() => allCount.value > 0)
                   >Best match</span>
                 </div>
                 <p class="text-xs text-muted-foreground">
-                  {{ inv.charge_type?.name ?? 'Charge' }}
+                  {{ inv.ledger?.name ?? 'Charge' }}
                   <span v-if="inv.billing_period"> · {{ new Date(inv.billing_period + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) }}</span>
                 </p>
               </div>

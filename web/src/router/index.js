@@ -22,6 +22,14 @@ const routes = [
     meta: { guest: true },
   },
 
+  // ── Profile selection (authenticated, full-screen — the WeConnectU entry anchor) ──
+  {
+    path: '/select-profile',
+    name: 'select-profile',
+    component: () => import('@/pages/auth/SelectProfilePage.vue'),
+    meta: { requiresAuth: true },
+  },
+
   // ── App shell (authenticated) ─────────────────────────────────────
   {
     path: '/',
@@ -38,9 +46,9 @@ const routes = [
         component: () => import('@/pages/dashboard/DashboardPage.vue'),
       },
       {
-        path: 'estates',
-        name: 'estates',
-        component: () => import('@/pages/estates/EstatesPage.vue'),
+        path: 'communities',
+        name: 'communities',
+        component: () => import('@/pages/communities/CommunitiesPage.vue'),
       },
       {
         path: 'vacancies',
@@ -48,19 +56,24 @@ const routes = [
         component: () => import('@/pages/vacancies/VacanciesPage.vue'),
       },
       {
-        path: 'estates/:id',
-        name: 'estate-detail',
-        component: () => import('@/pages/estates/EstateDetailPage.vue'),
+        path: 'communications',
+        name: 'communications',
+        component: () => import('@/pages/communications/CommunicationsIndex.vue'),
       },
       {
-        path: 'estates/:estateId/units/:unitId',
+        path: 'communities/:id',
+        name: 'community-detail',
+        component: () => import('@/pages/communities/CommunityDetailPage.vue'),
+      },
+      {
+        path: 'communities/:communityId/units/:unitId',
         name: 'unit-detail',
-        component: () => import('@/pages/estates/UnitDetailPage.vue'),
+        component: () => import('@/pages/communities/UnitDetailPage.vue'),
       },
       {
-        path: 'estates/:estateId/units/:unitId/tenants/:tenantId',
-        name: 'tenant-detail',
-        component: () => import('@/pages/estates/TenantDetailPage.vue'),
+        path: 'communities/:communityId/units/:unitId/occupants/:occupantId',
+        name: 'occupant-detail',
+        component: () => import('@/pages/communities/OccupantDetailPage.vue'),
       },
       {
         path: 'billing',
@@ -105,9 +118,19 @@ const routes = [
       },
 
       {
-        path: 'arrears',
-        name: 'arrears',
-        component: () => import('@/pages/arrears/ArrearsPage.vue'),
+        path: 'tasks',
+        name: 'tasks',
+        component: () => import('@/pages/tasks/TasksIndex.vue'),
+      },
+      {
+        path: 'customer-management',
+        name: 'customer-management',
+        component: () => import('@/pages/customer-management/CustomerManagementPage.vue'),
+      },
+      {
+        path: 'customers/invoice',
+        name: 'customer-invoice',
+        component: () => import('@/pages/customer-management/CustomerInvoicePage.vue'),
       },
       {
         path: 'age-analysis',
@@ -132,6 +155,26 @@ const routes = [
       {
         path: 'settings',
         redirect: '/settings/profile',
+      },
+      {
+        path: 'settings/general',
+        name: 'community-general-settings',
+        component: () => import('@/pages/settings/CommunityGeneralSettingsPage.vue'),
+      },
+      {
+        path: 'settings/address-contact',
+        name: 'community-address-contact',
+        component: () => import('@/pages/settings/CommunityAddressContactPage.vue'),
+      },
+      {
+        path: 'settings/default-billing-setup',
+        name: 'default-billing-setup',
+        component: () => import('@/pages/settings/DefaultBillingSetupPage.vue'),
+      },
+      {
+        path: 'settings/users',
+        name: 'community-users',
+        component: () => import('@/pages/settings/CommunityUsersPage.vue'),
       },
       {
         path: 'settings/:tab',
@@ -163,6 +206,14 @@ router.beforeEach((to) => {
 
   if (to.meta.guest && auth.isAuthenticated) {
     return { name: 'dashboard' }
+  }
+
+  // After a page reload the auth token is restored from storage but the user
+  // profile is not — hydrate it so the topbar (name/role) and permission checks
+  // populate. Fire-and-forget: navigation is not blocked; the UI fills in
+  // reactively once it resolves.
+  if (auth.isAuthenticated && !auth.user) {
+    auth.fetchUser().catch(() => {})
   }
 })
 

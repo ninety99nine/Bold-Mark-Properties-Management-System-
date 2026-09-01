@@ -1,0 +1,80 @@
+name: Reseed Production (EC2 · DESTRUCTIVE)
+
+# ─────────────────────────────────────────────────────────────────────
+# ⚠️  DESTRUCTIVE: runs `migrate:fresh` on the AWS/EC2 production box
+# (portal.boldmarkprop.co.za). Drops ALL tables and re-seeds from scratch.
+#
+# Seeder choice (workflow input):
+#   DemoSeeder        → org + all admin users + BW/SA communities, units,
+#                       owners, occupants, invoices, payments (demo data).
+#                       Use this when the team needs to log in and SEE data.
+#   ProductionSeeder  → org + 6 admin users + ledgers + compliance templates
+#                       only. NO communities. Clean production baseline.
+#
+# This is the EC2 twin of reset-database.yml (which targets the retired
+# DigitalOcean droplet via DO_HOST and is kept only for reference).
+# ─────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      seeder:
+        description: 'Seeder class to run after migrate:fresh'
+        required: true
+        default: 'DemoSeeder'
+        type: choice
+        options:
+          - DemoSeeder
+          - ProductionSeeder
+      run_dashboard_backfill:
+        description: 'Also run DemoDashboardBackfillSeeder (DemoSeeder only)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  reseed:
+    name: "⚠️ migrate:fresh + seed on EC2"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: aws-production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Reseed on EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          SEEDER: ${{ inputs.seeder }}
+          BACKFILL: ${{ inputs.run_dashboard_backfill }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          envs: SEEDER,BACKFILL
+          command_timeout: 18m
+          script: |
+            set -e
+            cd /opt/boldmark
+
+            echo "▶ Disk usage BEFORE reseed:"
+            df -h / | tail -1
+
+            echo "▶ Running migrate:fresh --seed --seeder=${SEEDER} ..."
+            docker compose exec -T app php artisan migrate:fresh --seed --seeder="${SEEDER}" --force
+
+            if [ "${SEEDER}" = "DemoSeeder" ] && [ "${BACKFILL}" = "true" ]; then
+              echo "▶ Running DemoDashboardBackfillSeeder ..."
+              docker compose exec -T app php artisan db:seed --class=DemoDashboardBackfillSeeder --force || \
+                echo "  ⚠ DemoDashboardBackfillSeeder failed (non-fatal) — continuing"
+            fi
+
+            echo "▶ Re-warming caches ..."
+            docker compose exec -T app bash -c "php artisan config:cache && php artisan route:cache" || true
+
+            echo "▶ Disk usage AFTER reseed:"
+            df -h / | tail -1
+
+            echo "✓ Reseed complete."

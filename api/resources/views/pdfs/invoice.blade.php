@@ -2,267 +2,264 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ $invoice->invoice_number }}</title>
+  @php
+    $community = $invoice->unit->community;
+    $et = $community->entity_type;
+    $et = $et instanceof \BackedEnum ? $et->value : $et;
+    $entityLabel = [
+      'body_corporate' => 'Body Corporate',
+      'hoa'            => 'Home Owners Association',
+      'share_block'    => 'Share Block',
+    ][$et] ?? '';
+
+    $addressLines = collect(preg_split('/,\s*/', (string) ($billedTo?->address ?? '')))
+      ->filter(fn ($l) => trim($l) !== '')->values();
+
+    $reference = $invoice->unit->customer_code;
+    $bank      = $invoice->bankAccount;
+
+    $subtotal  = $invoice->subtotal ?? $invoice->amount;
+    $vat       = $invoice->vat_amount ?? 0;
+    $money     = fn ($v) => 'R ' . number_format((float) $v, 2, '.', ' ');
+    $plain     = fn ($v) => number_format((float) $v, 2, '.', ' ');
+  @endphp
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      font-size: 12px;
-      color: #1E2740;
-      background: #ffffff;
+      font-family: 'DejaVu Sans', Arial, sans-serif;
+      font-size: 9.5px;
+      color: #222;
+      background: #fff;
     }
-    .page { padding: 40px 48px; }
+    .page { padding: 28px 34px; }
 
-    /* Header */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 32px;
-      padding-bottom: 24px;
-      border-bottom: 2px solid #1F3A5C;
-    }
-    .brand-name {
-      font-size: 20px;
-      font-weight: 800;
-      color: #1F3A5C;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-    }
-    .brand-subtitle {
-      font-size: 10px;
-      color: #D89B4B;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      margin-top: 2px;
-    }
-    .invoice-label {
-      text-align: right;
-    }
-    .invoice-label h1 {
-      font-size: 22px;
-      font-weight: 700;
-      color: #1F3A5C;
-    }
-    .invoice-label .tax-label {
-      font-size: 10px;
-      color: #717B99;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-top: 2px;
-    }
+    table { border-collapse: collapse; }
+    .w100 { width: 100%; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .bold { font-weight: bold; }
+    .muted { color: #555; }
 
-    /* Bill To + Meta */
-    .meta-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 32px;
+    /* ── Header (logo / community / address) ── */
+    .head-cell { vertical-align: top; }
+    .logo-box {
+      background: #e9e7d4;
+      padding: 10px 14px;
+      display: inline-block;
     }
-    .bill-to h4 {
-      font-size: 9px;
-      font-weight: 700;
-      color: #717B99;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      margin-bottom: 6px;
-    }
-    .bill-to .name { font-size: 14px; font-weight: 700; color: #1E2740; }
-    .bill-to .role { font-size: 11px; color: #717B99; margin-top: 2px; text-transform: capitalize; }
-    .bill-to .email { font-size: 11px; color: #717B99; margin-top: 2px; }
-    .invoice-meta { text-align: right; }
-    .invoice-meta table { margin-left: auto; }
-    .invoice-meta td { font-size: 12px; padding: 2px 0; }
-    .invoice-meta .label { color: #717B99; padding-right: 16px; }
-    .invoice-meta .value { color: #1E2740; font-weight: 600; }
+    .logo-primary { font-size: 18px; font-weight: bold; letter-spacing: 2px; color: #223; }
+    .logo-amber   { color: #d9812a; }
+    .logo-sub     { font-size: 9px; letter-spacing: 5px; color: #223; margin-top: 2px; }
+    .head-line { font-size: 9.5px; line-height: 1.4; }
+    .head-line .k { font-weight: bold; }
 
-    /* Line items table */
-    .items-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 0;
-    }
-    .items-table thead tr {
-      background-color: #F8FBFF;
-      border-top: 1px solid #DCDEE8;
-      border-bottom: 1px solid #DCDEE8;
-    }
-    .items-table th {
-      padding: 10px 16px;
-      font-size: 9px;
-      font-weight: 700;
-      color: #717B99;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      text-align: left;
-    }
-    .items-table th.right { text-align: right; }
-    .items-table tbody td {
-      padding: 14px 16px;
-      font-size: 12px;
-      color: #1E2740;
-      border-bottom: 1px solid #DCDEE8;
-    }
-    .items-table tbody .desc-sub {
-      font-size: 10px;
-      color: #717B99;
-      margin-top: 2px;
-    }
-    .items-table tbody .amount { text-align: right; font-weight: 700; white-space: nowrap; }
-    .items-table tfoot tr { background-color: #F8FBFF; }
-    .items-table tfoot td {
-      padding: 12px 16px;
-      font-size: 13px;
-      font-weight: 700;
-      color: #1E2740;
-      border-top: 2px solid #1F3A5C;
-    }
-    .items-table tfoot .total-amount {
-      text-align: right;
-      font-size: 14px;
-      color: #1F3A5C;
-      white-space: nowrap;
-    }
+    hr.rule { border: none; border-top: 1px solid #d5d5d5; margin: 14px 0; }
 
-    /* Outer border */
-    .invoice-box {
-      border: 1px solid #DCDEE8;
-      border-radius: 6px;
-      overflow: hidden;
-      margin-bottom: 28px;
-    }
-    .invoice-box-header {
-      background-color: #F8FBFF;
-      padding: 14px 16px;
-      border-bottom: 1px solid #DCDEE8;
-    }
+    /* ── Bill to ── */
+    .billto-box { background: #ededed; padding: 12px 14px; }
+    .billto-box .name { font-weight: bold; font-size: 10.5px; }
+    .billto-line { line-height: 1.55; font-size: 9.5px; }
+    .billto-right { font-size: 9.5px; line-height: 1.65; padding-left: 16px; vertical-align: top; }
 
-    /* Payment note */
-    .payment-note {
-      background-color: #F8FBFF;
-      border: 1px solid #DCDEE8;
-      border-radius: 6px;
-      padding: 14px 16px;
-      margin-bottom: 24px;
-    }
-    .payment-note h4 {
-      font-size: 11px;
-      font-weight: 700;
-      color: #1E2740;
-      margin-bottom: 4px;
-    }
-    .payment-note p { font-size: 11px; color: #717B99; line-height: 1.6; }
-    .payment-note strong { color: #1E2740; }
+    /* ── Invoice title + summary ── */
+    .invoice-title { font-size: 26px; font-weight: bold; letter-spacing: 1px; color: #111; }
+    .summary { border-collapse: collapse; }
+    .summary th, .summary td { border: 1px solid #cfcfcf; padding: 6px 10px; font-size: 9px; text-align: center; }
+    .summary th { background: #f3f3f3; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
 
-    /* Footer */
-    .footer {
-      margin-top: 40px;
-      padding-top: 16px;
-      border-top: 1px solid #DCDEE8;
+    /* ── Line items ── */
+    .items { width: 100%; margin-top: 16px; }
+    .items thead th {
+      background: #2b2b2b; color: #fff; font-size: 9px; font-weight: bold;
+      padding: 7px 10px; text-align: left; text-transform: none;
     }
-    .footer p { font-size: 10px; color: #A0AEC0; line-height: 1.6; }
-    .amber { color: #D89B4B; }
+    .items thead th.num { text-align: right; }
+    .items tbody td { padding: 8px 10px; font-size: 9.5px; border-bottom: 1px solid #e2e2e2; vertical-align: top; }
+    .items tbody td.num { text-align: right; white-space: nowrap; }
+
+    /* ── Bottom (banking + totals) ── */
+    .bottom { width: 100%; margin-top: 24px; }
+    .bank-box { border: 1px solid #cfcfcf; padding: 12px 14px; font-size: 9px; line-height: 1.65; }
+    .bank-box .h { font-weight: bold; margin-bottom: 4px; }
+    .totals { width: 100%; }
+    .totals td { border: 1px solid #cfcfcf; padding: 7px 10px; font-size: 9.5px; }
+    .totals .lbl { color: #333; }
+    .totals .val { text-align: right; white-space: nowrap; }
+    .totals .grand td { font-size: 13px; font-weight: bold; }
+
+    .footer { margin-top: 24px; text-align: center; font-size: 9px; color: #888; }
   </style>
 </head>
 <body>
 <div class="page">
 
-  <!-- Header -->
-  <div class="header">
-    <div>
-      <div class="brand-name">Bold Mark</div>
-      <div class="brand-subtitle">Properties</div>
-    </div>
-    <div class="invoice-label">
-      <h1>{{ $invoice->invoice_number }}</h1>
-      <div class="tax-label">Tax Invoice</div>
-    </div>
-  </div>
+  {{-- ══════════ Header ══════════ --}}
+  <table class="w100">
+    <tr>
+      <td class="head-cell" style="width: 38%;">
+        <div class="logo-box">
+          <div class="logo-primary">BOLD <span class="logo-amber">MARK</span></div>
+          <div class="logo-sub">PROPERTIES</div>
+        </div>
+      </td>
+      <td class="head-cell" style="width: 37%;">
+        <div class="head-line">
+          <span class="bold">{{ $community->name }}@if($entityLabel) {{ $entityLabel }}@endif</span><br>
+          @if($community->registration_number)<span class="k">Reg No:</span> {{ $community->registration_number }}<br>@endif
+          <span class="k">Email.:</span> info@boldmarkprop.co.za<br>
+          <span class="k">Contact No.:</span> 0118249671
+        </div>
+      </td>
+      <td class="head-cell right" style="width: 25%;">
+        <div class="head-line">
+          <span class="bold">ADDRESS</span><br>
+          112 Boeing Rd<br>
+          Bedfordview<br>
+          Johannesburg<br>
+          Gauteng<br>
+          2007
+        </div>
+      </td>
+    </tr>
+  </table>
 
-  <!-- Bill To + Meta -->
-  <div class="meta-row">
-    <div class="bill-to">
-      <h4>Bill To</h4>
-      <div class="name">{{ $billedTo?->full_name ?? '—' }}</div>
-      <div class="role">{{ $invoice->billed_to_type->value }}</div>
-      <div class="email">{{ $billedTo?->email ?? '—' }}</div>
-    </div>
-    <div class="invoice-meta">
-      <table>
-        <tr>
-          <td class="label">Invoice Date</td>
-          <td class="value">{{ $invoice->created_at->format('d M Y') }}</td>
-        </tr>
-        <tr>
-          <td class="label">Due Date</td>
-          <td class="value">{{ $invoice->due_date->format('d M Y') }}</td>
-        </tr>
-        <tr>
-          <td class="label">Period</td>
-          <td class="value">{{ $invoice->billing_period->format('F Y') }}</td>
-        </tr>
-        <tr>
-          <td class="label">Estate</td>
-          <td class="value">{{ $invoice->unit->estate->name }}</td>
-        </tr>
-        <tr>
-          <td class="label">Unit</td>
-          <td class="value">{{ $invoice->unit->unit_number }}</td>
-        </tr>
-      </table>
-    </div>
-  </div>
+  <hr class="rule">
 
-  <!-- Line items -->
-  <div class="invoice-box">
-    <table class="items-table">
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th class="right">Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>
-            <strong>{{ $invoice->chargeType->name }} — Unit {{ $invoice->unit->unit_number }}</strong>
-            <div class="desc-sub">{{ $invoice->billing_period->format('F Y') }}</div>
-          </td>
-          <td class="amount">R {{ number_format($invoice->amount, 0, '.', ' ') }}</td>
-        </tr>
-      </tbody>
-      <tfoot>
-        <tr>
-          <td>Total Due</td>
-          <td class="total-amount">R {{ number_format($invoice->amount, 0, '.', ' ') }}</td>
-        </tr>
-      </tfoot>
-    </table>
-  </div>
+  {{-- ══════════ Bill to ══════════ --}}
+  <table class="w100">
+    <tr>
+      <td style="width: 50%; vertical-align: top;">
+        <div class="billto-box">
+          <div class="name">{{ $billedTo?->full_name ?? '—' }}</div>
+          <div class="billto-line">
+            @forelse($addressLines as $line)
+              {{ $line }}@if(!$loop->last),@endif<br>
+            @empty
+              &nbsp;
+            @endforelse
+          </div>
+        </div>
+      </td>
+      <td class="billto-right" style="width: 50%;">
+        <span class="bold">Unit No {{ $invoice->unit->unit_number }}</span><br>
+        @if($reference)Reference: {{ $reference }}<br>@endif
+        @if($billedTo?->phone)Tel: {{ $billedTo->phone }}<br>@endif
+        @if($billedTo?->email)Email: {{ $billedTo->email }}@endif
+      </td>
+    </tr>
+  </table>
 
-  <!-- Payment note -->
-  <div class="payment-note">
-    <h4>Payment Instructions</h4>
-    <p>
-      Please use your invoice number <strong>{{ $invoice->invoice_number }}</strong>
-      as the payment reference when making your EFT payment.
-      Payment is due by <strong>{{ $invoice->due_date->format('d M Y') }}</strong>.
-    </p>
-  </div>
+  {{-- ══════════ Invoice title + summary ══════════ --}}
+  <table class="w100" style="margin-top: 24px;">
+    <tr>
+      <td style="vertical-align: bottom;">
+        <div class="invoice-title">INVOICE</div>
+      </td>
+      <td class="right" style="vertical-align: bottom;">
+        <table class="summary" style="margin-left: auto;">
+          <tr>
+            <th>Invoice No.</th>
+            <th>Invoice Date</th>
+            <th>Due Date</th>
+            <th>Invoice Total</th>
+          </tr>
+          <tr>
+            <td>{{ $invoice->invoice_number }}</td>
+            <td>{{ ($invoice->invoice_date ?? $invoice->created_at)->format('Y-m-d') }}</td>
+            <td>{{ $invoice->due_date->format('Y-m-d') }}</td>
+            <td class="bold">{{ $money($invoice->amount) }}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 
-  <!-- Footer -->
+  {{-- ══════════ Line items ══════════ --}}
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width: 20%;">Account</th>
+        <th style="width: 34%;">Description</th>
+        <th class="num" style="width: 8%;">Qty</th>
+        <th class="num" style="width: 12%;">Unit Price</th>
+        <th class="num" style="width: 8%;">Disc</th>
+        <th class="num" style="width: 8%;">Tax</th>
+        <th class="num" style="width: 10%;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      @if($invoice->items->isNotEmpty())
+        @foreach($invoice->items as $item)
+          <tr>
+            <td>{{ $item->ledger?->name ?? 'Account' }}</td>
+            <td>{{ $item->description ?? $item->ledger?->name }}</td>
+            <td class="num">{{ number_format($item->quantity, 2) }}</td>
+            <td class="num">{{ $plain($item->amount) }}</td>
+            <td class="num">0.00</td>
+            <td class="num">{{ $plain($item->tax_amount) }}</td>
+            <td class="num">{{ $plain($item->line_total) }}</td>
+          </tr>
+        @endforeach
+      @else
+        <tr>
+          <td>{{ $invoice->ledger?->name ?? 'Account' }}</td>
+          <td>{{ $invoice->ledger?->name ?? 'Charge' }} — {{ $invoice->billing_period->format('F Y') }}</td>
+          <td class="num">1.00</td>
+          <td class="num">{{ $plain($invoice->amount) }}</td>
+          <td class="num">0.00</td>
+          <td class="num">0.00</td>
+          <td class="num">{{ $plain($invoice->amount) }}</td>
+        </tr>
+      @endif
+    </tbody>
+  </table>
+
+  {{-- ══════════ Banking details + totals ══════════ --}}
+  <table class="bottom">
+    <tr>
+      <td style="width: 58%; vertical-align: top; padding-right: 24px;">
+        <div class="bank-box">
+          <div class="h">BANKING DETAILS</div>
+          <table class="w100"><tr>
+            <td style="vertical-align: top; width: 55%;">
+              Bank Name: {{ $bank?->bank_name ?? '—' }}<br>
+              Account Number: {{ $bank?->account_number ?? '—' }}<br>
+              @if($reference)Reference: {{ $reference }}@endif
+            </td>
+            <td style="vertical-align: top;">
+              Account Holder: {{ $community->name }}<br>
+              Account Type: {{ ucfirst($bank?->type instanceof \BackedEnum ? $bank->type->value : ($bank?->type ?? 'Current')) }}
+            </td>
+          </tr></table>
+        </div>
+      </td>
+      <td style="width: 42%; vertical-align: top;">
+        <table class="totals">
+          <tr>
+            <td class="lbl">Sub-Total excl.</td>
+            <td class="val">{{ $plain($subtotal) }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Discount excl.</td>
+            <td class="val">0.00</td>
+          </tr>
+          <tr>
+            <td class="lbl">Sub-Total excl. (after discount)</td>
+            <td class="val">{{ $plain($subtotal) }}</td>
+          </tr>
+          <tr class="grand">
+            <td class="lbl">TOTAL</td>
+            <td class="val">{{ $money($invoice->amount) }}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
   <div class="footer">
-    <p>
-      <strong style="color:#1E2740;">Bold Mark Properties (Pty) Ltd</strong> &nbsp;·&nbsp;
-      112 Boeing Rd, Bedfordview, Johannesburg &nbsp;·&nbsp;
-      NAMA-9141 &nbsp;·&nbsp; PPRA Registered: 202603011001590
-    </p>
-    <p style="margin-top:4px;">
-      info@boldmarkprop.co.za &nbsp;·&nbsp; www.boldmarkprop.co.za
-    </p>
-    <p style="margin-top:8px;color:#DCDEE8;">
-      © {{ date('Y') }} Bold Mark Properties. All rights reserved.
-    </p>
+    Page 1/1<br>
+    Powered by Bold Mark Properties
   </div>
 
 </div>

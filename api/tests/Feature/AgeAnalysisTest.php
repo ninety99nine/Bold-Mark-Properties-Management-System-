@@ -1,407 +1,225 @@
 <?php
 
-use App\Enums\InvoiceStatus;
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Enums\CollectionStatus;
+use App\Models\CashbookEntry;
+use App\Models\Community;
 use App\Models\Invoice;
+use App\Models\Ledger;
 use App\Models\Owner;
 use App\Models\Unit;
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────────
+use App\Models\UnitCollectionNote;
 
 /**
- * Create a minimal invoice with an owner as the billed-to party.
- * Returns ['user', 'estate', 'unit', 'owner', 'chargeType', 'invoice'].
+ * Helper: create a unit + owner + one outstanding invoice due `$daysOverdue`
+ * days ago (negative = not yet due) for `$amount`.
  */
-function makeAgeInvoice(array $invoiceOverrides = []): array
+function arrearsUnit(string $orgId, Community $community, float $amount, int $daysOverdue, array $unitAttrs = []): Unit
 {
-    $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $owner      = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
+    $unit  = Unit::factory()->create(array_merge([
+        'community_id'    => $community->id,
+        'organization_id' => $orgId,
+    ], $unitAttrs));
+    $owner = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $orgId]);
+    $ledger = Ledger::factory()->create(['organization_id' => $orgId]);
 
-    $invoice = Invoice::factory()->create(array_merge([
-        'organization_id' => $user->organization_id,
+    Invoice::factory()->create([
+        'organization_id' => $orgId,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'       => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 1000,
-    ], $invoiceOverrides));
+        'amount'          => $amount,
+        'status'          => 'unpaid',
+        'due_date'        => now()->subDays($daysOverdue)->toDateString(),
+    ]);
 
-    return compact('user', 'estate', 'unit', 'chargeType', 'owner', 'invoice');
+    return $unit;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// GET /age-analysis
+// Auth
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('age analysis returns 401 when unauthenticated', function () {
-    $this->getJson(route('api.v1.show.age.analysis'))->assertUnauthorized();
-});
-
-it('age analysis returns owners, organizations, and summary keys', function () {
-    $user = adminUser();
-
-    $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->assertJsonStructure(['owners', 'organizations', 'summary']);
-});
-
-it('age analysis summary has all bucket and count keys', function () {
-    $user = adminUser();
-
-    $summary = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary');
-
-    expect($summary)->toHaveKeys([
-        'current', '30_days', '60_days', '90_days', '120_plus',
-        'total_outstanding',
-        'current_count', 'd30_count', 'd60_count', 'd90_count', 'd120_count',
-        'total_count', 'people_count',
-        'current_people_count', 'd30_people_count', 'd60_people_count',
-        'd90_people_count', 'd120_people_count',
-    ]);
-});
-
-it('age analysis excludes paid invoices', function () {
-    ['user' => $user] = makeAgeInvoice(['status' => InvoiceStatus::PAID->value]);
-
-    $result = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk();
-
-    expect($result->json('owners'))->toBeEmpty();
-    expect((float) $result->json('summary.total_outstanding'))->toBe(0.0);
-});
-
-it('age analysis includes unpaid and overdue invoices', function () {
-    ['user' => $user] = makeAgeInvoice(['status' => InvoiceStatus::UNPAID->value, 'amount' => 500]);
-
-    $result = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk();
-
-    expect($result->json('owners'))->not->toBeEmpty();
-    expect((float) $result->json('summary.total_outstanding'))->toBe(500.0);
-});
-
-it('age analysis places a current (not-yet-due) invoice in the current bucket', function () {
-    ['user' => $user] = makeAgeInvoice([
-        'due_date' => now()->addDays(10)->toDateString(),
-        'status'   => InvoiceStatus::UNPAID->value,
-        'amount'   => 800,
-    ]);
-
-    $summary = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary');
-
-    expect((float) $summary['current'])->toBe(800.0);
-    expect((float) $summary['30_days'])->toBe(0.0);
-});
-
-it('age analysis places an invoice 15 days overdue in the 30_days bucket', function () {
-    ['user' => $user] = makeAgeInvoice([
-        'due_date' => now()->subDays(15)->toDateString(),
-        'amount'   => 1200,
-    ]);
-
-    $summary = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary');
-
-    expect((float) $summary['30_days'])->toBe(1200.0);
-    expect((float) $summary['60_days'])->toBe(0.0);
-});
-
-it('age analysis places an invoice 45 days overdue in the 60_days bucket', function () {
-    ['user' => $user] = makeAgeInvoice([
-        'due_date' => now()->subDays(45)->toDateString(),
-        'amount'   => 900,
-    ]);
-
-    $summary = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary');
-
-    expect((float) $summary['60_days'])->toBe(900.0);
-    expect((float) $summary['30_days'])->toBe(0.0);
-});
-
-it('age analysis places an invoice 75 days overdue in the 90_days bucket', function () {
-    ['user' => $user] = makeAgeInvoice([
-        'due_date' => now()->subDays(75)->toDateString(),
-        'amount'   => 750,
-    ]);
-
-    $summary = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary');
-
-    expect((float) $summary['90_days'])->toBe(750.0);
-    expect((float) $summary['60_days'])->toBe(0.0);
-});
-
-it('age analysis places an invoice 100 days overdue in the 120_plus bucket', function () {
-    ['user' => $user] = makeAgeInvoice([
-        'due_date' => now()->subDays(100)->toDateString(),
-        'amount'   => 2000,
-    ]);
-
-    $summary = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary');
-
-    expect((float) $summary['120_plus'])->toBe(2000.0);
-    expect((float) $summary['90_days'])->toBe(0.0);
-});
-
-it('age analysis total_outstanding sums across all buckets', function () {
-    $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $owner      = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
-
-    $base = [
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $owner->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-    ];
-
-    Invoice::factory()->create(array_merge($base, ['amount' => 100, 'due_date' => now()->addDays(5)->toDateString(),  'status' => InvoiceStatus::UNPAID->value,  'billing_period' => now()->startOfMonth()->toDateString()]));
-    Invoice::factory()->create(array_merge($base, ['amount' => 200, 'due_date' => now()->subDays(15)->toDateString(), 'billing_period' => now()->subMonths(1)->startOfMonth()->toDateString()]));
-    Invoice::factory()->create(array_merge($base, ['amount' => 300, 'due_date' => now()->subDays(45)->toDateString(), 'billing_period' => now()->subMonths(2)->startOfMonth()->toDateString()]));
-
-    $total = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary.total_outstanding');
-
-    expect((float) $total)->toBe(600.0);
-});
-
-it('age analysis does not include another tenants invoices', function () {
-    makeAgeInvoice(['amount' => 5000]);
-
-    $myUser = adminUser();
-
-    $result = $this->actingAs($myUser, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk();
-
-    expect($result->json('owners'))->toBeEmpty();
-    expect((float) $result->json('summary.total_outstanding'))->toBe(0.0);
-});
-
-it('age analysis each owner row has expected fields', function () {
-    ['user' => $user] = makeAgeInvoice(['due_date' => now()->subDays(15)->toDateString()]);
-
-    $row = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('owners.0');
-
-    expect($row)->toHaveKeys([
-        'invoice_id', 'invoice_number', 'unit_id', 'unit_number',
-        'charge_type', 'due_date', 'person_name', 'outstanding',
-        'current', '30_days', '60_days', '90_days', '120_plus',
-    ]);
-});
-
-it('age analysis filters by estate_id', function () {
-    $user    = adminUser();
-    $estate1 = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $estate2 = Estate::factory()->create(['organization_id' => $user->organization_id]);
-
-    $unit1 = Unit::factory()->create(['estate_id' => $estate1->id, 'organization_id' => $user->organization_id]);
-    $unit2 = Unit::factory()->create(['estate_id' => $estate2->id, 'organization_id' => $user->organization_id]);
-    $ct    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $own1  = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit1->id]);
-    $own2  = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit2->id]);
-
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit1->id,
-        'charge_type_id'  => $ct->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $own1->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 500,
-    ]);
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit2->id,
-        'charge_type_id'  => $ct->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $own2->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 900,
-    ]);
-
-    $total = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis') . '?estate_id=' . $estate1->id)
-        ->assertOk()
-        ->json('summary.total_outstanding');
-
-    expect((float) $total)->toBe(500.0);
-});
-
-it('age analysis filters by charge_type_id', function () {
-    $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct1    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ct2    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $owner  = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
-
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit->id,
-        'charge_type_id'  => $ct1->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $owner->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 400,
-    ]);
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit->id,
-        'charge_type_id'  => $ct2->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $owner->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 800,
-        'billing_period'  => now()->subMonths(2)->startOfMonth()->toDateString(),
-    ]);
-
-    $total = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis') . '?charge_type_id=' . $ct1->id)
-        ->assertOk()
-        ->json('summary.total_outstanding');
-
-    expect((float) $total)->toBe(400.0);
-});
-
-it('age analysis owners are sorted by outstanding descending', function () {
-    $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit1  = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $unit2  = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $own1   = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit1->id]);
-    $own2   = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit2->id]);
-
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit1->id,
-        'charge_type_id'  => $ct->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $own1->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 500,
-        'due_date'        => now()->subDays(15)->toDateString(),
-    ]);
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit2->id,
-        'charge_type_id'  => $ct->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $own2->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 2000,
-        'due_date'        => now()->subDays(20)->toDateString(),
-    ]);
-
-    $rows = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('owners');
-
-    expect((float) $rows[0]['outstanding'])->toBeGreaterThan((float) $rows[1]['outstanding']);
-});
-
-it('age analysis d30_count increments per overdue invoice in that bucket', function () {
-    $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit1  = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $unit2  = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $own1   = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit1->id]);
-    $own2   = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit2->id]);
-
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit1->id,
-        'charge_type_id'  => $ct->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $own1->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 100,
-        'due_date'        => now()->subDays(10)->toDateString(),
-    ]);
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id,
-        'unit_id'         => $unit2->id,
-        'charge_type_id'  => $ct->id,
-        'billed_to_type'  => 'owner',
-        'billed_to_id'    => $own2->id,
-        'status'          => InvoiceStatus::OVERDUE->value,
-        'amount'          => 200,
-        'due_date'        => now()->subDays(20)->toDateString(),
-    ]);
-
-    $count = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
-        ->assertOk()
-        ->json('summary.d30_count');
-
-    expect($count)->toBe(2);
-});
+it('returns 401 on age analysis routes when unauthenticated', function (string $method, string $route) {
+    $this->{$method . 'Json'}(route($route))->assertUnauthorized();
+})->with([
+    ['get',  'api.v1.show.age.analysis'],
+    ['post', 'api.v1.send.age.analysis.notices'],
+]);
 
 // ──────────────────────────────────────────────────────────────────────────────
-// GET /age-analysis/export
+// Shape + buckets
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('age analysis export returns 401 when unauthenticated', function () {
-    $this->getJson(route('api.v1.export.age.analysis'))->assertUnauthorized();
-});
-
-it('age analysis export returns a CSV file response', function () {
-    ['user' => $user] = makeAgeInvoice(['due_date' => now()->subDays(15)->toDateString()]);
+it('returns rows and totals keyed by WeConnectU buckets', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 1000, 45); // 60-day bucket
 
     $response = $this->actingAs($user, 'api')
-        ->get(route('api.v1.export.age.analysis') . '?_format=csv')
-        ->assertOk();
+        ->getJson(route('api.v1.show.age.analysis'))
+        ->assertOk()
+        ->assertJsonStructure([
+            'rows' => [['unit_id', 'unit_number', 'customer_code', 'customer_name', 'collection_status', 'debit_order', 'notes_count', '120_plus', '90_days', '60_days', '30_days', 'current', 'balance']],
+            'totals' => ['120_plus', '90_days', '60_days', '30_days', 'current', 'balance', 'customer_count'],
+        ]);
 
-    expect($response->headers->get('Content-Type'))->toContain('text/csv');
+    expect($response->json('totals.customer_count'))->toBe(1)
+        ->and((float) $response->json('rows.0.60_days'))->toBe(1000.0)
+        ->and((float) $response->json('rows.0.balance'))->toBe(1000.0);
 });
 
-it('age analysis export CSV contains the expected headings', function () {
-    ['user' => $user] = makeAgeInvoice(['due_date' => now()->subDays(15)->toDateString()]);
+it('places invoices in the correct ageing bucket', function (int $daysOverdue, string $bucket) {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 500, $daysOverdue);
 
-    $content = $this->actingAs($user, 'api')
-        ->get(route('api.v1.export.age.analysis') . '?_format=csv')
+    $row = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('rows.0');
+
+    expect((float) $row[$bucket])->toBe(500.0)
+        ->and((float) $row['balance'])->toBe(500.0);
+})->with([
+    [-5, 'current'],
+    [15, '30_days'],
+    [45, '60_days'],
+    [75, '90_days'],
+    [120, '120_plus'],
+]);
+
+it('aggregates multiple invoices for the same unit into one row', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit      = arrearsUnit($user->organization_id, $community, 1000, 45); // 60-day
+    $owner     = Owner::where('unit_id', $unit->id)->first();
+    $ledger    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+
+    // second invoice, current bucket, same unit
+    Invoice::factory()->create([
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id, 'ledger_id' => $ledger->id,
+        'billed_to_type' => 'owner', 'billed_to_id' => $owner->id, 'amount' => 400, 'status' => 'unpaid',
+        'due_date' => now()->addDays(5)->toDateString(),
+    ]);
+
+    $response = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->assertOk();
+
+    expect($response->json('totals.customer_count'))->toBe(1)
+        ->and((float) $response->json('rows.0.60_days'))->toBe(1000.0)
+        ->and((float) $response->json('rows.0.current'))->toBe(400.0)
+        ->and((float) $response->json('rows.0.balance'))->toBe(1400.0);
+});
+
+it('excludes fully paid units', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit      = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $owner     = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
+    $ledger    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    Invoice::factory()->create([
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id, 'ledger_id' => $ledger->id,
+        'billed_to_type' => 'owner', 'billed_to_id' => $owner->id, 'amount' => 500, 'status' => 'paid',
+        'due_date' => now()->subDays(45)->toDateString(),
+    ]);
+
+    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('totals.customer_count'))->toBe(0);
+});
+
+it('nets unallocated credits oldest-first and can produce a negative balance', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit      = arrearsUnit($user->organization_id, $community, 1000, 120); // 120+ bucket
+
+    // credit of 1500 → clears the 1000 arrears, leaves 500 credit → balance -500
+    CashbookEntry::factory()->create([
+        'organization_id' => $user->organization_id,
+        'community_id'    => $community->id,
+        'unit_id'         => $unit->id,
+        'invoice_id'      => null,
+        'type'            => 'credit',
+        'amount'          => 1500,
+    ]);
+
+    $row = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('rows.0');
+
+    expect((float) $row['120_plus'])->toBe(0.0)
+        ->and((float) $row['balance'])->toBe(-500.0);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Row metadata (status / debit order / notes)
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('surfaces collection status, debit order and notes count on the row', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit      = arrearsUnit($user->organization_id, $community, 800, 45, [
+        'collection_status' => CollectionStatus::SECOND_NOTICE->value,
+        'debit_order'       => true,
+    ]);
+    UnitCollectionNote::create([
+        'unit_id' => $unit->id, 'organization_id' => $user->organization_id, 'note' => 'Called owner',
+    ]);
+
+    $row = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('rows.0');
+
+    expect($row['collection_status'])->toBe('second_notice')
+        ->and($row['collection_status_label'])->toBe('2nd Notice')
+        ->and($row['debit_order'])->toBeTrue()
+        ->and($row['notes_count'])->toBe(1);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Filters
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('filters by debt status and debit order', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 500, 45, ['collection_status' => CollectionStatus::FIRST_NOTICE->value, 'debit_order' => true]);
+    arrearsUnit($user->organization_id, $community, 500, 45, ['collection_status' => CollectionStatus::HANDED_OVER->value, 'debit_order' => false]);
+
+    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis', ['debt_status' => 'first_notice']))->json('totals.customer_count'))->toBe(1);
+    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis', ['debit_order' => 'true']))->json('totals.customer_count'))->toBe(1);
+});
+
+it('scopes results to the authenticated organization', function () {
+    $user  = adminUser();
+    $mine  = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $mine, 500, 45);
+
+    $other = createOrganization();
+    $theirs = Community::factory()->create(['organization_id' => $other->id]);
+    arrearsUnit($other->id, $theirs, 900, 45);
+
+    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('totals.customer_count'))->toBe(1);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Export + Send Notices
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('exports the age analysis as CSV with the WeConnectU columns', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 500, 45);
+
+    $response = $this->actingAs($user, 'api')
+        ->get(route('api.v1.export.age.analysis', ['_format' => 'csv']))
+        ->assertOk();
+
+    $body = $response->streamedContent();
+    expect($body)->toContain('120+ Days')->toContain('Balance')->toContain('Customer');
+});
+
+it('send notices advances the collection status and logs a note for arrears customers', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit      = arrearsUnit($user->organization_id, $community, 500, 45); // status none
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.send.age.analysis.notices'))
         ->assertOk()
-        ->streamedContent();
+        ->assertJsonPath('sent', 1);
 
-    expect($content)->toContain('Current');
-    expect($content)->toContain('30 Days');
-    expect($content)->toContain('Total Outstanding');
+    expect($unit->fresh()->collection_status->value)->toBe('first_notice')
+        ->and(UnitCollectionNote::where('unit_id', $unit->id)->count())->toBe(1);
 });

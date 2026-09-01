@@ -26,7 +26,7 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->index(['organization_id', 'is_active'], 'risk_rules_tenant_active_idx');
+            $table->index(['organization_id', 'is_active'], 'risk_rules_organization_active_idx');
         });
     }
 

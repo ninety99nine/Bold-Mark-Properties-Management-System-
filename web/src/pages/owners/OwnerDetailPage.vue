@@ -184,9 +184,9 @@ const ownerUnits = computed(() => {
   return [{
     unitId:      u.id,
     unitNumber:  u.unit_number,
-    estateId:    u.estate_id,
-    estateName:  u.estate?.name ?? '',
-    monthlyLevy: u.levy_override ?? u.estate?.admin_fund_amount ?? null,
+    communityId:    u.community_id,
+    communityName:  u.community?.name ?? '',
+    monthlyLevy: u.levy_override ?? u.community?.admin_fund_amount ?? null,
     occupancy:   u.occupancy_type,
   }]
 })
@@ -205,7 +205,7 @@ function invoiceStatusBadge(status) {
 function occupancyBadge(occupancy) {
   const map = {
     owner_occupied:  { label: 'Owner Occupied',  wrapClass: 'bg-success/10 text-success border-success/20' },
-    tenant_occupied: { label: 'Tenant Occupied', wrapClass: 'bg-blue-50 text-blue-700 border-blue-200'     },
+    occupant_occupied: { label: 'Occupant Occupied', wrapClass: 'bg-blue-50 text-blue-700 border-blue-200'     },
     vacant:          { label: 'Vacant',          wrapClass: 'bg-muted text-muted-foreground border-border'  },
   }
   return map[occupancy] ?? map.vacant
@@ -272,12 +272,12 @@ function initials(name) {
 
 // ── Navigation ────────────────────────────────────────────────────────
 
-function goToEstate(estateId) {
-  router.push({ name: 'estate-detail', params: { id: estateId } })
+function goToCommunity(communityId) {
+  router.push({ name: 'community-detail', params: { id: communityId } })
 }
 
 function goToUnit(unit) {
-  router.push({ name: 'unit-detail', params: { estateId: unit.estateId, unitId: unit.unitId } })
+  router.push({ name: 'unit-detail', params: { communityId: unit.communityId, unitId: unit.unitId } })
 }
 
 function goToInvoice(invoiceId) {
@@ -326,7 +326,7 @@ async function savePayment() {
   paymentError2.value = null
   try {
     const fd = new FormData()
-    fd.append('estate_id',   owner.value?.unit?.estate_id ?? '')
+    fd.append('community_id',   owner.value?.unit?.community_id ?? '')
     fd.append('unit_id',     owner.value?.unit?.id ?? '')
     fd.append('type',        'credit')
     fd.append('date',        paymentForm.value.date)
@@ -372,11 +372,11 @@ function onTemplateChange() {
     },
     welcome: {
       subject: `Welcome — ${name}`,
-      body:    `Dear ${name},\n\nWelcome to the estate. We look forward to working with you and ensuring your property is well managed.\n\nKind regards,\nBold Mark Properties`,
+      body:    `Dear ${name},\n\nWelcome to the community. We look forward to working with you and ensuring your property is well managed.\n\nKind regards,\nBold Mark Properties`,
     },
     maintenance: {
       subject: 'Maintenance Notice',
-      body:    `Dear ${name},\n\nWe would like to inform you of upcoming maintenance work at the estate. Please contact us if you have any concerns.\n\nKind regards,\nBold Mark Properties`,
+      body:    `Dear ${name},\n\nWe would like to inform you of upcoming maintenance work at the community. Please contact us if you have any concerns.\n\nKind regards,\nBold Mark Properties`,
     },
     statement: {
       subject: `Monthly Statement — ${name}`,
@@ -505,13 +505,13 @@ async function saveEditOwner() {
         </div>
         <p class="text-sm text-muted-foreground">
           <button
-            v-if="owner.unit?.estate_id"
+            v-if="owner.unit?.community_id"
             class="hover:underline text-primary"
-            @click="goToEstate(owner.unit.estate_id)"
+            @click="goToCommunity(owner.unit.community_id)"
           >
-            {{ owner.unit?.estate?.name ?? '—' }}
+            {{ owner.unit?.community?.name ?? '—' }}
           </button>
-          <span v-else>{{ owner.unit?.estate?.name ?? '—' }}</span>
+          <span v-else>{{ owner.unit?.community?.name ?? '—' }}</span>
         </p>
       </div>
       <div class="flex gap-2">
@@ -707,7 +707,7 @@ async function saveEditOwner() {
                   @click="goToInvoice(inv.id)"
                 >
                   <td class="py-3 px-2 font-medium" :class="inv.status === 'overdue' ? 'text-danger' : 'text-foreground'">{{ inv.invoice_number }}</td>
-                  <td class="py-3 px-2 text-foreground">{{ inv.charge_type?.name ?? '—' }}</td>
+                  <td class="py-3 px-2 text-foreground">{{ inv.ledger?.name ?? '—' }}</td>
                   <td class="py-3 px-2 text-muted-foreground">{{ fmtPeriod(inv.billing_period) }}</td>
                   <td class="py-3 px-2 text-foreground">{{ owner.full_name }}</td>
                   <td class="py-3 px-2 text-right font-medium text-foreground whitespace-nowrap">{{ fmtAmount(inv.amount) }}</td>

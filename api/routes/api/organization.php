@@ -7,8 +7,8 @@ Route::prefix('organization')
     ->controller(OrganizationController::class)
     ->middleware(['auth:api'])
     ->group(function () {
-        Route::get('/', 'showCurrentTenant')->name('show.organization');
-        Route::put('/', 'updateCurrentTenant')->name('update.organization');
-        Route::delete('/flush', 'flushCurrentTenant')->name('flush.organization');
+        Route::get('/', 'showCurrentOrganization')->name('show.organization');
+        Route::put('/', 'updateCurrentOrganization')->name('update.organization');
+        Route::delete('/flush', 'flushCurrentOrganization')->name('flush.organization');
         Route::get('/flush/{jobId}/status', 'flushStatus')->name('flush.organization.status');
     });

@@ -8,7 +8,7 @@
     Payment Reminder
   </h1>
   <p style="margin:0 0 24px;font-size:14px;color:#717B99;">
-    {{ $invoice->chargeType->name }} · {{ $invoice->unit->estate->name }} · Unit {{ $invoice->unit->unit_number }}
+    {{ $invoice->ledger?->name ?? 'Customer Invoice' }} · {{ $invoice->unit->community->name }} · Unit {{ $invoice->unit->unit_number }}
   </p>
 
   <!-- Alert banner -->
@@ -88,7 +88,7 @@
           <tbody>
             <tr>
               <td style="padding:12px 20px;font-size:13px;color:#1E2740;border-top:1px solid #DCDEE8;">
-                <strong>{{ $invoice->chargeType->name }} — Unit {{ $invoice->unit->unit_number }}</strong><br>
+                <strong>{{ $invoice->ledger?->name ?? 'Customer Invoice' }} — Unit {{ $invoice->unit->unit_number }}</strong><br>
                 <span style="font-size:11px;color:#717B99;">{{ $invoice->billing_period->format('F Y') }}</span>
               </td>
               <td style="padding:12px 20px;font-size:13px;font-weight:700;color:#1E2740;text-align:right;border-top:1px solid #DCDEE8;white-space:nowrap;">

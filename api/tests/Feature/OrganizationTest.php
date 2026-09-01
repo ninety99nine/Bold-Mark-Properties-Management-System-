@@ -1,13 +1,13 @@
 <?php
 
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Organization;
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ Unauthenticated access                                                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('returns 401 on every authenticated tenant route when unauthenticated', function (string $method, string $route) {
+it('returns 401 on every authenticated organization route when unauthenticated', function (string $method, string $route) {
     $this->{$method . 'Json'}(route($route))->assertUnauthorized();
 })->with([
     ['get', 'api.v1.show.organization'],
@@ -15,10 +15,10 @@ it('returns 401 on every authenticated tenant route when unauthenticated', funct
 ]);
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ GET /v1/tenant  —  current tenant                                        ║
+// ║ GET /v1/organization  —  current organization                                        ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('returns the current tenant for the authenticated user', function () {
+it('returns the current organization for the authenticated user', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
@@ -27,7 +27,7 @@ it('returns the current tenant for the authenticated user', function () {
         ->assertJsonPath('data.id', $user->organization_id);
 });
 
-it('returns the full tenant payload structure', function () {
+it('returns the full organization payload structure', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
@@ -41,30 +41,30 @@ it('returns the full tenant payload structure', function () {
                 'country', 'currency',
                 'primary_color', 'secondary_color', 'copyright_name',
                 'is_active', 'created_at', 'updated_at',
-                'estates',
+                'communities',
             ],
         ]);
 });
 
-it('eager-loads the tenant\'s estates relationship on show', function () {
+it('eager-loads the organization\'s communities relationship on show', function () {
     $user = adminUser();
-    Estate::factory()->count(2)->create(['organization_id' => $user->organization_id]);
-    Estate::factory()->create(['organization_id' => createTenant()->id]); // foreign — must NOT appear
+    Community::factory()->count(2)->create(['organization_id' => $user->organization_id]);
+    Community::factory()->create(['organization_id' => createOrganization()->id]); // foreign — must NOT appear
 
-    $estates = $this->actingAs($user, 'api')
+    $communities = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.organization'))
         ->assertOk()
-        ->json('data.estates');
+        ->json('data.communities');
 
-    expect($estates)->toBeArray()->toHaveCount(2);
-    foreach ($estates as $e) {
+    expect($communities)->toBeArray()->toHaveCount(2);
+    foreach ($communities as $e) {
         expect($e['organization_id'])->toBe($user->organization_id);
     }
 });
 
 it('does not expose credentials on the show payload (sensitive)', function () {
     $user = adminUser();
-    // Stamp credentials on the tenant so we can prove the resource doesn't leak them.
+    // Stamp credentials on the organization so we can prove the resource doesn't leak them.
     $user->organization->update(['credentials' => ['stripe_secret' => 'sk_live_should_not_leak']]);
 
     $row = $this->actingAs($user, 'api')
@@ -75,7 +75,7 @@ it('does not expose credentials on the show payload (sensitive)', function () {
     expect($row)->not->toHaveKey('credentials');
 });
 
-it('each user only sees their own tenant', function () {
+it('each user only sees their own organization', function () {
     $userA = adminUser();
     $userB = adminUser();
 
@@ -88,7 +88,7 @@ it('each user only sees their own tenant', function () {
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ PUT /v1/tenant  —  update current tenant                                 ║
+// ║ PUT /v1/organization  —  update current organization                                 ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ it('accepts secondary_color #D89B4B', function () {
 // Successful update + side effects
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('updates tenant company settings and returns the updated resource + message', function () {
+it('updates organization company settings and returns the updated resource + message', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
@@ -355,12 +355,12 @@ it('preserves existing values when nullable fields are explicitly nulled', funct
 
 it('does not let the client change `name`, `slug`, `logo_url` or `is_active` via update', function () {
     $user = adminUser();
-    $tenant = $user->organization;
+    $organization = $user->organization;
     $originals = [
-        'name'      => $tenant->name,
-        'slug'      => $tenant->slug,
-        'logo_url'  => $tenant->logo_url,
-        'is_active' => $tenant->is_active,
+        'name'      => $organization->name,
+        'slug'      => $organization->slug,
+        'logo_url'  => $organization->logo_url,
+        'is_active' => $organization->is_active,
     ];
 
     $this->actingAs($user, 'api')
@@ -374,7 +374,7 @@ it('does not let the client change `name`, `slug`, `logo_url` or `is_active` via
         ])
         ->assertOk();
 
-    $fresh = $tenant->fresh();
+    $fresh = $organization->fresh();
     expect($fresh->name)->toBe($originals['name']);
     expect($fresh->slug)->toBe($originals['slug']);
     expect($fresh->logo_url)->toBe($originals['logo_url']);
@@ -429,7 +429,7 @@ it('does NOT require authentication', function () {
 // Resolution by subdomain
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns the platform default branding when no subdomain matches an active tenant', function () {
+it('returns the platform default branding when no subdomain matches an active organization', function () {
     $body = $this->getJson(route('api.v1.branding'))
         ->assertOk()
         ->assertJsonStructure([
@@ -443,8 +443,8 @@ it('returns the platform default branding when no subdomain matches an active te
     expect($body['data']['credentials'])->toBe([]);
 });
 
-it('returns the matching tenant\'s branding when the subdomain resolves to an active tenant', function () {
-    $tenant = Organization::factory()->create([
+it('returns the matching organization\'s branding when the subdomain resolves to an active organization', function () {
+    $organization = Organization::factory()->create([
         'name'           => 'Bold Mark',
         'slug'           => 'boldmark',
         'is_active'      => true,
@@ -463,7 +463,7 @@ it('returns the matching tenant\'s branding when the subdomain resolves to an ac
     expect($body['data']['copyright_name'])->toBe('Bold Mark (Pty) Ltd');
 });
 
-it('falls back to the platform default when the subdomain matches an INACTIVE tenant', function () {
+it('falls back to the platform default when the subdomain matches an INACTIVE organization', function () {
     Organization::factory()->create([
         'slug'      => 'sleepy',
         'is_active' => false,
@@ -476,7 +476,7 @@ it('falls back to the platform default when the subdomain matches an INACTIVE te
     expect($body['data']['name'])->toBe('Property Management Platform');
 });
 
-it('does not leak the tenant slug, contact_email or other internal fields via /branding', function () {
+it('does not leak the organization slug, contact_email or other internal fields via /branding', function () {
     Organization::factory()->create([
         'slug'          => 'leaky',
         'is_active'     => true,
@@ -494,7 +494,7 @@ it('does not leak the tenant slug, contact_email or other internal fields via /b
     expect($row)->not->toHaveKey('address');
 });
 
-it('returns the tenant\'s credentials array if set (so the frontend can render integration toggles)', function () {
+it('returns the organization\'s credentials array if set (so the frontend can render integration toggles)', function () {
     Organization::factory()->create([
         'slug'        => 'creds',
         'is_active'   => true,
@@ -509,8 +509,8 @@ it('returns the tenant\'s credentials array if set (so the frontend can render i
 });
 
 it('CHARACTERIZATION: organizations table has no `accent_color` column, so /branding returns null for resolved organizations', function () {
-    // The fallback hard-codes accent_color = '#D89B4B', but a resolved tenant
-    // exposes $tenant->accent_color which doesn't exist on the model — null.
+    // The fallback hard-codes accent_color = '#D89B4B', but a resolved organization
+    // exposes $organization->accent_color which doesn't exist on the model — null.
     // Worth either renaming the controller to use secondary_color or adding
     // an accent_color column. For now, characterize current behavior.
     Organization::factory()->create([

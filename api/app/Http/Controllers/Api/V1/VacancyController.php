@@ -16,7 +16,7 @@ class VacancyController extends Controller
     }
 
     /**
-     * Return a paginated list of vacant units across all estates,
+     * Return a paginated list of vacant units across all communities,
      * plus summary stats for the vacancies page.
      */
     public function index(Request $request): array

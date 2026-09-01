@@ -5,7 +5,7 @@ namespace App\Enums;
 enum BilledToType: string
 {
     case OWNER  = 'owner';
-    case TENANT = 'organization';
+    case OCCUPANT = 'occupant';
 
     /**
      * Return all enum values as a plain array (used in migrations).

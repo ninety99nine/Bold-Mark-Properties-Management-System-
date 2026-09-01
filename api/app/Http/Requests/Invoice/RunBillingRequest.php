@@ -23,7 +23,7 @@ class RunBillingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'estate_id'      => ['required', 'uuid', 'exists:estates,id'],
+            'community_id'      => ['required', 'uuid', 'exists:communities,id'],
             'billing_period' => ['required', 'date_format:Y-m'],
             'dry_run'        => ['sometimes', 'boolean'],
         ];
@@ -37,9 +37,9 @@ class RunBillingRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'estate_id.required'         => 'The estate is required.',
-            'estate_id.uuid'             => 'The estate ID must be a valid UUID.',
-            'estate_id.exists'           => 'The selected estate does not exist.',
+            'community_id.required'         => 'The community is required.',
+            'community_id.uuid'             => 'The community ID must be a valid UUID.',
+            'community_id.exists'           => 'The selected community does not exist.',
             'billing_period.required'    => 'The billing period is required.',
             'billing_period.date_format' => 'The billing period must be in Y-m format (e.g. 2026-04).',
             'dry_run.boolean'            => 'The dry run flag must be true or false.',

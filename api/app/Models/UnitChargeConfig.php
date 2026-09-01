@@ -30,7 +30,7 @@ class UnitChargeConfig extends Model
         'amount',
         'is_active',
         'unit_id',
-        'charge_type_id',
+        'ledger_id',
     ];
 
     /**
@@ -44,12 +44,12 @@ class UnitChargeConfig extends Model
     }
 
     /**
-     * Get the charge type for this config.
+     * Get the ledger for this config.
      *
      * @return BelongsTo
      */
-    public function chargeType(): BelongsTo
+    public function ledger(): BelongsTo
     {
-        return $this->belongsTo(ChargeType::class);
+        return $this->belongsTo(Ledger::class);
     }
 }

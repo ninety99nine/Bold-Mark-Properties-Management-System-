@@ -27,26 +27,26 @@ return new class extends Migration
             // after the table exists, because PostgreSQL cannot verify the constraint inline.
             $table->uuid('parent_entry_id')->nullable();
 
-            $table->foreignUuid('estate_id')->constrained('estates')->cascadeOnDelete();
+            $table->foreignUuid('community_id')->constrained('communities')->cascadeOnDelete();
             $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
-            $table->foreignUuid('charge_type_id')->nullable()->constrained('charge_types')->nullOnDelete();
+            $table->foreignUuid('ledger_id')->nullable()->constrained('ledgers')->nullOnDelete();
             $table->foreignUuid('unit_id')->nullable()->constrained('units')->nullOnDelete();
             $table->foreignUuid('invoice_id')->nullable()->constrained('invoices')->nullOnDelete();
 
             $table->timestamps();
 
-            $table->index('estate_id');
+            $table->index('community_id');
             $table->index('organization_id');
             $table->index('date');
             $table->index('type');
             $table->index('unit_id');
             $table->index('invoice_id');
-            $table->index('charge_type_id');
+            $table->index('ledger_id');
             $table->index('parent_entry_id');
-            $table->index(['estate_id', 'date']);
+            $table->index(['community_id', 'date']);
             $table->index(['unit_id', 'invoice_id']);
             $table->index(['organization_id', 'type']);
-            $table->index(['estate_id', 'type', 'date']);
+            $table->index(['community_id', 'type', 'date']);
         });
 
         // Add the self-referential FK after the table is fully created.

@@ -16,7 +16,7 @@ class ComplianceChecklistResource extends JsonResource
         return [
             'id'                    => $this->id,
             'organization_id'             => $this->organization_id,
-            'estate_id'             => $this->estate_id,
+            'community_id'             => $this->community_id,
             'financial_year_label'  => $this->financial_year_label,
             'financial_year_start'  => $this->financial_year_start?->toDateString(),
             'financial_year_end'    => $this->financial_year_end?->toDateString(),
@@ -33,7 +33,7 @@ class ComplianceChecklistResource extends JsonResource
             'status_summary'        => $this->when(isset($this->status_summary), $this->status_summary),
 
             // Relations (when loaded)
-            'estate'                => new EstateResource($this->whenLoaded('estate')),
+            'community'                => new CommunityResource($this->whenLoaded('community')),
             'created_by'            => new UserResource($this->whenLoaded('createdBy')),
             'items'                 => ComplianceChecklistItemResource::collection($this->whenLoaded('items')),
 

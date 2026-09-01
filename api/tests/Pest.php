@@ -89,17 +89,17 @@ expect()->extend('toBeOne', function () {
 /**
  * Create a fresh Organization record.
  */
-function createTenant(): \App\Models\Organization
+function createOrganization(): \App\Models\Organization
 {
     return \App\Models\Organization::factory()->create();
 }
 
 /**
- * Create a User belonging to the given tenant, assigned the given Spatie role.
+ * Create a User belonging to the given organization, assigned the given Spatie role.
  */
-function createUser(\App\Models\Organization $tenant, string $role = 'company-admin'): \App\Models\User
+function createUser(\App\Models\Organization $organization, string $role = 'company-admin'): \App\Models\User
 {
-    $user = \App\Models\User::factory()->create(['organization_id' => $tenant->id]);
+    $user = \App\Models\User::factory()->create(['organization_id' => $organization->id]);
 
     $roleModel = \Spatie\Permission\Models\Role::firstOrCreate(
         ['name' => $role, 'guard_name' => 'web']
@@ -111,26 +111,26 @@ function createUser(\App\Models\Organization $tenant, string $role = 'company-ad
 }
 
 /**
- * Shorthand: new tenant + company-admin user.
+ * Shorthand: new organization + company-admin user.
  */
 function adminUser(): \App\Models\User
 {
-    return createUser(createTenant(), 'company-admin');
+    return createUser(createOrganization(), 'company-admin');
 }
 
 /**
- * Shorthand: new tenant + super-admin user.
+ * Shorthand: new organization + super-admin user.
  */
 function superAdminUser(): \App\Models\User
 {
-    return createUser(createTenant(), 'super-admin');
+    return createUser(createOrganization(), 'super-admin');
 }
 
 /**
- * Create a company-admin user belonging to a *different* tenant.
+ * Create a company-admin user belonging to a *different* organization.
  * Used for multi-tenancy isolation tests.
  */
-function otherTenantUser(): \App\Models\User
+function otherOrganizationUser(): \App\Models\User
 {
-    return createUser(createTenant(), 'company-admin');
+    return createUser(createOrganization(), 'company-admin');
 }

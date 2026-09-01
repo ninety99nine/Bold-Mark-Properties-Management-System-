@@ -22,11 +22,11 @@ class LoginLogController extends Controller
 
     public function showAllLoginLogs(Request $request): JsonResponse
     {
-        $tenantUserIds = User::where('organization_id', Auth::user()->organization_id)
+        $occupantUserIds = User::where('organization_id', Auth::user()->organization_id)
             ->pluck('id');
 
         $query = UserLoginLog::with('user:id,name,email')
-            ->whereIn('user_id', $tenantUserIds)
+            ->whereIn('user_id', $occupantUserIds)
             ->orderByDesc('created_at');
 
         if ($request->filled('email')) {

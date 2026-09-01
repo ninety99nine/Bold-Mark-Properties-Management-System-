@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\InvoiceStatus;
 use App\Jobs\SendPaymentReminderEmail;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Invoice;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -15,15 +15,15 @@ class SendPaymentReminders extends Command
 {
     protected $signature = 'billing:send-payment-reminders
                             {--dry-run : Preview reminders that would be sent without dispatching}
-                            {--estate= : Run for a specific estate ID only}';
+                            {--community= : Run for a specific community ID only}';
 
-    protected $description = 'Send payment reminders for unpaid invoices past their due date, per each estate\'s reminder settings.';
+    protected $description = 'Send payment reminders for unpaid invoices past their due date, per each community\'s reminder settings.';
 
     public function handle(): int
     {
         $today    = Carbon::today(config('app.timezone', 'Africa/Johannesburg'));
         $isDryRun = (bool) $this->option('dry-run');
-        $onlyId   = $this->option('estate');
+        $onlyId   = $this->option('community');
 
         $this->info(sprintf(
             '[billing:send-payment-reminders] %s%s',
@@ -31,8 +31,8 @@ class SendPaymentReminders extends Command
             $isDryRun ? ' [DRY RUN]' : ''
         ));
 
-        // Only estates with a configured reminder threshold and billing active.
-        $query = Estate::active()
+        // Only communities with a configured reminder threshold and billing active.
+        $query = Community::active()
             ->where('billing_paused', false)
             ->whereNotNull('payment_reminder_days');
 
@@ -40,25 +40,25 @@ class SendPaymentReminders extends Command
             $query->where('id', $onlyId);
         }
 
-        $estates = $query->get();
+        $communities = $query->get();
 
-        if ($estates->isEmpty()) {
-            $this->info('No estates have payment reminders configured.');
+        if ($communities->isEmpty()) {
+            $this->info('No communities have payment reminders configured.');
             return self::SUCCESS;
         }
 
         $totalReminders = 0;
         $errors         = 0;
 
-        foreach ($estates as $estate) {
+        foreach ($communities as $community) {
             try {
-                $sent = $this->processEstate($estate, $today, $isDryRun);
+                $sent = $this->processCommunity($community, $today, $isDryRun);
                 $totalReminders += $sent;
             } catch (Throwable $e) {
                 $errors++;
-                $this->error("  ✗ [{$estate->name}] {$e->getMessage()}");
-                Log::error("billing:send-payment-reminders estate={$estate->id} error={$e->getMessage()}", [
-                    'estate_id' => $estate->id,
+                $this->error("  ✗ [{$community->name}] {$e->getMessage()}");
+                Log::error("billing:send-payment-reminders community={$community->id} error={$e->getMessage()}", [
+                    'community_id' => $community->id,
                     'exception' => $e,
                 ]);
             }
@@ -70,7 +70,7 @@ class SendPaymentReminders extends Command
         Log::info('billing:send-payment-reminders completed', [
             'date'             => $today->toDateString(),
             'dry_run'          => $isDryRun,
-            'estates'          => $estates->count(),
+            'communities'          => $communities->count(),
             'reminders_queued' => $totalReminders,
             'errors'           => $errors,
         ]);
@@ -78,18 +78,18 @@ class SendPaymentReminders extends Command
         return $errors > 0 ? self::FAILURE : self::SUCCESS;
     }
 
-    private function processEstate(Estate $estate, Carbon $today, bool $isDryRun): int
+    private function processCommunity(Community $community, Carbon $today, bool $isDryRun): int
     {
         // Threshold date: invoices due on or before this date are eligible.
-        $thresholdDate = $today->copy()->subDays($estate->payment_reminder_days);
+        $thresholdDate = $today->copy()->subDays($community->payment_reminder_days);
 
-        // Find unpaid invoices for this estate:
+        // Find unpaid invoices for this community:
         //   - due date <= threshold (i.e. overdue by at least payment_reminder_days)
         //   - no reminder sent yet
         //   - not paid / cancelled
         $invoices = Invoice::whereHas(
             'unit',
-            fn ($q) => $q->where('estate_id', $estate->id)
+            fn ($q) => $q->where('community_id', $community->id)
         )
         ->whereIn('status', [
             InvoiceStatus::UNPAID,
@@ -101,11 +101,11 @@ class SendPaymentReminders extends Command
         ->get();
 
         if ($invoices->isEmpty()) {
-            $this->line("  → [{$estate->name}] no invoices due for reminders");
+            $this->line("  → [{$community->name}] no invoices due for reminders");
             return 0;
         }
 
-        $this->line("  → [{$estate->name}] {$invoices->count()} reminder(s) to send (>{$estate->payment_reminder_days} days overdue)");
+        $this->line("  → [{$community->name}] {$invoices->count()} reminder(s) to send (>{$community->payment_reminder_days} days overdue)");
 
         if ($isDryRun) {
             foreach ($invoices as $invoice) {

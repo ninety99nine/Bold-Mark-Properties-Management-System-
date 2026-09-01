@@ -16,12 +16,12 @@ class AgeAnalysisController extends Controller
     }
 
     /**
-     * Return the age analysis report for the authenticated tenant.
+     * Return the age analysis report for the authenticated occupant.
      *
      * Query parameters (all optional):
-     *   - estate_id:       Filter to a specific estate
-     *   - charge_type_id:  Filter to a specific charge type
-     *   - billed_to_type:  Filter to 'owner' or 'organization'
+     *   - community_id:       Filter to a specific community
+     *   - ledger_id:  Filter to a specific ledger
+     *   - billed_to_type:  Filter to 'owner' or 'occupant'
      *
      * @param Request $request
      * @return array
@@ -40,5 +40,17 @@ class AgeAnalysisController extends Controller
     public function exportAgeAnalysis(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         return $this->service->exportAgeAnalysis($request->all());
+    }
+
+    /**
+     * Bulk "Send Notices": advance the collection status of arrears customers
+     * in scope and log a note. Honours the same filters as the report.
+     *
+     * @param Request $request
+     * @return array
+     */
+    public function sendNotices(Request $request): array
+    {
+        return $this->service->sendNotices($request->all());
     }
 }

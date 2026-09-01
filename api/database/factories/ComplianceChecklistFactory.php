@@ -20,7 +20,7 @@ class ComplianceChecklistFactory extends Factory
 
         return [
             'organization_id'      => null,
-            'estate_id'            => null,
+            'community_id'            => null,
             'created_by_id'        => null,
             'financial_year_label' => $year . '/' . ($year + 1),
             'financial_year_start' => $start,

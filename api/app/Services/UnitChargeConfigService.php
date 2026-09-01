@@ -11,7 +11,7 @@ use App\Http\Resources\UnitChargeConfigResources;
 
 class UnitChargeConfigService extends BaseService
 {
-    protected array $allowedRelationships = ['unit', 'chargeType'];
+    protected array $allowedRelationships = ['unit', 'ledger'];
 
     /**
      * Return a paginated list of charge configurations for the given unit.
@@ -23,7 +23,7 @@ class UnitChargeConfigService extends BaseService
     public function showUnitChargeConfigs(Unit $unit, array $data): UnitChargeConfigResources
     {
         $query = UnitChargeConfig::where('unit_id', $unit->id)
-            ->with('chargeType');
+            ->with('ledger');
 
         if (isset($data['is_active'])) {
             $isActive = $data['is_active'] === 'true' || $data['is_active'] === true || $data['is_active'] === 1;
@@ -47,7 +47,7 @@ class UnitChargeConfigService extends BaseService
     public function createUnitChargeConfig(Unit $unit, array $data): array
     {
         $configData = collect($data)
-            ->only(['charge_type_id', 'amount', 'is_active'])
+            ->only(['ledger_id', 'amount', 'is_active'])
             ->toArray();
 
         $config = UnitChargeConfig::create(array_merge($configData, [

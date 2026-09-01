@@ -22,7 +22,7 @@ const ROLE_DISPLAY = {
   'portfolio-assistant':  'Portfolio Assistant',
   'trustee':              'Trustee / Director',
   'owner':                'Owner',
-  'tenant':               'Tenant',
+  'occupant':               'Occupant',
   'contractor':           'Contractor',
 }
 
@@ -33,7 +33,7 @@ const ALL_ROLE_OPTS = [
   { value: 'portfolio-assistant',  label: 'Portfolio Assistant' },
   { value: 'trustee',              label: 'Trustee / Director' },
   { value: 'owner',                label: 'Owner' },
-  { value: 'tenant',               label: 'Tenant' },
+  { value: 'occupant',               label: 'Occupant' },
   { value: 'contractor',           label: 'Contractor' },
 ]
 
@@ -83,7 +83,7 @@ const ROLE_BADGE_STYLES = {
   'portfolio-assistant':  'bg-purple-50 text-purple-700 border-purple-200',
   'trustee':              'bg-amber-50 text-amber-700 border-amber-200',
   'owner':                'bg-teal-50 text-teal-700 border-teal-200',
-  'tenant':               'bg-sky-50 text-sky-700 border-sky-200',
+  'occupant':               'bg-sky-50 text-sky-700 border-sky-200',
   'contractor':           'bg-orange-50 text-orange-700 border-orange-200',
 }
 const roleBadgeClass = computed(() => ROLE_BADGE_STYLES[roleSlug.value] ?? 'bg-muted text-muted-foreground border-border')

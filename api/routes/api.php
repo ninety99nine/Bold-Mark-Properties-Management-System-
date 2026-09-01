@@ -24,7 +24,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     // Resend webhook — public (no auth, Resend POSTs here for delivery/open tracking)
     Route::post('/webhooks/resend', [\App\Http\Controllers\Api\V1\ResendWebhookController::class, 'handle'])->name('webhooks.resend');
 
-    // Public — tenant branding (resolved by subdomain, no auth required)
+    // Public — occupant branding (resolved by subdomain, no auth required)
     Route::get('/branding', [\App\Http\Controllers\Api\V1\BrandingController::class, 'show'])->name('branding');
 
     // Auth routes (unauthenticated)

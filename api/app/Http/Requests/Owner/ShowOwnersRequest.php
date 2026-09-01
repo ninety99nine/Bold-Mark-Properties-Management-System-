@@ -15,7 +15,7 @@ class ShowOwnersRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'estate_id' => ['nullable', 'uuid'],
+            'community_id' => ['nullable', 'uuid'],
         ];
     }
 }

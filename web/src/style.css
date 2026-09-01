@@ -124,3 +124,19 @@ summary {
 .page-leave-to {
   opacity: 0;
 }
+
+/* ── Noticeable text links (used in modals & panels) ──────────────── */
+.app-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-weight: 600;
+  color: #C6862B;                 /* darkened brand amber for contrast on white */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 2px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.app-link:hover { color: #A66E1E; }
+.app-link:disabled { opacity: 0.5; cursor: default; }

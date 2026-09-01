@@ -422,7 +422,7 @@ function deleteItem(item) {
 function deleteChecklist() {
   showConfirm({
     title: 'Delete Compliance Checklist',
-    body: `This will permanently delete the FY ${checklist.value.financial_year_label} checklist for ${checklist.value.estate?.name} and all its items. This cannot be undone.`,
+    body: `This will permanently delete the FY ${checklist.value.financial_year_label} checklist for ${checklist.value.community?.name} and all its items. This cannot be undone.`,
     confirmLabel: 'Delete Checklist',
     onConfirm: async () => {
       await api.delete(`/compliance/checklists/${checklist.value.id}`)
@@ -540,7 +540,7 @@ async function scrollToItem(item) {
             </svg>
             <span class="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Checklist</span>
           </div>
-          <h1 class="font-body font-bold text-2xl text-foreground leading-tight">{{ checklist.estate?.name }}</h1>
+          <h1 class="font-body font-bold text-2xl text-foreground leading-tight">{{ checklist.community?.name }}</h1>
           <p class="text-sm text-muted-foreground mt-0.5">
             FY {{ checklist.financial_year_label }}
             <span class="mx-1.5 opacity-40">&middot;</span>

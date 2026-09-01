@@ -6,19 +6,19 @@ use App\Models\CashbookEntry;
 use App\Models\ComplianceChecklist;
 use App\Models\ComplianceChecklistItem;
 use App\Models\ComplianceItemAttachment;
-use App\Models\Estate;
-use App\Models\EstateChargeType;
+use App\Models\Community;
+use App\Models\CommunityLedger;
 use App\Models\FlushJob;
 use App\Models\Invoice;
 use App\Models\InvoiceEmailEvent;
 use App\Models\Owner;
 use App\Models\TableView;
-use App\Models\Tenant;
+use App\Models\Occupant;
 use App\Models\Unit;
 use App\Models\UnitActivity;
 use App\Models\UnitChargeConfig;
 use App\Models\User;
-use App\Models\UserEstate;
+use App\Models\UserCommunity;
 use App\Models\UserLoginLog;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -32,9 +32,9 @@ class FlushOrganizationJob implements ShouldQueue
     private const STEP_ORDER = [
         'invoices'         => 'Invoices',
         'cashbook_entries' => 'Cashbook Entries',
-        'tenants'          => 'Tenants',
+        'occupants'          => 'Occupants',
         'owners'           => 'Owners',
-        'estates'          => 'Estates & Compliance',
+        'communities'          => 'Communities & Compliance',
         'units'            => 'Units',
         'users'            => 'Users',
     ];
@@ -97,9 +97,9 @@ class FlushOrganizationJob implements ShouldQueue
         return match ($target) {
             'invoices' => $this->deleteInvoices($orgId),
             'cashbook_entries' => CashbookEntry::where('organization_id', $orgId)->delete(),
-            'tenants' => Tenant::where('organization_id', $orgId)->delete(),
+            'occupants' => Occupant::where('organization_id', $orgId)->delete(),
             'owners' => Owner::where('organization_id', $orgId)->delete(),
-            'estates' => $this->deleteEstates($orgId),
+            'communities' => $this->deleteCommunities($orgId),
             'units' => $this->deleteUnits($orgId),
             'users' => $this->deleteUsers($orgId),
             default => 0,
@@ -113,11 +113,11 @@ class FlushOrganizationJob implements ShouldQueue
         return Invoice::where('organization_id', $orgId)->delete();
     }
 
-    private function deleteEstates(string $orgId): int
+    private function deleteCommunities(string $orgId): int
     {
-        $estateIds    = Estate::where('organization_id', $orgId)->pluck('id');
-        $unitIds      = Unit::where('organization_id', $orgId)->whereIn('estate_id', $estateIds)->pluck('id');
-        $checklistIds = ComplianceChecklist::where('organization_id', $orgId)->whereIn('estate_id', $estateIds)->pluck('id');
+        $communityIds    = Community::where('organization_id', $orgId)->pluck('id');
+        $unitIds      = Unit::where('organization_id', $orgId)->whereIn('community_id', $communityIds)->pluck('id');
+        $checklistIds = ComplianceChecklist::where('organization_id', $orgId)->whereIn('community_id', $communityIds)->pluck('id');
         $itemIds      = ComplianceChecklistItem::whereIn('compliance_checklist_id', $checklistIds)->pluck('id');
 
         ComplianceItemAttachment::whereIn('compliance_checklist_item_id', $itemIds)->delete();
@@ -126,9 +126,9 @@ class FlushOrganizationJob implements ShouldQueue
         UnitChargeConfig::whereIn('unit_id', $unitIds)->delete();
         UnitActivity::whereIn('unit_id', $unitIds)->delete();
         Unit::whereIn('id', $unitIds)->delete();
-        EstateChargeType::whereIn('estate_id', $estateIds)->delete();
+        CommunityLedger::whereIn('community_id', $communityIds)->delete();
 
-        return Estate::whereIn('id', $estateIds)->delete();
+        return Community::whereIn('id', $communityIds)->delete();
     }
 
     private function deleteUnits(string $orgId): int
@@ -146,7 +146,7 @@ class FlushOrganizationJob implements ShouldQueue
             ->pluck('id');
 
         UserLoginLog::whereIn('user_id', $userIds)->delete();
-        UserEstate::whereIn('user_id', $userIds)->delete();
+        UserCommunity::whereIn('user_id', $userIds)->delete();
         TableView::whereIn('user_id', $userIds)->delete();
 
         return User::whereIn('id', $userIds)->delete();

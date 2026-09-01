@@ -25,7 +25,7 @@ class CreateCashbookEntryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'estate_id'   => ['required', 'uuid', 'exists:estates,id'],
+            'community_id'   => ['required', 'uuid', 'exists:communities,id'],
             'date'        => ['required', 'date'],
             'type'        => ['required', Rule::in(CashbookEntryType::values())],
             'description' => ['required', 'string', 'max:500'],
@@ -45,9 +45,9 @@ class CreateCashbookEntryRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'estate_id.required'   => 'The estate is required.',
-            'estate_id.uuid'       => 'The estate ID must be a valid UUID.',
-            'estate_id.exists'     => 'The selected estate does not exist.',
+            'community_id.required'   => 'The community is required.',
+            'community_id.uuid'       => 'The community ID must be a valid UUID.',
+            'community_id.exists'     => 'The selected community does not exist.',
             'date.required'        => 'The transaction date is required.',
             'date.date'            => 'The transaction date must be a valid date.',
             'type.required'        => 'The entry type is required.',

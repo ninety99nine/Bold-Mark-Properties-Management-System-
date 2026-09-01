@@ -91,7 +91,7 @@ class ComplianceChecklistItem extends Model
     }
 
     /**
-     * Get the tenant (organisation).
+     * Get the occupant (organisation).
      */
     public function organization(): BelongsTo
     {

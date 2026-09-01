@@ -12,20 +12,20 @@ const { success } = useToast()
 
 const props = defineProps({
   show: Boolean,
-  estateId: { type: String, default: null },
-  estateName: { type: String, default: '' },
+  communityId: { type: String, default: null },
+  communityName: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'created'])
 
 // ── State ────────────────────────────────────────────────────────────
 const saving = ref(false)
-const estates = ref([])
+const communities = ref([])
 const templates = ref([])
 const errors = ref({})
 const generalError = ref('')
 
 const form = ref({
-  estate_id: '',
+  community_id: '',
   template_id: null,
   financial_year_label: '',
   financial_year_start: '',
@@ -34,8 +34,8 @@ const form = ref({
 })
 
 // ── Computed ─────────────────────────────────────────────────────────
-const estateOptions = computed(() =>
-  estates.value.map(e => ({ value: e.id, label: e.name }))
+const communityOptions = computed(() =>
+  communities.value.map(e => ({ value: e.id, label: e.name }))
 )
 
 const templateOptions = computed(() => [
@@ -62,10 +62,10 @@ function applyPreset(preset) {
 }
 
 // ── Fetch ────────────────────────────────────────────────────────────
-async function fetchEstates() {
+async function fetchCommunities() {
   try {
-    const { data } = await api.get('/estates', { params: { _per_page: 100, is_active: true } })
-    estates.value = data.data || []
+    const { data } = await api.get('/communities', { params: { _per_page: 100, is_active: true } })
+    communities.value = data.data || []
   } catch { /* silent */ }
 }
 
@@ -77,14 +77,14 @@ async function fetchTemplates() {
 }
 
 onMounted(() => {
-  fetchEstates()
+  fetchCommunities()
   fetchTemplates()
 })
 
 watch(() => props.show, (val) => {
   if (val) {
     form.value = {
-      estate_id: props.estateId || '',
+      community_id: props.communityId || '',
       template_id: null,
       financial_year_label: '',
       financial_year_start: '',
@@ -135,20 +135,20 @@ async function submit() {
         {{ generalError }}
       </div>
 
-      <!-- Estate select (hidden if pre-set) -->
-      <div v-if="!estateId">
+      <!-- Community select (hidden if pre-set) -->
+      <div v-if="!communityId">
         <AppSelect
-          v-model="form.estate_id"
-          label="Estate"
-          :options="estateOptions"
-          placeholder="Select estate..."
-          :error="errors.estate_id?.[0]"
+          v-model="form.community_id"
+          label="Community"
+          :options="communityOptions"
+          placeholder="Select community..."
+          :error="errors.community_id?.[0]"
           required
         />
       </div>
       <div v-else class="text-sm">
-        <span class="text-muted-foreground">Estate:</span>
-        <span class="font-semibold text-foreground ml-1">{{ estateName }}</span>
+        <span class="text-muted-foreground">Community:</span>
+        <span class="font-semibold text-foreground ml-1">{{ communityName }}</span>
       </div>
 
       <!-- Financial year presets -->

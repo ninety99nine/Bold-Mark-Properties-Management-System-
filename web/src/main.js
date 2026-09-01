@@ -11,7 +11,7 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
-// Fetch tenant branding on boot (non-blocking — falls back to defaults on error)
+// Fetch occupant branding on boot (non-blocking — falls back to defaults on error)
 useOrganizationStore().fetchBranding()
 
 app.mount('#app')

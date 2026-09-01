@@ -6,47 +6,47 @@ use App\Models\CashbookEntry;
 use App\Models\ComplianceChecklist;
 use App\Models\ComplianceChecklistItem;
 use App\Models\ComplianceItemAttachment;
-use App\Models\Estate;
-use App\Models\EstateChargeType;
+use App\Models\Community;
+use App\Models\CommunityLedger;
 use App\Models\Invoice;
 use App\Models\InvoiceEmailEvent;
 use App\Models\Organization;
 use App\Models\Owner;
-use App\Models\Tenant;
+use App\Models\Occupant;
 use App\Models\Unit;
 use App\Models\UnitActivity;
 use App\Models\UnitChargeConfig;
 use App\Models\User;
-use App\Models\UserEstate;
+use App\Models\UserCommunity;
 use App\Models\UserLoginLog;
 use App\Models\TableView;
 use App\Http\Resources\OrganizationResource;
-use App\Http\Resources\TenantResources;
+use App\Http\Resources\OccupantResources;
 use Illuminate\Support\Facades\DB;
 
 class OrganizationService extends BaseService
 {
     /**
-     * Return a single tenant resource with its estates loaded.
+     * Return a single organization resource with its communities loaded.
      *
-     * @param Organization $tenant
+     * @param Organization $organization
      * @return OrganizationResource
      */
-    public function showTenant(Organization $tenant): OrganizationResource
+    public function showOrganization(Organization $organization): OrganizationResource
     {
-        $tenant->load(['estates']);
+        $organization->load(['communities']);
 
-        return $this->showResource($tenant);
+        return $this->showResource($organization);
     }
 
     /**
-     * Update the tenant's company settings and branding.
+     * Update the organization's company settings and branding.
      *
-     * @param Organization $tenant
+     * @param Organization $organization
      * @param array  $data
      * @return array
      */
-    public function updateTenant(Organization $tenant, array $data): array
+    public function updateOrganization(Organization $organization, array $data): array
     {
         $updateData = collect($data)
             ->only([
@@ -64,22 +64,22 @@ class OrganizationService extends BaseService
             ->filter(fn($v) => !is_null($v))
             ->toArray();
 
-        $tenant->update($updateData);
+        $organization->update($updateData);
 
-        return $this->showUpdatedResource($tenant);
+        return $this->showUpdatedResource($organization);
     }
 
     /**
-     * Flush selected data categories from the tenant in FK-safe order.
+     * Flush selected data categories from the organization in FK-safe order.
      *
-     * @param Organization $tenant
-     * @param array        $targets       Categories to delete (e.g. ['estates', 'invoices'])
+     * @param Organization $organization
+     * @param array        $targets       Categories to delete (e.g. ['communities', 'invoices'])
      * @param array        $keepUserIds   User IDs to preserve when 'users' is a target
      * @return array
      */
-    public function flushTenant(Organization $tenant, array $targets, array $keepUserIds = []): array
+    public function flushOrganization(Organization $organization, array $targets, array $keepUserIds = []): array
     {
-        $orgId  = $tenant->id;
+        $orgId  = $organization->id;
         $counts = [];
 
         DB::transaction(function () use ($orgId, $targets, $keepUserIds, &$counts) {
@@ -96,9 +96,9 @@ class OrganizationService extends BaseService
                 $counts['cashbook_entries'] = CashbookEntry::where('organization_id', $orgId)->delete();
             }
 
-            // 3. Tenants
-            if (in_array('tenants', $targets)) {
-                $counts['tenants'] = Tenant::where('organization_id', $orgId)->delete();
+            // 3. Organizations
+            if (in_array('occupants', $targets)) {
+                $counts['occupants'] = Occupant::where('organization_id', $orgId)->delete();
             }
 
             // 4. Owners
@@ -106,14 +106,14 @@ class OrganizationService extends BaseService
                 $counts['owners'] = Owner::where('organization_id', $orgId)->delete();
             }
 
-            // 5. Estates (cascade: compliance, unit configs, units, charge type links)
-            if (in_array('estates', $targets)) {
-                $estateIds = Estate::where('organization_id', $orgId)->pluck('id');
-                $unitIds   = Unit::where('organization_id', $orgId)->whereIn('estate_id', $estateIds)->pluck('id');
+            // 5. Communities (cascade: compliance, unit configs, units, ledger links)
+            if (in_array('communities', $targets)) {
+                $communityIds = Community::where('organization_id', $orgId)->pluck('id');
+                $unitIds   = Unit::where('organization_id', $orgId)->whereIn('community_id', $communityIds)->pluck('id');
 
                 // Compliance: checklists → items → attachments
                 $checklistIds = ComplianceChecklist::where('organization_id', $orgId)
-                    ->whereIn('estate_id', $estateIds)
+                    ->whereIn('community_id', $communityIds)
                     ->pluck('id');
                 $itemIds = ComplianceChecklistItem::whereIn('compliance_checklist_id', $checklistIds)->pluck('id');
                 ComplianceItemAttachment::whereIn('compliance_checklist_item_id', $itemIds)->delete();
@@ -124,11 +124,11 @@ class OrganizationService extends BaseService
                 UnitActivity::whereIn('unit_id', $unitIds)->delete();
                 Unit::whereIn('id', $unitIds)->delete();
 
-                EstateChargeType::whereIn('estate_id', $estateIds)->delete();
-                $counts['estates'] = Estate::whereIn('id', $estateIds)->delete();
+                CommunityLedger::whereIn('community_id', $communityIds)->delete();
+                $counts['communities'] = Community::whereIn('id', $communityIds)->delete();
             }
 
-            // 6. Units (standalone — skipped if already deleted via estates)
+            // 6. Units (standalone — skipped if already deleted via communities)
             if (in_array('units', $targets)) {
                 $unitIds = Unit::where('organization_id', $orgId)->pluck('id');
                 UnitChargeConfig::whereIn('unit_id', $unitIds)->delete();
@@ -143,7 +143,7 @@ class OrganizationService extends BaseService
                     ->pluck('id');
 
                 UserLoginLog::whereIn('user_id', $userIds)->delete();
-                UserEstate::whereIn('user_id', $userIds)->delete();
+                UserCommunity::whereIn('user_id', $userIds)->delete();
                 TableView::whereIn('user_id', $userIds)->delete();
 
                 $counts['users'] = User::whereIn('id', $userIds)->delete();

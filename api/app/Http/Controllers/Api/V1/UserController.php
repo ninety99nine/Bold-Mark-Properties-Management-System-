@@ -16,7 +16,7 @@ use App\Http\Requests\User\DeleteUserRequest;
 use App\Http\Requests\User\DeleteUsersRequest;
 use App\Http\Requests\User\SendPasswordResetRequest;
 use App\Http\Requests\User\ResetUserTwoFactorRequest;
-use App\Http\Requests\User\SyncUserEstatesRequest;
+use App\Http\Requests\User\SyncUserCommunitiesRequest;
 use App\Http\Requests\User\ChangePasswordRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -31,7 +31,7 @@ class UserController extends Controller
     }
 
     /**
-     * Return a paginated list of users for the authenticated tenant.
+     * Return a paginated list of users for the authenticated occupant.
      *
      * @param ShowUsersRequest $request
      * @return UserResources
@@ -155,14 +155,14 @@ class UserController extends Controller
     }
 
     /**
-     * Sync the estates assigned to a user.
+     * Sync the communities assigned to a user.
      *
-     * @param SyncUserEstatesRequest $request
+     * @param SyncUserCommunitiesRequest $request
      * @param User                   $user
      * @return array
      */
-    public function syncUserEstates(SyncUserEstatesRequest $request, User $user): array
+    public function syncUserCommunities(SyncUserCommunitiesRequest $request, User $user): array
     {
-        return $this->service->syncUserEstates($user, $request->input('estate_ids', []));
+        return $this->service->syncUserCommunities($user, $request->input('community_ids', []));
     }
 }

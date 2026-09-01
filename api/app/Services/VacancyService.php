@@ -3,24 +3,24 @@
 namespace App\Services;
 
 use App\Models\Unit;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Http\Resources\UnitResource;
 use Illuminate\Support\Facades\Auth;
 
 class VacancyService extends BaseService
 {
     /**
-     * Return paginated vacant units across all estates for the authenticated tenant,
+     * Return paginated vacant units across all communities for the authenticated occupant,
      * along with summary stats for the vacancies page.
      *
      * Supported query parameters:
-     *   _search           → unit_number, owner name, or estate name
-     *   _sort             → unit_number:asc/desc | owner_name:asc/desc | estate_name:asc/desc
+     *   _search           → unit_number, owner name, or community name
+     *   _sort             → unit_number:asc/desc | owner_name:asc/desc | community_name:asc/desc
      *   _date_range       → today | this_week | this_month | this_year | custom | all_time
      *   _date_range_start → Y-m-d
      *   _date_range_end   → Y-m-d
-     *   estate_id         → filter to a specific estate
-     *   estate_type       → sectional_title | residential_rental | commercial_rental | mixed
+     *   community_id         → filter to a specific community
+     *   community_type       → sectional_title | residential_rental | commercial_rental | mixed
      *   _per_page         → pagination size (default 15)
      *
      * @param array $data
@@ -30,35 +30,35 @@ class VacancyService extends BaseService
     {
         $user = Auth::user();
 
-        // ── Build the query for vacant units across all estates ──────────
+        // ── Build the query for vacant units across all communities ──────────
         $query = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->with(['owner', 'estate:id,name,type,address,admin_fund_amount,default_rent_amount']);
+            ->with(['owner', 'community:id,name,entity_type,address,admin_fund_amount,default_rent_amount']);
 
         // Filter by country (scoped portfolio)
         if (!empty($data['country'])) {
-            $query->whereHas('estate', fn($q) => $q->where('country', $data['country']));
+            $query->whereHas('community', fn($q) => $q->where('country', $data['country']));
         }
 
-        // Filter by specific estate
-        if (!empty($data['estate_id'])) {
-            $query->where('units.estate_id', $data['estate_id']);
+        // Filter by specific community
+        if (!empty($data['community_id'])) {
+            $query->where('units.community_id', $data['community_id']);
         }
 
-        // Filter by estate type (join estates table)
-        if (!empty($data['estate_type'])) {
-            $query->whereHas('estate', function ($q) use ($data) {
-                $q->where('type', $data['estate_type']);
+        // Filter by community entity type (join communities table)
+        if (!empty($data['community_type'])) {
+            $query->whereHas('community', function ($q) use ($data) {
+                $q->where('entity_type', $data['community_type']);
             });
         }
 
-        // Search across unit number, owner name, and estate name
+        // Search across unit number, owner name, and community name
         if (!empty($data['_search'])) {
             $search = $data['_search'];
             $query->where(function ($q) use ($search) {
                 $q->whereLike('units.unit_number', $search)
                   ->orWhereHas('owner', fn($o) => $o->whereLike('full_name', $search))
-                  ->orWhereHas('estate', fn($e) => $e->whereLike('name', $search));
+                  ->orWhereHas('community', fn($e) => $e->whereLike('name', $search));
             });
         }
 
@@ -77,73 +77,73 @@ class VacancyService extends BaseService
         // ── Summary stats ───────────────────────────────────────────────
         $totalVacant = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->when(!empty($data['country']), fn($q) => $q->whereHas('estate', fn($eq) => $eq->where('country', $data['country'])))
+            ->when(!empty($data['country']), fn($q) => $q->whereHas('community', fn($eq) => $eq->where('country', $data['country'])))
             ->count();
 
         $totalUnits = Unit::where('units.organization_id', $user->organization_id)
-            ->when(!empty($data['country']), fn($q) => $q->whereHas('estate', fn($eq) => $eq->where('country', $data['country'])))
+            ->when(!empty($data['country']), fn($q) => $q->whereHas('community', fn($eq) => $eq->where('country', $data['country'])))
             ->count();
 
         $vacancyRate = $totalUnits > 0 ? round(($totalVacant / $totalUnits) * 100, 1) : 0;
 
-        // Vacant units grouped by estate type
-        $byEstateTypeQuery = Unit::where('units.occupancy_type', 'vacant')
+        // Vacant units grouped by community type
+        $byCommunityTypeQuery = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->join('estates', 'estates.id', '=', 'units.estate_id');
+            ->join('communities', 'communities.id', '=', 'units.community_id');
         if (!empty($data['country'])) {
-            $byEstateTypeQuery->where('estates.country', $data['country']);
+            $byCommunityTypeQuery->where('communities.country', $data['country']);
         }
-        $byEstateType = $byEstateTypeQuery
-            ->selectRaw("estates.type, COUNT(*) as count")
-            ->groupBy('estates.type')
-            ->pluck('count', 'type')
+        $byCommunityType = $byCommunityTypeQuery
+            ->selectRaw("communities.entity_type, COUNT(*) as count")
+            ->groupBy('communities.entity_type')
+            ->pluck('count', 'entity_type')
             ->toArray();
 
-        // Count of distinct estates with vacant units (uncapped)
-        $estatesAffected = Unit::where('units.occupancy_type', 'vacant')
+        // Count of distinct communities with vacant units (uncapped)
+        $communitiesAffected = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->when(!empty($data['country']), fn($q) => $q->whereHas('estate', fn($eq) => $eq->where('country', $data['country'])))
-            ->distinct('estate_id')
-            ->count('estate_id');
+            ->when(!empty($data['country']), fn($q) => $q->whereHas('community', fn($eq) => $eq->where('country', $data['country'])))
+            ->distinct('community_id')
+            ->count('community_id');
 
-        // Estates with the most vacancies (top 5)
-        $byEstateQuery = Unit::where('units.occupancy_type', 'vacant')
+        // Communities with the most vacancies (top 5)
+        $byCommunityQuery = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->join('estates', 'estates.id', '=', 'units.estate_id');
+            ->join('communities', 'communities.id', '=', 'units.community_id');
         if (!empty($data['country'])) {
-            $byEstateQuery->where('estates.country', $data['country']);
+            $byCommunityQuery->where('communities.country', $data['country']);
         }
-        $byEstate = $byEstateQuery
-            ->selectRaw("estates.id, estates.name, estates.type, COUNT(*) as vacant_count")
-            ->groupBy('estates.id', 'estates.name', 'estates.type')
+        $byCommunity = $byCommunityQuery
+            ->selectRaw("communities.id, communities.name, communities.entity_type, COUNT(*) as vacant_count")
+            ->groupBy('communities.id', 'communities.name', 'communities.entity_type')
             ->orderByDesc('vacant_count')
             ->limit(10)
             ->get()
             ->map(fn ($row) => [
                 'id'           => $row->id,
                 'name'         => $row->name,
-                'type'         => $row->type,
+                'entity_type'  => $row->entity_type,
                 'vacant_count' => (int) $row->vacant_count,
             ])
             ->toArray();
 
         // ── Chart data ──────────────────────────────────────────────────
 
-        // Occupancy breakdown per estate (vacant vs occupied) — all estates
-        $occupancyPerEstateQuery = Estate::where('estates.organization_id', $user->organization_id);
+        // Occupancy breakdown per community (vacant vs occupied) — all communities
+        $occupancyPerCommunityQuery = Community::where('communities.organization_id', $user->organization_id);
         if (!empty($data['country'])) {
-            $occupancyPerEstateQuery->where('estates.country', $data['country']);
+            $occupancyPerCommunityQuery->where('communities.country', $data['country']);
         }
-        $occupancyPerEstate = $occupancyPerEstateQuery
-            ->join('units', 'units.estate_id', '=', 'estates.id')
+        $occupancyPerCommunity = $occupancyPerCommunityQuery
+            ->join('units', 'units.community_id', '=', 'communities.id')
             ->selectRaw("
-                estates.id,
-                estates.name,
+                communities.id,
+                communities.name,
                 SUM(CASE WHEN units.occupancy_type = 'vacant' THEN 1 ELSE 0 END) as vacant,
                 SUM(CASE WHEN units.occupancy_type != 'vacant' THEN 1 ELSE 0 END) as occupied
             ")
-            ->groupBy('estates.id', 'estates.name')
-            ->orderBy('estates.name')
+            ->groupBy('communities.id', 'communities.name')
+            ->orderBy('communities.name')
             ->get()
             ->map(fn ($row) => [
                 'id'       => $row->id,
@@ -156,20 +156,20 @@ class VacancyService extends BaseService
         // Estimated lost revenue from vacant units (levy + rent defaults not being collected)
         $lostRevenueQuery = Unit::where('units.occupancy_type', 'vacant')
             ->where('units.organization_id', $user->organization_id)
-            ->join('estates', 'estates.id', '=', 'units.estate_id');
+            ->join('communities', 'communities.id', '=', 'units.community_id');
         if (!empty($data['country'])) {
-            $lostRevenueQuery->where('estates.country', $data['country']);
+            $lostRevenueQuery->where('communities.country', $data['country']);
         }
         $lostRevenue = $lostRevenueQuery
             ->selectRaw("
-                estates.id,
-                estates.name,
+                communities.id,
+                communities.name,
                 COALESCE(SUM(
-                    COALESCE(units.levy_override, estates.admin_fund_amount, 0) +
-                    COALESCE(units.rent_amount, estates.default_rent_amount, 0)
+                    COALESCE(units.levy_override, communities.admin_fund_amount, 0) +
+                    COALESCE(units.rent_amount, communities.default_rent_amount, 0)
                 ), 0) as lost_monthly
             ")
-            ->groupBy('estates.id', 'estates.name')
+            ->groupBy('communities.id', 'communities.name')
             ->orderByDesc('lost_monthly')
             ->limit(10)
             ->get()
@@ -189,7 +189,7 @@ class VacancyService extends BaseService
             $now = now();
             $durationBuckets = Unit::where('units.occupancy_type', 'vacant')
                 ->where('units.organization_id', $user->organization_id)
-                ->when(!empty($data['country']), fn($q) => $q->whereHas('estate', fn($eq) => $eq->where('country', $data['country'])))
+                ->when(!empty($data['country']), fn($q) => $q->whereHas('community', fn($eq) => $eq->where('country', $data['country'])))
                 ->selectRaw("
                     SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 30 THEN 1 ELSE 0 END) as under_30,
                     SUM(CASE WHEN EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 >= 30 AND EXTRACT(EPOCH FROM (? - units.updated_at)) / 86400 < 90 THEN 1 ELSE 0 END) as d30_90,
@@ -208,19 +208,19 @@ class VacancyService extends BaseService
             // falls back to zeros initialized above
         }
 
-        // Estates dropdown for filter
-        $estatesQuery = Estate::where('organization_id', $user->organization_id);
+        // Communities dropdown for filter
+        $communitiesQuery = Community::where('organization_id', $user->organization_id);
         if (!empty($data['country'])) {
-            $estatesQuery->where('country', $data['country']);
+            $communitiesQuery->where('country', $data['country']);
         }
-        $estates = $estatesQuery
-            ->select('id', 'name', 'type')
+        $communities = $communitiesQuery
+            ->select('id', 'name', 'entity_type')
             ->orderBy('name')
             ->get()
             ->map(fn ($e) => [
                 'id'   => $e->id,
                 'name' => $e->name,
-                'type' => $e->type instanceof \BackedEnum ? $e->type->value : $e->type,
+                'entity_type' => $e->entity_type instanceof \BackedEnum ? $e->entity_type->value : $e->entity_type,
             ])
             ->toArray();
 
@@ -230,15 +230,15 @@ class VacancyService extends BaseService
                 'total_vacant'        => $totalVacant,
                 'total_units'         => $totalUnits,
                 'vacancy_rate'        => $vacancyRate,
-                'estates_affected'    => $estatesAffected,
-                'by_estate_type'      => $byEstateType,
-                'by_estate'           => $byEstate,
-                'occupancy_per_estate'=> $occupancyPerEstate,
+                'communities_affected'    => $communitiesAffected,
+                'by_community_type'      => $byCommunityType,
+                'by_community'           => $byCommunity,
+                'occupancy_per_community'=> $occupancyPerCommunity,
                 'lost_revenue'        => $lostRevenue,
                 'total_lost_revenue'  => $totalLostRevenue,
                 'by_duration'         => $byDuration,
             ],
-            'estates' => $estates,
+            'communities' => $communities,
             'meta' => [
                 'total'        => $paginated->total(),
                 'current_page' => $paginated->currentPage(),
@@ -249,7 +249,7 @@ class VacancyService extends BaseService
     }
 
     /**
-     * Override sort to handle cross-estate fields.
+     * Override sort to handle cross-community fields.
      */
     public function applySortOnQuery(): static
     {
@@ -275,11 +275,11 @@ class VacancyService extends BaseService
                     ->orderBy('owners.full_name', $direction);
                 break;
 
-            case 'estate_name':
+            case 'community_name':
                 $this->query
                     ->select('units.*')
-                    ->leftJoin('estates', 'estates.id', '=', 'units.estate_id')
-                    ->orderBy('estates.name', $direction);
+                    ->leftJoin('communities', 'communities.id', '=', 'units.community_id')
+                    ->orderBy('communities.name', $direction);
                 break;
 
             default:

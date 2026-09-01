@@ -4,7 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\BilledToType;
 use App\Enums\InvoiceStatus;
-use App\Models\ChargeType;
+use App\Models\Ledger;
 use App\Models\Invoice;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -21,7 +21,7 @@ class InvoiceFactory extends Factory
         return [
             'organization_id'       => null,
             'unit_id'         => null,
-            'charge_type_id'  => ChargeType::factory(),
+            'ledger_id'  => Ledger::factory(),
             'billed_to_type'  => fake()->randomElement(BilledToType::values()),
             'billed_to_id'    => Str::uuid(),
             'invoice_number'  => 'INV-' . date('Y') . '-' . fake()->unique()->numerify('####'),
@@ -80,10 +80,10 @@ class InvoiceFactory extends Factory
         ]);
     }
 
-    public function billedToTenant(): static
+    public function billedToOccupant(): static
     {
         return $this->state(fn (array $attributes) => [
-            'billed_to_type' => BilledToType::TENANT->value,
+            'billed_to_type' => BilledToType::OCCUPANT->value,
         ]);
     }
 }

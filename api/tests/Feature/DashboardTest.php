@@ -2,8 +2,8 @@
 
 use App\Enums\InvoiceStatus;
 use App\Models\CashbookEntry;
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
 use App\Models\Unit;
@@ -22,7 +22,71 @@ it('dashboard returns the three top-level keys', function () {
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.dashboard'))
         ->assertOk()
-        ->assertJsonStructure(['summary', 'recent_invoices', 'estates_overview']);
+        ->assertJsonStructure(['summary', 'recent_invoices', 'communities_overview']);
+});
+
+it('dashboard returns a debt_trend with a 6-point series ending at total outstanding', function () {
+    $user        = adminUser();
+    $community   = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit        = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger      = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $owner       = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
+
+    Invoice::factory()->create([
+        'organization_id' => $user->organization_id,
+        'unit_id'         => $unit->id,
+        'ledger_id'       => $ledger->id,
+        'status'          => InvoiceStatus::UNPAID->value,
+        'amount'          => 1500,
+        'billing_period'  => now()->startOfMonth()->toDateString(),
+        'billed_to_type'  => 'owner',
+        'billed_to_id'    => $owner->id,
+    ]);
+
+    $trend = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.dashboard'))
+        ->assertOk()
+        ->json('debt_trend');
+
+    expect($trend)->toHaveKeys(['total', 'percent_change', 'series']);
+    expect($trend['series'])->toHaveCount(6);
+    expect((float) $trend['total'])->toBe(1500.0);
+    // The final point of the cumulative series equals the current total outstanding.
+    expect((float) end($trend['series'])['value'])->toBe(1500.0);
+});
+
+it('dashboard returns a compliance breakdown with the WeConnectU status split', function () {
+    $user = adminUser();
+
+    $compliance = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.dashboard'))
+        ->assertOk()
+        ->json('compliance');
+
+    expect($compliance)->toHaveKeys([
+        'compliant', 'non_compliant', 'planned', 'unplanned', 'total', 'percent_compliant',
+    ]);
+});
+
+it('dashboard returns a tasks matrix with month columns and per-metric rows', function () {
+    $user = adminUser();
+
+    $tasks = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.dashboard'))
+        ->assertOk()
+        ->json('tasks');
+
+    expect($tasks)->toHaveKeys(['months', 'total', 'active_overdue', 'complete', 'strike_rate']);
+
+    // Columns run Jan → current month for the active year; every row aligns to them.
+    expect($tasks['months'])->toHaveCount((int) now()->month);
+    expect($tasks['total'])->toHaveCount((int) now()->month);
+    expect($tasks['active_overdue'])->toHaveCount((int) now()->month);
+    expect($tasks['complete'])->toHaveCount((int) now()->month);
+    expect($tasks['strike_rate'])->toHaveCount((int) now()->month);
+
+    // No Tasks module yet — every bucket is zeroed.
+    expect(array_sum($tasks['total']))->toBe(0);
 });
 
 it('dashboard summary has all expected metric keys', function () {
@@ -34,7 +98,7 @@ it('dashboard summary has all expected metric keys', function () {
         ->json('summary');
 
     expect($summary)->toHaveKeys([
-        'total_estates',
+        'total_communities',
         'total_units',
         'total_outstanding',
         'unpaid_invoices_count',
@@ -47,39 +111,39 @@ it('dashboard summary has all expected metric keys', function () {
     ]);
 });
 
-it('dashboard summary total_estates counts only the authenticated tenant estates', function () {
+it('dashboard summary total_communities counts only the authenticated occupant communities', function () {
     $userA   = adminUser();
-    Estate::factory()->count(3)->create(['organization_id' => $userA->organization_id]);
+    Community::factory()->count(3)->create(['organization_id' => $userA->organization_id]);
 
     $userB = adminUser();
-    Estate::factory()->count(5)->create(['organization_id' => $userB->organization_id]);
+    Community::factory()->count(5)->create(['organization_id' => $userB->organization_id]);
 
     $countA = $this->actingAs($userA, 'api')
         ->getJson(route('api.v1.show.dashboard'))
         ->assertOk()
-        ->json('summary.total_estates');
+        ->json('summary.total_communities');
 
     $countB = $this->actingAs($userB, 'api')
         ->getJson(route('api.v1.show.dashboard'))
         ->assertOk()
-        ->json('summary.total_estates');
+        ->json('summary.total_communities');
 
     expect($countA)->toBe(3);
     expect($countB)->toBe(5);
 });
 
-it('dashboard summary total_units counts only the authenticated tenant units', function () {
+it('dashboard summary total_units counts only the authenticated occupant units', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     Unit::factory()->count(4)->create([
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'organization_id' => $user->organization_id,
     ]);
 
     $otherUser   = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherUser->organization_id]);
     Unit::factory()->count(10)->create([
-        'estate_id'       => $otherEstate->id,
+        'community_id'       => $otherCommunity->id,
         'organization_id' => $otherUser->organization_id,
     ]);
 
@@ -93,15 +157,15 @@ it('dashboard summary total_units counts only the authenticated tenant units', f
 
 it('dashboard summary total_outstanding sums unpaid and overdue invoice amounts', function () {
     $user        = adminUser();
-    $estate      = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit        = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType  = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community      = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit        = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger  = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner       = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'status'          => InvoiceStatus::UNPAID->value,
         'amount'          => 1000,
         'billing_period'  => now()->startOfMonth()->toDateString(),
@@ -111,7 +175,7 @@ it('dashboard summary total_outstanding sums unpaid and overdue invoice amounts'
     Invoice::factory()->overdue()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'amount'          => 2000,
         'billing_period'  => now()->subMonth()->startOfMonth()->toDateString(),
         'billed_to_type'  => 'owner',
@@ -128,15 +192,15 @@ it('dashboard summary total_outstanding sums unpaid and overdue invoice amounts'
 
 it('dashboard summary total_outstanding excludes paid invoices', function () {
     $user        = adminUser();
-    $estate      = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit        = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType  = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community      = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit        = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger  = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner       = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'status'          => InvoiceStatus::PAID->value,
         'amount'          => 5000,
         'billed_to_type'  => 'owner',
@@ -164,15 +228,15 @@ it('dashboard summary occupancy_rate is 0 when there are no units', function () 
 
 it('dashboard summary occupancy_rate reflects occupied vs total', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     Unit::factory()->count(3)->create([
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'organization_id' => $user->organization_id,
-        'occupancy_type'  => 'tenant_occupied',
+        'occupancy_type'  => 'occupant_occupied',
     ]);
     Unit::factory()->count(1)->create([
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'organization_id' => $user->organization_id,
         'occupancy_type'  => 'vacant',
     ]);
@@ -188,9 +252,9 @@ it('dashboard summary occupancy_rate reflects occupied vs total', function () {
 
 it('dashboard recent_invoices returns at most 10 entries', function () {
     $user        = adminUser();
-    $estate      = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit        = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType  = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community      = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit        = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger  = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner       = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     // Use a deterministic sequence spanning years so billing_period is always unique.
@@ -199,7 +263,7 @@ it('dashboard recent_invoices returns at most 10 entries', function () {
     ])->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
     ]);
@@ -214,15 +278,15 @@ it('dashboard recent_invoices returns at most 10 entries', function () {
 
 it('dashboard recent_invoices each entry has expected fields', function () {
     $user        = adminUser();
-    $estate      = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit        = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType  = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community      = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit        = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger  = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner       = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
     ]);
@@ -234,20 +298,20 @@ it('dashboard recent_invoices each entry has expected fields', function () {
 
     expect($item)->toHaveKeys([
         'id', 'invoice_number', 'status', 'amount',
-        'charge_type', 'unit_number', 'billing_period', 'due_date', 'billed_to_name',
+        'ledger', 'unit_number', 'billing_period', 'due_date', 'billed_to_name',
     ]);
 });
 
-it('dashboard recent_invoices does not include other tenants invoices', function () {
+it('dashboard recent_invoices does not include other occupants invoices', function () {
     $otherUser   = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => $otherUser->organization_id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $otherUser->organization_id]);
-    $ct          = ChargeType::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherUnit   = Unit::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $otherUser->organization_id]);
+    $ct          = Ledger::factory()->create(['organization_id' => $otherUser->organization_id]);
     $owner       = Owner::factory()->create(['organization_id' => $otherUser->organization_id, 'unit_id' => $otherUnit->id]);
     $otherInvoice = Invoice::factory()->create([
         'organization_id' => $otherUser->organization_id,
         'unit_id'         => $otherUnit->id,
-        'charge_type_id'  => $ct->id,
+        'ledger_id'  => $ct->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
     ]);
@@ -262,45 +326,45 @@ it('dashboard recent_invoices does not include other tenants invoices', function
     expect((array) $ids)->not->toContain($otherInvoice->id);
 });
 
-it('dashboard estates_overview lists tenant estates', function () {
+it('dashboard communities_overview lists occupant communities', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id, 'name' => 'Test Estate']);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id, 'name' => 'Test Community']);
 
     $names = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.dashboard'))
         ->assertOk()
-        ->json('estates_overview.*.name');
+        ->json('communities_overview.*.name');
 
-    expect($names)->toContain('Test Estate');
+    expect($names)->toContain('Test Community');
 });
 
-it('dashboard estates_overview each entry has occupancy breakdown fields', function () {
+it('dashboard communities_overview each entry has occupancy breakdown fields', function () {
     $user   = adminUser();
-    Estate::factory()->create(['organization_id' => $user->organization_id]);
+    Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $item = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.dashboard'))
         ->assertOk()
-        ->json('estates_overview.0');
+        ->json('communities_overview.0');
 
     expect($item)->toHaveKeys([
-        'id', 'name', 'type', 'country', 'units_count',
-        'owner_occupied_count', 'tenant_occupied_count', 'vacant_count',
+        'id', 'name', 'entity_type', 'country', 'units_count',
+        'owner_occupied_count', 'occupant_occupied_count', 'vacant_count',
     ]);
 });
 
-it('dashboard estates_overview does not include other tenants estates', function () {
+it('dashboard communities_overview does not include other occupants communities', function () {
     $otherUser = adminUser();
-    Estate::factory()->create(['organization_id' => $otherUser->organization_id, 'name' => 'Other Estate']);
+    Community::factory()->create(['organization_id' => $otherUser->organization_id, 'name' => 'Other Community']);
 
     $myUser = adminUser();
 
     $names = $this->actingAs($myUser, 'api')
         ->getJson(route('api.v1.show.dashboard'))
         ->assertOk()
-        ->json('estates_overview.*.name');
+        ->json('communities_overview.*.name');
 
-    expect((array) $names)->not->toContain('Other Estate');
+    expect((array) $names)->not->toContain('Other Community');
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -320,10 +384,10 @@ it('countries returns countries, default_country, and supported keys', function 
         ->assertJsonStructure(['countries', 'default_country', 'supported']);
 });
 
-it('countries lists country codes from tenant estates', function () {
+it('countries lists country codes from occupant communities', function () {
     $user = adminUser();
-    Estate::factory()->create(['organization_id' => $user->organization_id, 'country' => 'ZA']);
-    Estate::factory()->create(['organization_id' => $user->organization_id, 'country' => 'BW']);
+    Community::factory()->create(['organization_id' => $user->organization_id, 'country' => 'ZA']);
+    Community::factory()->create(['organization_id' => $user->organization_id, 'country' => 'BW']);
 
     $codes = collect(
         $this->actingAs($user, 'api')
@@ -336,9 +400,9 @@ it('countries lists country codes from tenant estates', function () {
     expect($codes)->toContain('BW');
 });
 
-it('countries does not include codes from other tenant estates', function () {
+it('countries does not include codes from other occupant communities', function () {
     $otherUser = adminUser();
-    Estate::factory()->create(['organization_id' => $otherUser->organization_id, 'country' => 'ZA']);
+    Community::factory()->create(['organization_id' => $otherUser->organization_id, 'country' => 'ZA']);
 
     $myUser = adminUser();
 
@@ -354,7 +418,7 @@ it('countries does not include codes from other tenant estates', function () {
 
 it('countries each entry has a code field', function () {
     $user = adminUser();
-    Estate::factory()->create(['organization_id' => $user->organization_id, 'country' => 'ZA']);
+    Community::factory()->create(['organization_id' => $user->organization_id, 'country' => 'ZA']);
 
     $first = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.countries'))

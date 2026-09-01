@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\OwnerEntityType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -23,8 +24,12 @@ class Owner extends Model
         'full_name'        => 'string',
         'email'            => 'string',
         'phone'            => 'string',
+        'landline'         => 'string',
         'id_number'        => 'string',
+        'entity_type'      => OwnerEntityType::class,
         'secondary_emails' => 'array',
+        'is_primary'       => 'boolean',
+        'user_verified'    => 'boolean',
     ];
 
     /**
@@ -34,11 +39,40 @@ class Owner extends Model
      */
     protected $fillable = [
         'full_name',
+        'is_primary',
+        'user_verified',
+        'user_display_name',
         'email',
         'secondary_emails',
         'phone',
+        'landline',
         'id_number',
+        'entity_type',
+        'contact2_name',
+        'contact2_email',
+        'contact2_phone',
+        'contact2_landline',
+        'customer_type',
+        'vat_no',
+        'alt_email',
+        'alt_phone',
+        'payment_type',
+        'pdf_password',
+        'customer_group',
+        'reference',
+        'old_customer_code',
         'address',
+        'address_line_2',
+        'suburb',
+        'town',
+        'postal_code',
+        'account_holder',
+        'bank_name',
+        'account_type',
+        'account_number',
+        'branch_code',
+        'branch_name',
+        'notes',
         'unit_id',
         'organization_id',
     ];
@@ -69,7 +103,7 @@ class Owner extends Model
     }
 
     /**
-     * Get the tenant (organisation) this owner belongs to.
+     * Get the occupant (organisation) this owner belongs to.
      *
      * @return BelongsTo
      */

@@ -217,12 +217,12 @@ it('table views store stores filters as an array', function () {
         ->postJson(route('api.v1.create.table-view'), [
             'context' => 'invoices',
             'name'    => 'Filtered View',
-            'filters' => ['status' => 'overdue', 'estate_id' => 'abc'],
+            'filters' => ['status' => 'overdue', 'community_id' => 'abc'],
         ])
         ->assertOk();
 
     $view = TableView::where('user_id', $user->id)->first();
-    expect($view->filters)->toBe(['status' => 'overdue', 'estate_id' => 'abc']);
+    expect($view->filters)->toBe(['status' => 'overdue', 'community_id' => 'abc']);
 });
 
 it('table views store stores sort_field and sort_direction', function () {

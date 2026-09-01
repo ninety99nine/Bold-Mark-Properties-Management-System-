@@ -20,7 +20,7 @@
     <!-- ─── Step 0: Upload ─── -->
     <div v-if="step === 0">
       <p class="text-sm text-[#717B99] mb-5">
-        Download the <strong class="text-[#1E2740]">{{ estateTypeLabel }}</strong> template, fill in your unit data, then upload the completed file.
+        Download the <strong class="text-[#1E2740]">{{ communityTypeLabel }}</strong> template, fill in your unit data, then upload the completed file.
         The template includes 5 example rows showing different scenarios — delete them before importing.
       </p>
 
@@ -277,7 +277,7 @@
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Occupancy</th>
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Owner</th>
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Owner Email</th>
-              <th v-if="hasTenantFields" class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Tenant</th>
+              <th v-if="hasOccupantFields" class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Occupant</th>
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Status</th>
             </tr>
           </thead>
@@ -297,7 +297,7 @@
               </td>
               <td class="px-3 py-2 text-[#1E2740]">{{ row.owner_full_name || '—' }}</td>
               <td class="px-3 py-2 text-[#717B99]">{{ row.owner_email || '—' }}</td>
-              <td v-if="hasTenantFields" class="px-3 py-2 text-[#717B99]">{{ row.tenant_full_name || '—' }}</td>
+              <td v-if="hasOccupantFields" class="px-3 py-2 text-[#717B99]">{{ row.occupant_full_name || '—' }}</td>
               <td class="px-3 py-2">
                 <!-- Red: validation errors (row will be skipped) -->
                 <AppPoptip v-if="row.__errors.length" position="top" max-width="280px">
@@ -514,11 +514,12 @@ import AppButton from './AppButton.vue'
 import AppPoptip from './AppPoptip.vue'
 import AppSelect from './AppSelect.vue'
 import { getToken } from '@/composables/authStorage'
+import { billingBasis, isLevyOnly, entityTypeLabel } from '@/utils/communityEntityType'
 
 const props = defineProps<{
   show: boolean
-  estateId: string
-  estateType?: string  // 'sectional_title' | 'residential_rental' | 'commercial_rental' | 'mixed'
+  communityId: string
+  communityType?: string  // a CommunityEntityType value (e.g. 'body_corporate', 'residential_rental', 'mixed')
 }>()
 
 const emit = defineEmits<{
@@ -528,7 +529,7 @@ const emit = defineEmits<{
 
 const API_URL = import.meta.env.VITE_API_URL ?? ''
 
-// ─── Field definitions (estate-type-aware) ───────────────────────────────────
+// ─── Field definitions (community-type-aware) ───────────────────────────────────
 
 const ALL_FIELDS = [
   { key: 'unit_number',        label: 'Unit Number',        required: true },
@@ -542,68 +543,64 @@ const ALL_FIELDS = [
   { key: 'owner_email',        label: 'Owner Email',        required: false },
   { key: 'owner_phone',        label: 'Owner Phone',        required: false },
   { key: 'owner_address',      label: 'Owner Address',      required: false },
-  { key: 'tenant_full_name',   label: 'Tenant Full Name',   required: false },
-  { key: 'tenant_email',       label: 'Tenant Email',       required: false },
-  { key: 'tenant_phone',       label: 'Tenant Phone',       required: false },
-  { key: 'tenant_lease_start', label: 'Tenant Lease Start', required: false },
-  { key: 'tenant_lease_end',   label: 'Tenant Lease End',   required: false },
+  { key: 'occupant_full_name',   label: 'Occupant Full Name',   required: false },
+  { key: 'occupant_email',       label: 'Occupant Email',       required: false },
+  { key: 'occupant_phone',       label: 'Occupant Phone',       required: false },
+  { key: 'occupant_lease_start', label: 'Occupant Lease Start', required: false },
+  { key: 'occupant_lease_end',   label: 'Occupant Lease End',   required: false },
 ]
 
-const TENANT_KEYS = ['tenant_full_name', 'tenant_email', 'tenant_phone', 'tenant_lease_start', 'tenant_lease_end']
+const OCCUPANT_KEYS = ['occupant_full_name', 'occupant_email', 'occupant_phone', 'occupant_lease_start', 'occupant_lease_end']
 
 const systemFields = computed(() => {
-  const type = props.estateType
-  if (type === 'sectional_title') {
-    // Sectional title: levy-focused. Owners can rent out units (tenant_occupied) but
-    // tenant personal details are not captured at this stage — only owner info + levy config.
-    return ALL_FIELDS.filter(f => !TENANT_KEYS.includes(f.key) && f.key !== 'rent_amount')
+  if (!props.communityType) return ALL_FIELDS
+  const basis = billingBasis(props.communityType)
+  if (basis === 'levy') {
+    // Levy-billed scheme: levy-focused. Owners can rent out units (occupant_occupied) but
+    // occupant personal details are not captured at this stage — only owner info + levy config.
+    return ALL_FIELDS.filter(f => !OCCUPANT_KEYS.includes(f.key) && f.key !== 'rent_amount')
   }
-  if (type === 'residential_rental' || type === 'commercial_rental') {
+  if (basis === 'rent') {
     // Rental portfolio: rent-focused. No levies.
     return ALL_FIELDS.filter(f => f.key !== 'levy_override')
   }
-  // mixed or unknown: all fields
+  // mixed: all fields
   return ALL_FIELDS
 })
 
-const hasTenantFields = computed(() =>
-  props.estateType !== 'sectional_title'
+const hasOccupantFields = computed(() =>
+  !!props.communityType && !isLevyOnly(props.communityType)
 )
 
-const estateTypeLabel = computed(() => {
-  const labels: Record<string, string> = {
-    sectional_title: 'Sectional Title',
-    residential_rental: 'Residential Rental',
-    commercial_rental: 'Commercial Rental',
-    mixed: 'Mixed',
-  }
-  return labels[props.estateType ?? ''] ?? 'All Types'
-})
+const communityTypeLabel = computed(() =>
+  props.communityType ? entityTypeLabel(props.communityType) : 'All Types'
+)
 
 function allowedOccupancyTypes(): string[] {
-  const type = props.estateType
-  if (type === 'sectional_title') {
-    // Tenants are added per-unit after import — occupancy during bulk import is owner or vacant
+  if (!props.communityType) return ['owner_occupied', 'occupant_occupied', 'vacant']
+  const basis = billingBasis(props.communityType)
+  if (basis === 'levy') {
+    // Occupants are added per-unit after import — occupancy during bulk import is owner or vacant
     return ['owner_occupied', 'vacant']
   }
-  if (type === 'residential_rental' || type === 'commercial_rental') {
+  if (basis === 'rent') {
     // Pure rental portfolios don't have owner-occupied units
-    return ['tenant_occupied', 'vacant']
+    return ['occupant_occupied', 'vacant']
   }
-  return ['owner_occupied', 'tenant_occupied', 'vacant']
+  return ['owner_occupied', 'occupant_occupied', 'vacant']
 }
 
-// ─── Example rows (estate-type-aware) ────────────────────────────────────────
+// ─── Example rows (community-type-aware) ────────────────────────────────────────
 
 function buildExampleRows(): Record<string, string>[] {
-  const type = props.estateType
+  const basis = props.communityType ? billingBasis(props.communityType) : null
 
-  if (type === 'sectional_title') {
-    // Sectional title only has owner_occupied and vacant — tenant details are added separately after import
+  if (basis === 'levy') {
+    // Levy-billed schemes only have owner_occupied and vacant — occupant details are added separately after import
     return [
       // Row 1: fully complete, owner_occupied, custom levy override
       { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '3000', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg' },
-      // Row 2: owner_occupied, uses estate default levy, partial info
+      // Row 2: owner_occupied, uses community default levy, partial info
       { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'owner_occupied', levy_override: '', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '' },
       // Row 3: vacant unit, levy override set, minimal info
       { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '2850', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '' },
@@ -614,33 +611,33 @@ function buildExampleRows(): Record<string, string>[] {
     ]
   }
 
-  if (type === 'residential_rental' || type === 'commercial_rental') {
+  if (basis === 'rent') {
     return [
-      // Row 1: fully complete, tenant_occupied, all tenant details
-      { unit_number: '101', section: '', address: 'Unit 101, 5 Park Lane, Cape Town', occupancy_type: 'tenant_occupied', rent_amount: '9500', owner_full_name: 'Peter Johnson', owner_id_number: '7801015800082', owner_email: 'peter@example.com', owner_phone: '+27 82 111 2233', owner_address: '5 Park Lane, Cape Town', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
-      // Row 2: tenant_occupied, partial tenant info, no lease end
-      { unit_number: '102', section: '', address: '', occupancy_type: 'tenant_occupied', rent_amount: '8500', owner_full_name: 'Susan van der Berg', owner_id_number: '', owner_email: 'susan@example.com', owner_phone: '+27 83 333 4455', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
-      // Row 3: vacant, only owner details (no tenant)
-      { unit_number: '103', section: '', address: '', occupancy_type: 'vacant', rent_amount: '7500', owner_full_name: 'Anele Zulu', owner_id_number: '', owner_email: 'anele@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
-      // Row 4: tenant_occupied, fully complete
-      { unit_number: '201', section: '', address: 'Unit 201, 22 Business Park, Sandton', occupancy_type: 'tenant_occupied', rent_amount: '12000', owner_full_name: 'Raj Patel', owner_id_number: '8503026200089', owner_email: 'raj@example.com', owner_phone: '+27 79 444 5566', owner_address: '22 Business Park, Sandton', tenant_full_name: 'Nomsa Khumalo', tenant_email: 'nomsa@example.com', tenant_phone: '+27 65 555 6677', tenant_lease_start: '2026-01-01', tenant_lease_end: '2026-12-31' },
-      // Row 5: tenant_occupied, minimal tenant info
-      { unit_number: '202', section: '', address: '', occupancy_type: 'tenant_occupied', rent_amount: '10500', owner_full_name: 'David Botha', owner_id_number: '', owner_email: 'david@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Rachel Naidoo', tenant_email: 'rachel@example.com', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+      // Row 1: fully complete, occupant_occupied, all occupant details
+      { unit_number: '101', section: '', address: 'Unit 101, 5 Park Lane, Cape Town', occupancy_type: 'occupant_occupied', rent_amount: '9500', owner_full_name: 'Peter Johnson', owner_id_number: '7801015800082', owner_email: 'peter@example.com', owner_phone: '+27 82 111 2233', owner_address: '5 Park Lane, Cape Town', occupant_full_name: 'Lisa Mokoena', occupant_email: 'lisa@example.com', occupant_phone: '+27 71 222 3344', occupant_lease_start: '2025-03-01', occupant_lease_end: '2026-02-28' },
+      // Row 2: occupant_occupied, partial occupant info, no lease end
+      { unit_number: '102', section: '', address: '', occupancy_type: 'occupant_occupied', rent_amount: '8500', owner_full_name: 'Susan van der Berg', owner_id_number: '', owner_email: 'susan@example.com', owner_phone: '+27 83 333 4455', owner_address: '', occupant_full_name: 'Sipho Dlamini', occupant_email: 'sipho@example.com', occupant_phone: '', occupant_lease_start: '2025-06-01', occupant_lease_end: '' },
+      // Row 3: vacant, only owner details (no occupant)
+      { unit_number: '103', section: '', address: '', occupancy_type: 'vacant', rent_amount: '7500', owner_full_name: 'Anele Zulu', owner_id_number: '', owner_email: 'anele@example.com', owner_phone: '', owner_address: '', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
+      // Row 4: occupant_occupied, fully complete
+      { unit_number: '201', section: '', address: 'Unit 201, 22 Business Park, Sandton', occupancy_type: 'occupant_occupied', rent_amount: '12000', owner_full_name: 'Raj Patel', owner_id_number: '8503026200089', owner_email: 'raj@example.com', owner_phone: '+27 79 444 5566', owner_address: '22 Business Park, Sandton', occupant_full_name: 'Nomsa Khumalo', occupant_email: 'nomsa@example.com', occupant_phone: '+27 65 555 6677', occupant_lease_start: '2026-01-01', occupant_lease_end: '2026-12-31' },
+      // Row 5: occupant_occupied, minimal occupant info
+      { unit_number: '202', section: '', address: '', occupancy_type: 'occupant_occupied', rent_amount: '10500', owner_full_name: 'David Botha', owner_id_number: '', owner_email: 'david@example.com', owner_phone: '', owner_address: '', occupant_full_name: 'Rachel Naidoo', occupant_email: 'rachel@example.com', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
     ]
   }
 
   // mixed or unknown: all fields
   return [
-    // Row 1: sectional-title-style, owner_occupied with levy, no tenant
-    { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
-    // Row 2: tenant_occupied, both levy and rent, full tenant info
-    { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'tenant_occupied', levy_override: '2850', rent_amount: '9500', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
-    // Row 3: tenant_occupied, rental only (no levy override), partial tenant
-    { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'tenant_occupied', levy_override: '', rent_amount: '8000', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
-    // Row 4: vacant, levy only, no tenant
-    { unit_number: 'B02', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '3000', rent_amount: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
-    // Row 5: owner_occupied, fully complete, no tenant
-    { unit_number: 'C01', section: 'C', address: 'Unit C01, 8 Linden Drive, Sandton', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+    // Row 1: sectional-title-style, owner_occupied with levy, no occupant
+    { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
+    // Row 2: occupant_occupied, both levy and rent, full occupant info
+    { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'occupant_occupied', levy_override: '2850', rent_amount: '9500', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '', occupant_full_name: 'Lisa Mokoena', occupant_email: 'lisa@example.com', occupant_phone: '+27 71 222 3344', occupant_lease_start: '2025-03-01', occupant_lease_end: '2026-02-28' },
+    // Row 3: occupant_occupied, rental only (no levy override), partial occupant
+    { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'occupant_occupied', levy_override: '', rent_amount: '8000', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '', occupant_full_name: 'Sipho Dlamini', occupant_email: 'sipho@example.com', occupant_phone: '', occupant_lease_start: '2025-06-01', occupant_lease_end: '' },
+    // Row 4: vacant, levy only, no occupant
+    { unit_number: 'B02', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '3000', rent_amount: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
+    // Row 5: owner_occupied, fully complete, no occupant
+    { unit_number: 'C01', section: 'C', address: 'Unit C01, 8 Linden Drive, Sandton', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
   ]
 }
 
@@ -787,10 +784,10 @@ function validateRow(row: Record<string, string>): string[] {
     errors.push('One or more owner emails are invalid')
   }
 
-  if (hasTenantFields.value) {
-    const tenantEmails = parseEmails(row.tenant_email ?? '')
-    if (tenantEmails.some(e => !EMAIL_RE.test(e))) {
-      errors.push('One or more tenant emails are invalid')
+  if (hasOccupantFields.value) {
+    const occupantEmails = parseEmails(row.occupant_email ?? '')
+    if (occupantEmails.some(e => !EMAIL_RE.test(e))) {
+      errors.push('One or more occupant emails are invalid')
     }
   }
 
@@ -798,13 +795,13 @@ function validateRow(row: Record<string, string>): string[] {
 }
 
 function occupancyLabel(type: string): string {
-  return { owner_occupied: 'Owner', tenant_occupied: 'Tenant', vacant: 'Vacant' }[type] ?? type
+  return { owner_occupied: 'Owner', occupant_occupied: 'Occupant', vacant: 'Vacant' }[type] ?? type
 }
 
 function occupancyClass(type: string): string {
   return ({
     owner_occupied:  'bg-green-100 text-green-700',
-    tenant_occupied: 'bg-blue-100 text-blue-700',
+    occupant_occupied: 'bg-blue-100 text-blue-700',
     vacant:          'bg-gray-100 text-gray-600',
   } as Record<string, string>)[type] ?? 'bg-gray-100 text-gray-600'
 }
@@ -820,7 +817,7 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
     const headers     = fields.map(f => f.label)
     const examples    = buildExampleRows()
     const dataRows    = examples.map(row => fields.map(f => row[f.key] ?? ''))
-    const typeSlug    = (props.estateType ?? 'units').replace(/_/g, '-')
+    const typeSlug    = (props.communityType ?? 'units').replace(/_/g, '-')
     const filename    = `units-import-template-${typeSlug}`
 
     if (format === 'csv') {
@@ -915,7 +912,7 @@ async function parseFile() {
 
   try {
     const res  = await fetch(
-      `${API_URL}/api/v1/estates/${props.estateId}/units/bulk-import/parse`,
+      `${API_URL}/api/v1/communities/${props.communityId}/units/bulk-import/parse`,
       { method: 'POST', headers: authHeaders(), body: formData }
     )
     const json = await res.json()
@@ -992,7 +989,7 @@ async function runImport() {
 
   try {
     const res  = await fetch(
-      `${API_URL}/api/v1/estates/${props.estateId}/units/bulk-import`,
+      `${API_URL}/api/v1/communities/${props.communityId}/units/bulk-import`,
       {
         method:  'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },

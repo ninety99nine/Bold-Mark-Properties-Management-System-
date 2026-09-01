@@ -24,6 +24,7 @@ class CashbookEntry extends Model
         'amount' => 'float',
         'type'   => CashbookEntryType::class,
         'date'   => 'date',
+        'allocated_at' => 'datetime',
     ];
 
     /**
@@ -37,13 +38,15 @@ class CashbookEntry extends Model
         'type',
         'date',
         'notes',
-        'estate_id',
+        'community_id',
         'organization_id',
-        'charge_type_id',
+        'ledger_id',
         'unit_id',
         'invoice_id',
         'parent_entry_id',
         'proof_of_payment_path',
+        'allocated_by_name',
+        'allocated_at',
     ];
 
     /**
@@ -109,17 +112,17 @@ class CashbookEntry extends Model
     }
 
     /**
-     * Get the estate this cashbook entry belongs to.
+     * Get the community this cashbook entry belongs to.
      *
      * @return BelongsTo
      */
-    public function estate(): BelongsTo
+    public function community(): BelongsTo
     {
-        return $this->belongsTo(Estate::class);
+        return $this->belongsTo(Community::class);
     }
 
     /**
-     * Get the tenant (organisation) this cashbook entry belongs to.
+     * Get the occupant (organisation) this cashbook entry belongs to.
      *
      * @return BelongsTo
      */
@@ -129,13 +132,13 @@ class CashbookEntry extends Model
     }
 
     /**
-     * Get the charge type tagged on this entry.
+     * Get the ledger tagged on this entry.
      *
      * @return BelongsTo
      */
-    public function chargeType(): BelongsTo
+    public function ledger(): BelongsTo
     {
-        return $this->belongsTo(ChargeType::class);
+        return $this->belongsTo(Ledger::class);
     }
 
     /**

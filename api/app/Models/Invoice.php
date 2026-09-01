@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\BilledToType;
+use App\Enums\InvoiceSource;
 use App\Enums\InvoiceStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,9 +25,13 @@ class Invoice extends Model
      */
     protected $casts = [
         'status'         => InvoiceStatus::class,
+        'source'         => InvoiceSource::class,
         'billed_to_type' => BilledToType::class,
         'amount'         => 'float',
+        'subtotal'       => 'float',
+        'vat_amount'     => 'float',
         'billing_period' => 'date',
+        'invoice_date'   => 'date',
         'due_date'       => 'date',
         'sent_at'            => 'datetime',
         'email_failed_at'    => 'datetime',
@@ -41,18 +46,24 @@ class Invoice extends Model
     protected $fillable = [
         'invoice_number',
         'status',
+        'source',
         'billed_to_type',
         'billed_to_id',
         'amount',
+        'subtotal',
+        'vat_amount',
         'billing_period',
+        'invoice_date',
         'due_date',
+        'attachment_path',
         'sent_at',
         'email_failed_at',
         'reminder_sent_at',
         'issued_by_type',
         'issued_by_user_id',
         'unit_id',
-        'charge_type_id',
+        'ledger_id',
+        'bank_account_id',
         'organization_id',
     ];
 
@@ -123,17 +134,37 @@ class Invoice extends Model
     }
 
     /**
-     * Get the charge type for this invoice.
+     * Get the ledger for this invoice.
      *
      * @return BelongsTo
      */
-    public function chargeType(): BelongsTo
+    public function ledger(): BelongsTo
     {
-        return $this->belongsTo(ChargeType::class);
+        return $this->belongsTo(Ledger::class);
     }
 
     /**
-     * Get the tenant (organisation) this invoice belongs to.
+     * Get the bank account nominated for payment of this invoice.
+     *
+     * @return BelongsTo
+     */
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
+
+    /**
+     * Get the line items for this invoice (WeConnectU-style multi-line customer invoice).
+     *
+     * @return HasMany
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Get the occupant (organisation) this invoice belongs to.
      *
      * @return BelongsTo
      */
@@ -173,7 +204,7 @@ class Invoice extends Model
     }
 
     /**
-     * Get the billed-to entity: either an Owner or a Tenant.
+     * Get the billed-to entity: either an Owner or a Occupant.
      * Uses manual resolution since the FK points to two different tables.
      *
      * @return BelongsTo
@@ -184,25 +215,25 @@ class Invoice extends Model
     }
 
     /**
-     * Get the billed-to entity when it is a unit tenant.
+     * Get the billed-to entity when it is a unit occupant.
      *
      * @return BelongsTo
      */
-    public function billedToUnitTenant(): BelongsTo
+    public function billedToUnitOccupant(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class, 'billed_to_id');
+        return $this->belongsTo(Occupant::class, 'billed_to_id');
     }
 
     /**
-     * Get the billed-to person (Owner or Tenant) resolved from billed_to_type.
+     * Get the billed-to person (Owner or Occupant) resolved from billed_to_type.
      *
-     * @return Owner|Tenant|null
+     * @return Owner|Occupant|null
      */
-    public function getBilledToAttribute(): Owner|Tenant|null
+    public function getBilledToAttribute(): Owner|Occupant|null
     {
         return match ($this->billed_to_type) {
             BilledToType::OWNER  => $this->billedToOwner,
-            BilledToType::TENANT => $this->billedToUnitTenant,
+            BilledToType::OCCUPANT => $this->billedToUnitOccupant,
             default              => null,
         };
     }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CollectionStatus;
 use App\Enums\OccupancyType;
 use App\Enums\UnitStatus;
 use Illuminate\Database\Eloquent\Model;
@@ -26,9 +27,19 @@ class Unit extends Model
         'occupancy_type'  => OccupancyType::class,
         'status'          => UnitStatus::class,
         'pq'              => 'float',
+        'ratio_1'         => 'float',
+        'ratio_2'         => 'float',
+        'ratio_3'         => 'float',
+        'ratio_4'         => 'float',
+        'ratio_5'         => 'float',
+        'unit_size'       => 'float',
         'levy_override'   => 'float',
         'rent_amount'     => 'float',
         'balance'         => 'float',
+        'billing_pdf'     => 'boolean',
+        'is_development'   => 'boolean',
+        'debit_order'      => 'boolean',
+        'collection_status' => CollectionStatus::class,
     ];
 
     /**
@@ -38,15 +49,32 @@ class Unit extends Model
      */
     protected $fillable = [
         'unit_number',
+        'block_number',
         'section',
+        'door_number',
+        'customer_code',
         'address',
+        'rental_agent_email',
+        'attorney_email',
+        'bondholder_email',
+        'unit_notes',
         'pq',
+        'ratio_1',
+        'ratio_2',
+        'ratio_3',
+        'ratio_4',
+        'ratio_5',
+        'unit_size',
         'occupancy_type',
         'status',
         'levy_override',
         'rent_amount',
+        'billing_pdf',
+        'is_development',
+        'collection_status',
+        'debit_order',
         'balance',
-        'estate_id',
+        'community_id',
         'organization_id',
     ];
 
@@ -62,6 +90,9 @@ class Unit extends Model
     {
         $query->where(function (Builder $q) use ($searchTerm) {
             $q->whereLike('units.unit_number', $searchTerm)
+              ->orWhereLike('units.block_number', $searchTerm)
+              ->orWhereLike('units.door_number', $searchTerm)
+              ->orWhereLike('units.customer_code', $searchTerm)
               ->orWhereLike('units.address', $searchTerm)
               ->orWhereHas('owner', fn (Builder $o) => $o->whereLike('full_name', $searchTerm)->orWhereLike('email', $searchTerm));
         });
@@ -80,15 +111,15 @@ class Unit extends Model
     }
 
     /**
-     * Scope to tenant-occupied units only.
+     * Scope to occupant-occupied units only.
      *
      * @param Builder $query
      * @return void
      */
     #[Scope]
-    protected function tenantOccupied(Builder $query): void
+    protected function occupantOccupied(Builder $query): void
     {
-        $query->where('occupancy_type', OccupancyType::TENANT_OCCUPIED);
+        $query->where('occupancy_type', OccupancyType::OCCUPANT_OCCUPIED);
     }
 
     /**
@@ -116,17 +147,17 @@ class Unit extends Model
     }
 
     /**
-     * Get the estate this unit belongs to.
+     * Get the community this unit belongs to.
      *
      * @return BelongsTo
      */
-    public function estate(): BelongsTo
+    public function community(): BelongsTo
     {
-        return $this->belongsTo(Estate::class);
+        return $this->belongsTo(Community::class);
     }
 
     /**
-     * Get the tenant (organisation) this unit belongs to.
+     * Get the occupant (organisation) this unit belongs to.
      *
      * @return BelongsTo
      */
@@ -136,39 +167,103 @@ class Unit extends Model
     }
 
     /**
-     * Get the owner of this unit.
+     * Get the PRIMARY owner of this unit.
+     *
+     * A unit can have multiple owners (see owners()); the primary owner is the one
+     * used for the customer code, list display, exports and billing. Falls back to
+     * any owner when none is explicitly flagged primary (legacy rows).
      *
      * @return HasOne
      */
     public function owner(): HasOne
     {
-        return $this->hasOne(Owner::class);
+        return $this->hasOne(Owner::class)->orderByDesc('is_primary')->orderBy('created_at');
     }
 
     /**
-     * Get the current active tenant (occupant) of this unit.
+     * Get all owners of this unit (WeConnectU supports multiple owners per unit).
+     *
+     * @return HasMany
+     */
+    public function owners(): HasMany
+    {
+        return $this->hasMany(Owner::class)->orderByDesc('is_primary')->orderBy('created_at');
+    }
+
+    /**
+     * Get the unit's collection notes (finances Notes log), newest first.
+     *
+     * @return HasMany
+     */
+    public function collectionNotes(): HasMany
+    {
+        return $this->hasMany(UnitCollectionNote::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * Get the unit's communication (e-mail) log, newest first.
+     *
+     * @return HasMany
+     */
+    public function communications(): HasMany
+    {
+        return $this->hasMany(UnitCommunication::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * Get the unit's offences (conduct-rule violations), newest first.
+     *
+     * @return HasMany
+     */
+    public function offences(): HasMany
+    {
+        return $this->hasMany(UnitOffence::class)->orderByDesc('issued_date')->orderByDesc('created_at');
+    }
+
+    /**
+     * Get the unit's tasks (maintenance / action items), newest first.
+     *
+     * @return HasMany
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(UnitTask::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * Get the unit's uploaded documents, newest first.
+     *
+     * @return HasMany
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(UnitDocument::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * Get the current active occupant (occupant) of this unit.
      *
      * Uses a plain HasOne + where instead of latestOfMany/ofMany because
      * Laravel's ofMany always emits MAX(id) as a tiebreaker, which fails on
      * PostgreSQL when the primary key is a UUID. Since business logic ensures
-     * at most one is_active tenant exists per unit at a time, a simple where
+     * at most one is_active occupant exists per unit at a time, a simple where
      * clause is both correct and safe.
      *
      * @return HasOne
      */
-    public function currentTenant(): HasOne
+    public function currentOccupant(): HasOne
     {
-        return $this->hasOne(Tenant::class)->where('is_active', true);
+        return $this->hasOne(Occupant::class)->where('is_active', true);
     }
 
     /**
-     * Get all tenant (occupant) history for this unit.
+     * Get all occupant (occupant) history for this unit.
      *
      * @return HasMany
      */
-    public function tenants(): HasMany
+    public function occupants(): HasMany
     {
-        return $this->hasMany(Tenant::class);
+        return $this->hasMany(Occupant::class);
     }
 
     /**
@@ -223,17 +318,17 @@ class Unit extends Model
             return $this->levy_override;
         }
 
-        if ($this->pq !== null && $this->relationLoaded('estate') && $this->estate !== null) {
-            $totalPq = $this->estate->units()->whereNotNull('pq')->sum('pq');
-            $budget  = (float) ($this->estate->admin_fund_amount ?? 0);
+        if ($this->pq !== null && $this->relationLoaded('community') && $this->community !== null) {
+            $totalPq = $this->community->units()->whereNotNull('pq')->sum('pq');
+            $budget  = (float) ($this->community->admin_fund_amount ?? 0);
             if ($totalPq > 0 && $budget > 0) {
                 return round(($this->pq / $totalPq) * $budget, 2);
             }
         }
 
-        $unitCount = $this->estate?->units()->count() ?? 1;
+        $unitCount = $this->community?->units()->count() ?? 1;
 
-        return $unitCount > 0 ? round(((float) ($this->estate?->admin_fund_amount ?? 0)) / $unitCount, 2) : null;
+        return $unitCount > 0 ? round(((float) ($this->community?->admin_fund_amount ?? 0)) / $unitCount, 2) : null;
     }
 
     /**
@@ -243,17 +338,17 @@ class Unit extends Model
      */
     public function getEffectiveReserveLevyAttribute(): ?float
     {
-        if ($this->pq !== null && $this->relationLoaded('estate') && $this->estate !== null) {
-            $totalPq = $this->estate->units()->whereNotNull('pq')->sum('pq');
-            $budget  = (float) ($this->estate->reserve_fund_amount ?? 0);
+        if ($this->pq !== null && $this->relationLoaded('community') && $this->community !== null) {
+            $totalPq = $this->community->units()->whereNotNull('pq')->sum('pq');
+            $budget  = (float) ($this->community->reserve_fund_amount ?? 0);
             if ($totalPq > 0 && $budget > 0) {
                 return round(($this->pq / $totalPq) * $budget, 2);
             }
         }
 
-        $unitCount = $this->estate?->units()->count() ?? 1;
+        $unitCount = $this->community?->units()->count() ?? 1;
 
-        return $unitCount > 0 ? round(((float) ($this->estate?->reserve_fund_amount ?? 0)) / $unitCount, 2) : null;
+        return $unitCount > 0 ? round(((float) ($this->community?->reserve_fund_amount ?? 0)) / $unitCount, 2) : null;
     }
 
     public function resolveRouteBinding($value, $field = null): ?self
@@ -266,9 +361,9 @@ class Unit extends Model
         $query = $this->where($field ?? $this->getRouteKeyName(), $value)
                       ->where('organization_id', $user->organization_id);
 
-        $estate = request()->route('estate');
-        if ($estate instanceof Estate) {
-            $query->where('estate_id', $estate->id);
+        $community = request()->route('community');
+        if ($community instanceof Community) {
+            $query->where('community_id', $community->id);
         }
 
         return $query->first();

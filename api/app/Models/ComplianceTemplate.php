@@ -48,7 +48,7 @@ class ComplianceTemplate extends Model
     }
 
     /**
-     * Get the tenant (organisation) this template belongs to.
+     * Get the occupant (organisation) this template belongs to.
      */
     public function organization(): BelongsTo
     {

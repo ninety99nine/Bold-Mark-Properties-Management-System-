@@ -21,15 +21,15 @@ return new class extends Migration
             $table->text('notes')->nullable();
 
             $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
-            $table->foreignUuid('estate_id')->constrained('estates')->cascadeOnDelete();
+            $table->foreignUuid('community_id')->constrained('communities')->cascadeOnDelete();
             $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamps();
 
-            $table->unique(['estate_id', 'financial_year_start'], 'compliance_checklists_estate_fy_unique');
+            $table->unique(['community_id', 'financial_year_start'], 'compliance_checklists_community_fy_unique');
             $table->index('organization_id');
-            $table->index('estate_id');
-            $table->index(['organization_id', 'estate_id']);
+            $table->index('community_id');
+            $table->index(['organization_id', 'community_id']);
         });
     }
 

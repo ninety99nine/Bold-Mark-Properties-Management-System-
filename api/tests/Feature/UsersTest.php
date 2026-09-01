@@ -1,7 +1,7 @@
 <?php
 
 use App\Enums\UserStatus;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Carbon;
@@ -24,9 +24,9 @@ function ensureRole(string $name): Role
     return Role::firstOrCreate(['name' => $name, 'guard_name' => 'api']);
 }
 
-function makeUserInTenant(string $tenantId, array $overrides = []): User
+function makeUserInOrganization(string $organizationId, array $overrides = []): User
 {
-    return User::factory()->create(array_merge(['organization_id' => $tenantId], $overrides));
+    return User::factory()->create(array_merge(['organization_id' => $organizationId], $overrides));
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -45,7 +45,7 @@ it('returns 401 on every user route when unauthenticated', function (string $met
     ['delete', 'api.v1.delete.user',         ['user' => 99999]],
     ['post',   'api.v1.send.password.reset', ['user' => 99999]],
     ['post',   'api.v1.reset.two.factor',    ['user' => 99999]],
-    ['put',    'api.v1.sync.user.estates',   ['user' => 99999]],
+    ['put',    'api.v1.sync.user.communities',   ['user' => 99999]],
 ]);
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -61,7 +61,7 @@ it('returns the paginator structure', function () {
         ->assertOk()
         ->assertJsonStructure([
             'data'  => [['id', 'name', 'email', 'phone', 'status', 'organization_id', 'created_at', 'updated_at',
-                         'email_verified', 'roles', 'estates']],
+                         'email_verified', 'roles', 'communities']],
             'links' => ['first', 'last', 'prev', 'next'],
             'meta'  => ['current_page', 'last_page', 'per_page', 'total', 'from', 'to'],
         ]);
@@ -71,10 +71,10 @@ it('returns the paginator structure', function () {
     expect($resp->json('meta.per_page'))->toBe(15);
 });
 
-it('only returns users belonging to the authenticated user\'s tenant', function () {
+it('only returns users belonging to the authenticated user\'s organization', function () {
     $actor = adminUser();
     User::factory()->count(3)->create(['organization_id' => $actor->organization_id]);
-    User::factory()->count(2)->create(['organization_id' => createTenant()->id]);
+    User::factory()->count(2)->create(['organization_id' => createOrganization()->id]);
 
     $resp = $this->actingAs($actor, 'api')
         ->getJson(route('api.v1.show.users'))
@@ -309,13 +309,13 @@ it('returns the expected summary keys', function () {
     expect($body)->toHaveKeys(['total', 'active', 'invited', 'inactive', 'internal_count', 'external_count']);
 });
 
-it('aggregates by status across own-tenant users only', function () {
+it('aggregates by status across own-organization users only', function () {
     $actor = adminUser();
     User::factory()->create(['organization_id' => $actor->organization_id, 'status' => 'active']);
     User::factory()->count(2)->create(['organization_id' => $actor->organization_id, 'status' => 'invited']);
     User::factory()->create(['organization_id' => $actor->organization_id, 'status' => 'inactive']);
-    // Foreign-tenant user — must NOT count.
-    User::factory()->create(['organization_id' => createTenant()->id, 'status' => 'active']);
+    // Foreign-organization user — must NOT count.
+    User::factory()->create(['organization_id' => createOrganization()->id, 'status' => 'active']);
 
     $body = $this->actingAs($actor, 'api')
         ->getJson(route('api.v1.show.users.summary'))
@@ -451,9 +451,9 @@ it('rejects invite when email is already in use', function () {
         ->assertJsonValidationErrors(['email']);
 });
 
-it('email-uniqueness check is global (not per-tenant) — invite fails when another tenant uses the email', function () {
+it('email-uniqueness check is global (not per-organization) — invite fails when another organization uses the email', function () {
     $actor = adminUser();
-    User::factory()->create(['organization_id' => createTenant()->id, 'email' => 'shared@x.com']);
+    User::factory()->create(['organization_id' => createOrganization()->id, 'email' => 'shared@x.com']);
     ensureRole('portfolio-manager');
 
     $this->actingAs($actor, 'api')
@@ -565,7 +565,7 @@ it('persists an invitation token in password_reset_tokens for the new user', fun
 it('forces organization_id from auth — clients cannot spoof it on invite', function () {
     Notification::fake();
     $actor = adminUser();
-    $other = createTenant();
+    $other = createOrganization();
     ensureRole('portfolio-manager');
 
     $resp = $this->actingAs($actor, 'api')
@@ -602,14 +602,14 @@ it('does not return password or remember_token on invite response', function () 
 // ║ GET /v1/users/{user}  —  show                                            ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('returns a single user with roles and estates eager-loaded', function () {
+it('returns a single user with roles and communities eager-loaded', function () {
     $actor = adminUser();
     $role  = ensureRole('portfolio-manager');
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
     $target->assignRole($role);
 
-    $estate = Estate::factory()->create(['organization_id' => $actor->organization_id]);
-    $target->estates()->attach($estate);
+    $community = Community::factory()->create(['organization_id' => $actor->organization_id]);
+    $target->communities()->attach($community);
 
     $body = $this->actingAs($actor, 'api')
         ->getJson(route('api.v1.show.user', $target))
@@ -617,13 +617,13 @@ it('returns a single user with roles and estates eager-loaded', function () {
         ->assertJsonStructure([
             'data' => ['id', 'name', 'email', 'status', 'organization_id',
                        'roles' => [['id', 'name']],
-                       'estates' => [['id', 'name']]],
+                       'communities' => [['id', 'name']]],
         ])
         ->json();
 
     expect($body['data']['id'])->toBe($target->id);
     expect(collect($body['data']['roles'])->pluck('name')->all())->toContain('portfolio-manager');
-    expect(collect($body['data']['estates'])->pluck('id')->all())->toContain($estate->id);
+    expect(collect($body['data']['communities'])->pluck('id')->all())->toContain($community->id);
 });
 
 it('returns 404 for an unknown user id', function () {
@@ -733,8 +733,8 @@ it('updates status — accepts every valid UserStatus value', function (string $
 })->with(['active', 'invited', 'inactive']);
 
 it('allows a user to update themselves even without admin permission', function () {
-    $tenant = createTenant();
-    $self   = createUser($tenant, 'portfolio-manager');
+    $organization = createOrganization();
+    $self   = createUser($organization, 'portfolio-manager');
 
     $this->actingAs($self, 'api')
         ->putJson(route('api.v1.update.user', $self), ['name' => 'Renamed Self'])
@@ -743,9 +743,9 @@ it('allows a user to update themselves even without admin permission', function 
 });
 
 it('forbids a non-admin from updating another user', function () {
-    $tenant = createTenant();
-    $self   = createUser($tenant, 'portfolio-manager');
-    $other  = createUser($tenant, 'portfolio-manager');
+    $organization = createOrganization();
+    $self   = createUser($organization, 'portfolio-manager');
+    $other  = createUser($organization, 'portfolio-manager');
 
     $this->actingAs($self, 'api')
         ->putJson(route('api.v1.update.user', $other), ['name' => 'Hijacked'])
@@ -800,7 +800,7 @@ it('returns 404 when deleting an unknown user id', function () {
 // ║ DELETE /v1/users  —  bulk                                                ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('bulk deletes own-tenant users and pluralises the message', function () {
+it('bulk deletes own-organization users and pluralises the message', function () {
     $actor = adminUser();
     $users = User::factory()->count(3)->create(['organization_id' => $actor->organization_id]);
 
@@ -837,10 +837,10 @@ it('silently filters the actor out of bulk delete to prevent self-deletion', fun
     $this->assertDatabaseMissing('users', ['id' => $target->id]);
 });
 
-it('only deletes own-tenant users when a mix of own + cross-tenant ids is supplied', function () {
+it('only deletes own-organization users when a mix of own + cross-organization ids is supplied', function () {
     $actor    = adminUser();
     $own      = User::factory()->create(['organization_id' => $actor->organization_id]);
-    $foreign  = User::factory()->create(['organization_id' => createTenant()->id]);
+    $foreign  = User::factory()->create(['organization_id' => createOrganization()->id]);
 
     $this->actingAs($actor, 'api')
         ->deleteJson(route('api.v1.delete.users'), ['user_ids' => [$own->id, $foreign->id]])
@@ -941,104 +941,104 @@ it('returns success=false with a friendly message when the broker rejects (e.g. 
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ PUT /v1/users/{user}/estates  —  sync user estates                       ║
+// ║ PUT /v1/users/{user}/communities  —  sync user communities                       ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('attaches estates to a user via sync', function () {
+it('attaches communities to a user via sync', function () {
     $actor  = adminUser();
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
-    $a      = Estate::factory()->create(['organization_id' => $actor->organization_id]);
-    $b      = Estate::factory()->create(['organization_id' => $actor->organization_id]);
+    $a      = Community::factory()->create(['organization_id' => $actor->organization_id]);
+    $b      = Community::factory()->create(['organization_id' => $actor->organization_id]);
 
     $resp = $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), ['estate_ids' => [$a->id, $b->id]])
+        ->putJson(route('api.v1.sync.user.communities', $target), ['community_ids' => [$a->id, $b->id]])
         ->assertOk()
         ->assertJsonPath('message', 'Updated successfully');
 
-    $estateIds = collect($resp->json('data.estates'))->pluck('id')->sort()->values()->all();
-    expect($estateIds)->toBe(collect([$a->id, $b->id])->sort()->values()->all());
+    $communityIds = collect($resp->json('data.communities'))->pluck('id')->sort()->values()->all();
+    expect($communityIds)->toBe(collect([$a->id, $b->id])->sort()->values()->all());
 });
 
-it('replaces the existing estate set on subsequent sync calls', function () {
+it('replaces the existing community set on subsequent sync calls', function () {
     $actor  = adminUser();
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
-    $a      = Estate::factory()->create(['organization_id' => $actor->organization_id]);
-    $b      = Estate::factory()->create(['organization_id' => $actor->organization_id]);
-    $c      = Estate::factory()->create(['organization_id' => $actor->organization_id]);
+    $a      = Community::factory()->create(['organization_id' => $actor->organization_id]);
+    $b      = Community::factory()->create(['organization_id' => $actor->organization_id]);
+    $c      = Community::factory()->create(['organization_id' => $actor->organization_id]);
 
     // First: attach a + b.
     $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), ['estate_ids' => [$a->id, $b->id]])
+        ->putJson(route('api.v1.sync.user.communities', $target), ['community_ids' => [$a->id, $b->id]])
         ->assertOk();
 
     // Then: sync to c only — a + b must be detached.
     $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), ['estate_ids' => [$c->id]])
+        ->putJson(route('api.v1.sync.user.communities', $target), ['community_ids' => [$c->id]])
         ->assertOk();
 
-    $ids = $target->fresh()->estates()->pluck('estates.id')->sort()->values()->all();
+    $ids = $target->fresh()->communities()->pluck('communities.id')->sort()->values()->all();
     expect($ids)->toBe([$c->id]);
 });
 
-it('clears every estate assignment when estate_ids is an empty array', function () {
+it('clears every community assignment when community_ids is an empty array', function () {
     $actor  = adminUser();
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
-    $estate = Estate::factory()->create(['organization_id' => $actor->organization_id]);
-    $target->estates()->attach($estate);
+    $community = Community::factory()->create(['organization_id' => $actor->organization_id]);
+    $target->communities()->attach($community);
 
     $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), ['estate_ids' => []])
+        ->putJson(route('api.v1.sync.user.communities', $target), ['community_ids' => []])
         ->assertOk();
 
-    expect($target->fresh()->estates()->count())->toBe(0);
+    expect($target->fresh()->communities()->count())->toBe(0);
 });
 
-it('rejects sync-estates when estate_ids is missing entirely (present rule)', function () {
+it('rejects sync-communities when community_ids is missing entirely (present rule)', function () {
     $actor  = adminUser();
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
 
     $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), [])
+        ->putJson(route('api.v1.sync.user.communities', $target), [])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['estate_ids']);
+        ->assertJsonValidationErrors(['community_ids']);
 });
 
-it('rejects sync-estates with a non-uuid id', function () {
+it('rejects sync-communities with a non-uuid id', function () {
     $actor  = adminUser();
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
 
     $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), ['estate_ids' => ['not-a-uuid']])
+        ->putJson(route('api.v1.sync.user.communities', $target), ['community_ids' => ['not-a-uuid']])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['estate_ids.0']);
+        ->assertJsonValidationErrors(['community_ids.0']);
 });
 
-it('rejects sync-estates with an unknown (non-existent) estate id', function () {
+it('rejects sync-communities with an unknown (non-existent) community id', function () {
     $actor  = adminUser();
     $target = User::factory()->create(['organization_id' => $actor->organization_id]);
 
     $this->actingAs($actor, 'api')
-        ->putJson(route('api.v1.sync.user.estates', $target), ['estate_ids' => ['00000000-0000-0000-0000-000000000000']])
+        ->putJson(route('api.v1.sync.user.communities', $target), ['community_ids' => ['00000000-0000-0000-0000-000000000000']])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['estate_ids.0']);
+        ->assertJsonValidationErrors(['community_ids.0']);
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ Cross-tenant isolation                                                   ║
+// ║ Cross-organization isolation                                                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('cross-tenant user show returns 404', function () {
+it('cross-organization user show returns 404', function () {
     $actor   = adminUser();
-    $foreign = User::factory()->create(['organization_id' => createTenant()->id]);
+    $foreign = User::factory()->create(['organization_id' => createOrganization()->id]);
 
     $this->actingAs($actor, 'api')
         ->getJson(route('api.v1.show.user', $foreign))
         ->assertNotFound();
 });
 
-it('cross-tenant user update returns 404', function () {
+it('cross-organization user update returns 404', function () {
     $actor   = adminUser();
-    $foreign = User::factory()->create(['organization_id' => createTenant()->id]);
+    $foreign = User::factory()->create(['organization_id' => createOrganization()->id]);
 
     $this->actingAs($actor, 'api')
         ->putJson(route('api.v1.update.user', $foreign), ['name' => 'Hijacked'])
@@ -1060,7 +1060,7 @@ function enrol2fa(User $user): void
 
 it('lets a company admin reset another user\'s 2FA, forcing re-enrolment', function () {
     $actor  = adminUser();
-    $target = makeUserInTenant($actor->organization_id);
+    $target = makeUserInOrganization($actor->organization_id);
     enrol2fa($target);
 
     expect($target->fresh()->hasTwoFactorEnabled())->toBeTrue();
@@ -1078,7 +1078,7 @@ it('lets a company admin reset another user\'s 2FA, forcing re-enrolment', funct
 
 it('revokes the target\'s sessions when their 2FA is reset', function () {
     $actor  = adminUser();
-    $target = makeUserInTenant($actor->organization_id);
+    $target = makeUserInOrganization($actor->organization_id);
     enrol2fa($target);
 
     \App\Models\UserSession::create([
@@ -1099,9 +1099,9 @@ it('revokes the target\'s sessions when their 2FA is reset', function () {
 });
 
 it('forbids a non-admin from resetting another user\'s 2FA', function () {
-    $tenant = createTenant();
-    $actor  = createUser($tenant, 'portfolio-manager');
-    $target = makeUserInTenant($tenant->id);
+    $organization = createOrganization();
+    $actor  = createUser($organization, 'portfolio-manager');
+    $target = makeUserInOrganization($organization->id);
     enrol2fa($target);
 
     $this->actingAs($actor, 'api')

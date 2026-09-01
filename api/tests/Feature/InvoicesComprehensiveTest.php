@@ -1,12 +1,12 @@
 <?php
 
 use App\Enums\InvoiceStatus;
-use App\Models\ChargeType;
+use App\Models\Ledger;
 use App\Models\CashbookEntry;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
-use App\Models\Tenant;
+use App\Models\Occupant;
 use App\Models\Unit;
 use Illuminate\Support\Str;
 
@@ -16,25 +16,25 @@ use Illuminate\Support\Str;
 
 /**
  * Create a fully-wired invoice with its dependencies.
- * Returns ['user', 'estate', 'unit', 'chargeType', 'owner', 'invoice'].
+ * Returns ['user', 'community', 'unit', 'ledger', 'owner', 'invoice'].
  */
 function makeInvoice(array $invoiceOverrides = []): array
 {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'billing_period'  => '2026-03-01',
     ], $invoiceOverrides));
 
-    return compact('user', 'estate', 'unit', 'chargeType', 'owner', 'invoice');
+    return compact('user', 'community', 'unit', 'ledger', 'owner', 'invoice');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ it('returns the complete invoice payload on show', function () {
     expect($data['id'])->toBe($invoice->id);
     expect($data['organization_id'])->toBe($user->organization_id);
     expect($data['unit_id'])->toBe($invoice->unit_id);
-    expect($data['charge_type_id'])->toBe($invoice->charge_type_id);
+    expect($data['ledger_id'])->toBe($invoice->ledger_id);
     expect($data['billed_to_type'])->toBe('owner');
     expect($data['billed_to_id'])->toBe($invoice->billed_to_id);
 
@@ -87,7 +87,7 @@ it('returns the complete invoice payload on index', function () {
         ->json('data.0');
 
     expect($data)->toHaveKeys([
-        'id', 'organization_id', 'unit_id', 'charge_type_id',
+        'id', 'organization_id', 'unit_id', 'ledger_id',
         'billed_to_type', 'billed_to_id', 'invoice_number',
         'status', 'amount', 'billing_period', 'due_date',
         'sent_at', 'issued_by_type', 'issued_by_user_id',
@@ -124,15 +124,15 @@ it('billing_period is returned as a date string', function () {
 
 it('filters invoices by status', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = [
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
     ];
@@ -155,22 +155,22 @@ it('filters invoices by status', function () {
 
 it('filters invoices by unit_id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
-    $unitA = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $unitB = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $unitA = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $unitB = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $ownerA     = Owner::factory()->create(['unit_id' => $unitA->id, 'organization_id' => $user->organization_id]);
     $ownerB     = Owner::factory()->create(['unit_id' => $unitB->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unitA->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerA->id,
+        'ledger_id' => $ledger->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerA->id,
     ]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unitB->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerB->id,
+        'ledger_id' => $ledger->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerB->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
@@ -182,67 +182,67 @@ it('filters invoices by unit_id', function () {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Filtering — estate_id
+// Filtering — community_id
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('filters invoices by estate_id', function () {
+it('filters invoices by community_id', function () {
     $user    = adminUser();
-    $estateA = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $estateB = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $communityA = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $communityB = Community::factory()->create(['organization_id' => $user->organization_id]);
 
-    $unitA = Unit::factory()->create(['estate_id' => $estateA->id, 'organization_id' => $user->organization_id]);
-    $unitB = Unit::factory()->create(['estate_id' => $estateB->id, 'organization_id' => $user->organization_id]);
+    $unitA = Unit::factory()->create(['community_id' => $communityA->id, 'organization_id' => $user->organization_id]);
+    $unitB = Unit::factory()->create(['community_id' => $communityB->id, 'organization_id' => $user->organization_id]);
 
-    $ctA    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $ctA    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $ownerA = Owner::factory()->create(['unit_id' => $unitA->id, 'organization_id' => $user->organization_id]);
     $ownerB = Owner::factory()->create(['unit_id' => $unitB->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unitA->id,
-        'charge_type_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerA->id,
+        'ledger_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerA->id,
     ]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unitB->id,
-        'charge_type_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerB->id,
+        'ledger_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerB->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.invoices') . '?estate_id=' . $estateA->id)
+        ->getJson(route('api.v1.show.invoices') . '?community_id=' . $communityA->id)
         ->assertOk();
 
     expect($response->json('meta.total'))->toBe(1);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Filtering — charge_type_id
+// Filtering — ledger_id
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('filters invoices by charge_type_id', function () {
+it('filters invoices by ledger_id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'billing_period' => '2026-01-01',
     ]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'billing_period' => '2026-02-01',
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.invoices') . '?charge_type_id=' . $ctA->id)
+        ->getJson(route('api.v1.show.invoices') . '?ledger_id=' . $ctA->id)
         ->assertOk();
 
     expect($response->json('meta.total'))->toBe(1);
-    expect($response->json('data.0.charge_type_id'))->toBe($ctA->id);
+    expect($response->json('data.0.ledger_id'))->toBe($ctA->id);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -251,20 +251,20 @@ it('filters invoices by charge_type_id', function () {
 
 it('filters invoices by billed_to_type owner', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'billing_period' => '2026-01-01',
     ]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ctB->id, 'billed_to_type' => 'organization', 'billed_to_id' => Str::uuid(),
+        'ledger_id' => $ctB->id, 'billed_to_type' => 'occupant', 'billed_to_id' => Str::uuid(),
         'billing_period' => '2026-02-01',
     ]);
 
@@ -282,19 +282,19 @@ it('filters invoices by billed_to_type owner', function () {
 
 it('sorts invoices by amount ascending', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctC        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctC        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = ['organization_id' => $user->organization_id, 'unit_id' => $unit->id,
               'billed_to_type' => 'owner', 'billed_to_id' => $owner->id];
 
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctA->id, 'amount' => 3000, 'billing_period' => '2026-01-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctB->id, 'amount' => 1000, 'billing_period' => '2026-02-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctC->id, 'amount' => 2000, 'billing_period' => '2026-03-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctA->id, 'amount' => 3000, 'billing_period' => '2026-01-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctB->id, 'amount' => 1000, 'billing_period' => '2026-02-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctC->id, 'amount' => 2000, 'billing_period' => '2026-03-01']));
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.invoices') . '?_sort=amount:asc')
@@ -306,19 +306,19 @@ it('sorts invoices by amount ascending', function () {
 
 it('sorts invoices by amount descending', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctC        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctC        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = ['organization_id' => $user->organization_id, 'unit_id' => $unit->id,
               'billed_to_type' => 'owner', 'billed_to_id' => $owner->id];
 
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctA->id, 'amount' => 1000, 'billing_period' => '2026-01-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctB->id, 'amount' => 3000, 'billing_period' => '2026-02-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctC->id, 'amount' => 2000, 'billing_period' => '2026-03-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctA->id, 'amount' => 1000, 'billing_period' => '2026-01-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctB->id, 'amount' => 3000, 'billing_period' => '2026-02-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctC->id, 'amount' => 2000, 'billing_period' => '2026-03-01']));
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.invoices') . '?_sort=amount:desc')
@@ -331,19 +331,19 @@ it('sorts invoices by amount descending', function () {
 
 it('sorts invoices by billing_period ascending', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctC        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctC        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = ['organization_id' => $user->organization_id, 'unit_id' => $unit->id,
               'billed_to_type' => 'owner', 'billed_to_id' => $owner->id];
 
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctA->id, 'billing_period' => '2026-03-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctB->id, 'billing_period' => '2026-01-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctC->id, 'billing_period' => '2026-02-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctA->id, 'billing_period' => '2026-03-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctB->id, 'billing_period' => '2026-01-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctC->id, 'billing_period' => '2026-02-01']));
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.invoices') . '?_sort=billing_period:asc')
@@ -380,15 +380,15 @@ it('filters invoices by date_range=this_month', function () {
 
 it('filters invoices by date_range=all_time returns all', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct         = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct         = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     foreach (['2026-01-01', '2026-02-01', '2026-03-01'] as $period) {
         Invoice::factory()->create([
             'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-            'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+            'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
             'billing_period' => $period,
         ]);
     }
@@ -419,16 +419,16 @@ it('filters invoices by custom date range', function () {
 
 it('paginates invoices correctly with _per_page', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $periods = ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01'];
     foreach ($periods as $period) {
-        $ct = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+        $ct = Ledger::factory()->create(['organization_id' => $user->organization_id]);
         Invoice::factory()->create([
             'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-            'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+            'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
             'billing_period' => $period,
         ]);
     }
@@ -508,16 +508,16 @@ it('ignores disallowed relationship names', function () {
 // CRUD — create (duplicate prevention)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('prevents creating a duplicate invoice for same unit charge_type and billing_period', function () {
+it('prevents creating a duplicate invoice for same unit ledger and billing_period', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $payload = [
         'unit_id'        => $unit->id,
-        'charge_type_id' => $chargeType->id,
+        'ledger_id' => $ledger->id,
         'billed_to_type' => 'owner',
         'billed_to_id'   => $owner->id,
         'amount'         => 1000,
@@ -534,16 +534,16 @@ it('prevents creating a duplicate invoice for same unit charge_type and billing_
         ->assertStatus(500); // Service throws Exception for duplicates
 });
 
-it('allows the same unit and charge_type for different billing periods', function () {
+it('allows the same unit and ledger for different billing periods', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = [
         'unit_id'        => $unit->id,
-        'charge_type_id' => $chargeType->id,
+        'ledger_id' => $ledger->id,
         'billed_to_type' => 'owner',
         'billed_to_id'   => $owner->id,
         'amount'         => 1000,
@@ -559,37 +559,37 @@ it('allows the same unit and charge_type for different billing periods', functio
         ->assertCreated();
 });
 
-it('creates invoice with billed_to_type organization (tenant)', function () {
+it('creates invoice with billed_to_type occupant', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
-            'billed_to_type' => 'organization',
+            'ledger_id' => $ledger->id,
+            'billed_to_type' => 'occupant',
             'billed_to_id'   => Str::uuid(),
             'amount'         => 500,
             'billing_period' => '2026-04-01',
             'due_date'       => '2026-04-07',
         ])
         ->assertCreated()
-        ->assertJsonPath('data.billed_to_type', 'organization');
+        ->assertJsonPath('data.billed_to_type', 'occupant');
 });
 
 it('creates invoice with amount zero (boundary)', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'billed_to_type' => 'owner',
             'billed_to_id'   => $owner->id,
             'amount'         => 0,
@@ -605,14 +605,14 @@ it('creates invoice with amount zero (boundary)', function () {
 
 it('returns 422 when billed_to_id is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'billed_to_type' => 'owner',
             'amount'         => 1000,
             'billing_period' => '2026-04-01',
@@ -624,14 +624,14 @@ it('returns 422 when billed_to_id is missing', function () {
 
 it('returns 422 when billed_to_id is not a uuid', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'billed_to_type' => 'owner',
             'billed_to_id'   => 'not-a-uuid',
             'amount'         => 1000,
@@ -644,15 +644,15 @@ it('returns 422 when billed_to_id is not a uuid', function () {
 
 it('returns 422 when billing_period is not a valid date', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'billed_to_type' => 'owner',
             'billed_to_id'   => $owner->id,
             'amount'         => 1000,
@@ -665,15 +665,15 @@ it('returns 422 when billing_period is not a valid date', function () {
 
 it('returns 422 when due_date is not a valid date', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'billed_to_type' => 'owner',
             'billed_to_id'   => $owner->id,
             'amount'         => 1000,
@@ -686,12 +686,12 @@ it('returns 422 when due_date is not a valid date', function () {
 
 it('returns 422 when unit_id does not exist in the database', function () {
     $user       = adminUser();
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => Str::uuid(),
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'billed_to_type' => 'owner',
             'billed_to_id'   => Str::uuid(),
             'amount'         => 1000,
@@ -702,15 +702,15 @@ it('returns 422 when unit_id does not exist in the database', function () {
         ->assertJsonValidationErrors(['unit_id']);
 });
 
-it('returns 422 when charge_type_id does not exist in the database', function () {
+it('returns 422 when ledger_id does not exist in the database', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.invoice'), [
             'unit_id'        => $unit->id,
-            'charge_type_id' => Str::uuid(),
+            'ledger_id' => Str::uuid(),
             'billed_to_type' => 'owner',
             'billed_to_id'   => Str::uuid(),
             'amount'         => 1000,
@@ -718,7 +718,7 @@ it('returns 422 when charge_type_id does not exist in the database', function ()
             'due_date'       => '2026-04-07',
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['charge_type_id']);
+        ->assertJsonValidationErrors(['ledger_id']);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -804,20 +804,20 @@ it('deleted invoice is soft-deleted not hard-deleted', function () {
 
 it('soft-deleted invoice is excluded from the index', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $invoiceA = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'billing_period' => '2026-01-01',
     ]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'billing_period' => '2026-02-01',
     ]);
 
@@ -838,13 +838,13 @@ it('soft-deleted invoice is excluded from the index', function () {
 
 it('bulk delete returns a success message', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct         = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct         = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'billing_period' => '2026-01-01',
     ]);
 
@@ -855,26 +855,26 @@ it('bulk delete returns a success message', function () {
     expect($response->json('message'))->toBeString();
 });
 
-it('bulk delete silently skips ids not belonging to the tenant', function () {
+it('bulk delete silently skips ids not belonging to the occupant', function () {
     $user   = adminUser();
-    $other  = createTenant();
+    $other  = createOrganization();
 
-    $otherEstate = Estate::factory()->create(['organization_id' => $other->id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $other->id]);
-    $otherCt     = ChargeType::factory()->create(['organization_id' => $other->id]);
+    $otherCommunity = Community::factory()->create(['organization_id' => $other->id]);
+    $otherUnit   = Unit::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $other->id]);
+    $otherCt     = Ledger::factory()->create(['organization_id' => $other->id]);
     $otherOwner  = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $other->id]);
 
     $otherInvoice = Invoice::factory()->create([
         'organization_id' => $other->id, 'unit_id' => $otherUnit->id,
-        'charge_type_id' => $otherCt->id, 'billed_to_type' => 'owner', 'billed_to_id' => $otherOwner->id,
+        'ledger_id' => $otherCt->id, 'billed_to_type' => 'owner', 'billed_to_id' => $otherOwner->id,
     ]);
 
-    // Sending another tenant's id — service scopes by organization_id, so it throws "No Invoices deleted"
+    // Sending another occupant's id — service scopes by organization_id, so it throws "No Invoices deleted"
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.invoices'), ['invoice_ids' => [$otherInvoice->id]])
         ->assertStatus(500);
 
-    // Other tenant's invoice must still be present
+    // Other occupant's invoice must still be present
     $this->assertDatabaseHas('invoices', ['id' => $otherInvoice->id, 'deleted_at' => null]);
 });
 
@@ -892,23 +892,23 @@ it('returns invoice summary with correct structure', function () {
     expect($response->json())->toHaveKeys([
         'total', 'total_amount', 'paid_count',
         'overdue_count', 'partially_paid_count',
-        'unpaid_count', 'revenue_by_charge_type',
+        'unpaid_count', 'revenue_by_ledger',
     ]);
 });
 
 it('invoice summary totals match actual invoice counts', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ctA        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB        = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ctA        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB        = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = ['organization_id' => $user->organization_id, 'unit_id' => $unit->id,
               'billed_to_type' => 'owner', 'billed_to_id' => $owner->id];
 
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctA->id, 'status' => InvoiceStatus::PAID->value,    'billing_period' => '2026-01-01']));
-    Invoice::factory()->create(array_merge($base, ['charge_type_id' => $ctB->id, 'status' => InvoiceStatus::OVERDUE->value, 'billing_period' => '2026-02-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctA->id, 'status' => InvoiceStatus::PAID->value,    'billing_period' => '2026-01-01']));
+    Invoice::factory()->create(array_merge($base, ['ledger_id' => $ctB->id, 'status' => InvoiceStatus::OVERDUE->value, 'billing_period' => '2026-02-01']));
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.invoices.summary'))
@@ -919,17 +919,17 @@ it('invoice summary totals match actual invoice counts', function () {
     expect($response->json('overdue_count'))->toBeGreaterThanOrEqual(1);
 });
 
-it('invoice summary is scoped to the authenticated tenant', function () {
+it('invoice summary is scoped to the authenticated occupant', function () {
     $user      = adminUser();
-    $other     = createTenant();
+    $other     = createOrganization();
 
-    $otherEstate = Estate::factory()->create(['organization_id' => $other->id]);
-    $otherUnit   = Unit::factory()->create(['estate_id' => $otherEstate->id, 'organization_id' => $other->id]);
-    $otherCt     = ChargeType::factory()->create(['organization_id' => $other->id]);
+    $otherCommunity = Community::factory()->create(['organization_id' => $other->id]);
+    $otherUnit   = Unit::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $other->id]);
+    $otherCt     = Ledger::factory()->create(['organization_id' => $other->id]);
     $otherOwner  = Owner::factory()->create(['unit_id' => $otherUnit->id, 'organization_id' => $other->id]);
     Invoice::factory()->create([
         'organization_id' => $other->id, 'unit_id' => $otherUnit->id,
-        'charge_type_id' => $otherCt->id, 'billed_to_type' => 'owner', 'billed_to_id' => $otherOwner->id,
+        'ledger_id' => $otherCt->id, 'billed_to_type' => 'owner', 'billed_to_id' => $otherOwner->id,
         'status' => InvoiceStatus::PAID->value,
     ]);
 
@@ -948,13 +948,13 @@ it('run billing creates invoices for active units with recurring charge configs'
     \Illuminate\Support\Facades\Queue::fake();
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit   = Unit::factory()->create([
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'organization_id' => $user->organization_id,
         'status'          => 'active',
     ]);
-    $chargeType = ChargeType::factory()->recurring()->create([
+    $ledger = Ledger::factory()->recurring()->create([
         'organization_id' => $user->organization_id,
         'applies_to'      => 'owner',
     ]);
@@ -962,14 +962,14 @@ it('run billing creates invoices for active units with recurring charge configs'
 
     \App\Models\UnitChargeConfig::factory()->create([
         'unit_id'        => $unit->id,
-        'charge_type_id' => $chargeType->id,
+        'ledger_id' => $ledger->id,
         'amount'         => 3000,
         'is_active'      => true,
     ]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.run.billing'), [
-            'estate_id'      => $estate->id,
+            'community_id'      => $community->id,
             'billing_period' => '2026-06',
             'dry_run'        => false,
         ])
@@ -981,13 +981,13 @@ it('run billing creates invoices for active units with recurring charge configs'
 
 it('dry_run billing does not persist invoices', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $countBefore = Invoice::where('organization_id', $user->organization_id)->count();
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.run.billing'), [
-            'estate_id'      => $estate->id,
+            'community_id'      => $community->id,
             'billing_period' => '2026-06',
             'dry_run'        => true,
         ])

@@ -185,10 +185,10 @@ const ENTRY_TYPE_OPTS = [
   { value: 'debit',  label: 'Debit (Paid Out)'  },
 ]
 
-async function fetchUnitsForEstate() {
-  if (!entry.value?.estate_id) return
+async function fetchUnitsForCommunity() {
+  if (!entry.value?.community_id) return
   try {
-    const res = await api.get(`/estates/${entry.value.estate_id}/units`, {
+    const res = await api.get(`/communities/${entry.value.community_id}/units`, {
       params: { per_page: 200 },
     })
     unitOptions.value = [
@@ -211,7 +211,7 @@ async function enterEditMode() {
   }
   editMode.value = true
   editError.value = null
-  await fetchUnitsForEstate()
+  await fetchUnitsForCommunity()
 }
 
 function cancelEdit() {
@@ -374,9 +374,9 @@ async function saveEdit() {
                         {{ isCredit ? 'Credit (Received)' : 'Debit (Paid Out)' }}
                       </AppBadge>
                     </div>
-                    <div v-if="entry.charge_type">
-                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Charge Type</p>
-                      <p class="text-sm font-medium text-foreground">{{ entry.charge_type.name }}</p>
+                    <div v-if="entry.ledger">
+                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Ledger</p>
+                      <p class="text-sm font-medium text-foreground">{{ entry.ledger.name }}</p>
                     </div>
                   </div>
                 </div>
@@ -568,7 +568,7 @@ async function saveEdit() {
           <!-- Context card -->
           <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
             <div class="p-5 space-y-3">
-              <!-- Estate -->
+              <!-- Community -->
               <div class="flex items-center gap-2 text-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <rect width="16" height="20" x="4" y="2" rx="2" ry="2"/>
@@ -576,11 +576,11 @@ async function saveEdit() {
                   <path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/>
                   <path d="M8 10h.01"/><path d="M8 14h.01"/>
                 </svg>
-                <span class="text-muted-foreground">Estate:</span>
+                <span class="text-muted-foreground">Community:</span>
                 <router-link
-                  :to="`/estates/${entry.estate_id}`"
+                  :to="`/communities/${entry.community_id}`"
                   class="text-primary font-medium hover:underline"
-                >{{ entry.estate?.name ?? entry.estate_id }}</router-link>
+                >{{ entry.community?.name ?? entry.community_id }}</router-link>
               </div>
 
               <!-- Unit -->
@@ -591,7 +591,7 @@ async function saveEdit() {
                 </svg>
                 <span class="text-muted-foreground">Unit:</span>
                 <router-link
-                  :to="`/estates/${entry.unit?.estate_id ?? entry.estate_id}/units/${entry.unit_id}`"
+                  :to="`/communities/${entry.unit?.community_id ?? entry.community_id}/units/${entry.unit_id}`"
                   class="text-primary font-medium hover:underline"
                 >{{ entry.unit?.unit_number ?? entry.unit_id }}</router-link>
               </div>

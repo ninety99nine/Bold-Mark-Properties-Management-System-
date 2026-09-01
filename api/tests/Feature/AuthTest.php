@@ -35,12 +35,12 @@ beforeEach(function () {
 });
 
 /**
- * Create a tenant + user with a known password.
+ * Create a occupant + user with a known password.
  */
 function userWithPassword(string $email = 'user@boldmark.test', string $password = 'password123'): User
 {
     return User::factory()->create([
-        'organization_id' => createTenant()->id,
+        'organization_id' => createOrganization()->id,
         'email'     => $email,
         'password'  => Hash::make($password),
     ]);

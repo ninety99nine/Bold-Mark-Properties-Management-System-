@@ -8,7 +8,7 @@ class ShowOrganizationRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
-     * The tenant is resolved from the authenticated user's organisation — no route param needed.
+     * The occupant is resolved from the authenticated user's organisation — no route param needed.
      */
     public function authorize(): bool
     {

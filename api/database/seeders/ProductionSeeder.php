@@ -3,7 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\ComplianceTemplate;
-use App\Services\EstateChargeTypeService;
+use App\Services\CommunityLedgerService;
 use App\Models\ComplianceTemplateItem;
 use App\Models\Organization;
 use App\Models\User;
@@ -15,8 +15,8 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Production seed — org + charge types + compliance templates + 3 users only.
- * No demo estates or dummy data.
+ * Production seed — org + ledgers + compliance templates + 3 users only.
+ * No demo communities or dummy data.
  *
  * Usage: php artisan migrate:fresh --seed --class=ProductionSeeder
  *        php artisan db:seed --class=ProductionSeeder
@@ -33,7 +33,7 @@ class ProductionSeeder extends Seeder
         $this->seedRolesAndPermissions();
         $this->seedSuperAdmin();
         $this->seedOrganization();
-        $this->seedDefaultChargeTypes();
+        $this->seedDefaultLedgers();
         $this->seedComplianceTemplates();
         $this->seedBoldMarkUsers();
 
@@ -145,8 +145,8 @@ class ProductionSeeder extends Seeder
             'view-financials',
         ]);
 
-        // Tenant — unit occupant (external)
-        Role::firstOrCreate(['name' => 'tenant', 'guard_name' => 'api']);
+        // Occupant — unit occupant (external)
+        Role::firstOrCreate(['name' => 'occupant', 'guard_name' => 'api']);
 
         // Contractor — maintenance provider (external)
         Role::firstOrCreate(['name' => 'contractor', 'guard_name' => 'api']);
@@ -172,7 +172,7 @@ class ProductionSeeder extends Seeder
     }
 
     /* ------------------------------------------------------------------ */
-    /*  ORGANIZATION (TENANT)                                               */
+    /*  ORGANIZATION                                               */
     /* ------------------------------------------------------------------ */
 
     private function seedOrganization(): void
@@ -201,15 +201,15 @@ class ProductionSeeder extends Seeder
     }
 
     /* ------------------------------------------------------------------ */
-    /*  DEFAULT CHARGE TYPES                                                */
+    /*  DEFAULT LEDGERS                                                */
     /* ------------------------------------------------------------------ */
 
-    private function seedDefaultChargeTypes(): void
+    private function seedDefaultLedgers(): void
     {
-        $this->command?->info('Seeding default charge types...');
+        $this->command?->info('Seeding default ledgers...');
 
         foreach (Organization::all() as $org) {
-            EstateChargeTypeService::seedDefaultsForOrganization($org->id);
+            CommunityLedgerService::seedDefaultsForOrganization($org->id);
         }
     }
 
@@ -223,20 +223,20 @@ class ProductionSeeder extends Seeder
 
         $organizations = Organization::all();
 
-        foreach ($organizations as $tenant) {
-            $this->seedComplianceTemplatesForTenant($tenant);
+        foreach ($organizations as $organization) {
+            $this->seedComplianceTemplatesForOrganization($organization);
         }
     }
 
-    private function seedComplianceTemplatesForTenant(Organization $tenant): void
+    private function seedComplianceTemplatesForOrganization(Organization $organization): void
     {
-        // Skip if templates already exist for this tenant
-        if (ComplianceTemplate::where('organization_id', $tenant->id)->exists()) {
+        // Skip if templates already exist for this organization
+        if (ComplianceTemplate::where('organization_id', $organization->id)->exists()) {
             return;
         }
 
         // ── Botswana Sectional Title ────────────────────────────────
-        $this->createComplianceTemplate($tenant, [
+        $this->createComplianceTemplate($organization, [
             'name'        => 'Sectional Title — Botswana',
             'description' => 'Standard annual compliance checklist for body corporate schemes in Botswana under the Sectional Titles Act.',
             'country'     => 'BW',
@@ -266,7 +266,7 @@ class ProductionSeeder extends Seeder
         ]);
 
         // ── South Africa Sectional Title ────────────────────────────
-        $this->createComplianceTemplate($tenant, [
+        $this->createComplianceTemplate($organization, [
             'name'        => 'Sectional Title — South Africa',
             'description' => 'Standard annual compliance checklist for body corporate schemes in South Africa under the Sectional Titles Schemes Management Act (STSMA) and Community Schemes Ombud Service Act.',
             'country'     => 'ZA',
@@ -300,7 +300,7 @@ class ProductionSeeder extends Seeder
         ]);
 
         // ── Generic / Custom Template ───────────────────────────────
-        $this->createComplianceTemplate($tenant, [
+        $this->createComplianceTemplate($organization, [
             'name'        => 'Generic Property Compliance',
             'description' => 'A general compliance checklist suitable for residential rental and commercial properties managed under a managing agent agreement.',
             'country'     => null,
@@ -319,7 +319,7 @@ class ProductionSeeder extends Seeder
         ]);
     }
 
-    private function createComplianceTemplate(Organization $tenant, array $data): void
+    private function createComplianceTemplate(Organization $organization, array $data): void
     {
         $template = ComplianceTemplate::create([
             'name'            => $data['name'],
@@ -327,7 +327,7 @@ class ProductionSeeder extends Seeder
             'country'         => $data['country'],
             'is_default'      => $data['is_default'],
             'is_system'       => $data['is_system'],
-            'organization_id' => $tenant->id,
+            'organization_id' => $organization->id,
         ]);
 
         foreach ($data['items'] as $itemData) {
@@ -352,7 +352,7 @@ class ProductionSeeder extends Seeder
     {
         $this->command?->info('Seeding Bold Mark admin users...');
 
-        $tenant   = Organization::where('slug', 'boldmark')->firstOrFail();
+        $organization   = Organization::where('slug', 'boldmark')->firstOrFail();
         $password = Hash::make(env('BOLDMARK_ADMIN_PASSWORD', 'password'));
         $role     = Role::findByName('company-admin', 'api');
 
@@ -371,7 +371,7 @@ class ProductionSeeder extends Seeder
                     'name'            => $data['name'],
                     'password'        => $password,
                     'phone'           => $data['phone'],
-                    'organization_id' => $tenant->id,
+                    'organization_id' => $organization->id,
                 ]
             );
 

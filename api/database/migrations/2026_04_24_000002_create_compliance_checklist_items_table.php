@@ -40,7 +40,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('compliance_checklist_id', 'compliance_items_checklist_idx');
-            $table->index('organization_id', 'compliance_items_tenant_idx');
+            $table->index('organization_id', 'compliance_items_organization_idx');
             $table->index('status', 'compliance_items_status_idx');
             $table->index('category', 'compliance_items_category_idx');
             $table->index('due_date', 'compliance_items_due_date_idx');

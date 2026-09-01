@@ -451,8 +451,8 @@ abstract class BaseService
      * Resolve the singular JsonResource class from the child service class name.
      *
      * Convention:
-     *   EstateService      → App\Http\Resources\EstateResource
-     *   TenantService  → App\Http\Resources\TenantResource
+     *   CommunityService      → App\Http\Resources\CommunityResource
+     *   OccupantService  → App\Http\Resources\OccupantResource
      *
      * Child classes may override `$resourceClass` to bypass the convention.
      *
@@ -467,7 +467,7 @@ abstract class BaseService
         }
 
         $basename = class_basename(static::class);
-        // Strip trailing "Service" → e.g. "EstateService" → "Estate"
+        // Strip trailing "Service" → e.g. "CommunityService" → "Community"
         $name  = preg_replace('/Service$/', '', $basename);
         $class = "App\\Http\\Resources\\{$name}Resource";
 
@@ -484,8 +484,8 @@ abstract class BaseService
      * Resolve the ResourceCollection class from the child service class name.
      *
      * Convention:
-     *   EstateService      → App\Http\Resources\EstateResources  (plural)
-     *   TenantService  → App\Http\Resources\TenantResources
+     *   CommunityService      → App\Http\Resources\CommunityResources  (plural)
+     *   OccupantService  → App\Http\Resources\OccupantResources
      *
      * Child classes may override `$resourceCollectionClass` to bypass the convention.
      *

@@ -93,7 +93,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the tenant (organisation) this user belongs to.
+     * Get the occupant (organisation) this user belongs to.
      *
      * @return BelongsTo
      */
@@ -103,14 +103,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the estates assigned to this user.
+     * Get the communities assigned to this user.
      *
      * @return BelongsToMany
      */
-    public function estates(): BelongsToMany
+    public function communities(): BelongsToMany
     {
-        return $this->belongsToMany(Estate::class, 'user_estates')
-                    ->using(UserEstate::class)
+        return $this->belongsToMany(Community::class, 'user_communities')
+                    ->using(UserCommunity::class)
                     ->withTimestamps();
     }
 

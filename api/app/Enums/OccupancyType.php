@@ -5,7 +5,7 @@ namespace App\Enums;
 enum OccupancyType: string
 {
     case OWNER_OCCUPIED  = 'owner_occupied';
-    case TENANT_OCCUPIED = 'tenant_occupied';
+    case OCCUPANT_OCCUPIED = 'occupant_occupied';
     case VACANT          = 'vacant';
 
     /**

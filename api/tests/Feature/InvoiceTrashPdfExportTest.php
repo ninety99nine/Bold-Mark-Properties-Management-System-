@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
 use App\Models\Unit;
@@ -13,25 +13,25 @@ use Illuminate\Support\Str;
 
 /**
  * Create a fully-wired invoice with its dependencies.
- * Returns ['user', 'estate', 'unit', 'chargeType', 'owner', 'invoice'].
+ * Returns ['user', 'community', 'unit', 'ledger', 'owner', 'invoice'].
  */
 function makeInvoiceForTrash(array $invoiceOverrides = []): array
 {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'billing_period'  => '2026-03-01',
     ], $invoiceOverrides));
 
-    return compact('user', 'estate', 'unit', 'chargeType', 'owner', 'invoice');
+    return compact('user', 'community', 'unit', 'ledger', 'owner', 'invoice');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ it('show deleted invoices does not include active invoices', function () {
     expect($response->json('data'))->toBeEmpty();
 });
 
-it('show deleted invoices does not include another tenants deleted invoices', function () {
+it('show deleted invoices does not include another occupants deleted invoices', function () {
     ['invoice' => $otherInvoice] = makeInvoiceForTrash();
     $otherInvoice->delete();
 
@@ -127,9 +127,9 @@ it('show deleted invoices payload includes deleted_at', function () {
 
 it('show deleted invoices paginates the list', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->count(5)->sequence(fn ($s) => [
@@ -137,7 +137,7 @@ it('show deleted invoices paginates the list', function () {
     ])->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'deleted_at'      => now(),
@@ -224,8 +224,8 @@ it('restored invoice is removed from the trash list', function () {
     expect($trash)->toBeEmpty();
 });
 
-it('restore invoice returns 404 for another tenants invoice', function () {
-    // Other tenant creates and deletes an invoice
+it('restore invoice returns 404 for another occupants invoice', function () {
+    // Other occupant creates and deletes an invoice
     ['invoice' => $otherInvoice] = makeInvoiceForTrash();
     $otherInvoice->delete();
 
@@ -314,7 +314,7 @@ it('force delete can also permanently remove an active invoice', function () {
     expect(Invoice::withTrashed()->find($invoice->id))->toBeNull();
 });
 
-it('force delete returns 404 for another tenants invoice', function () {
+it('force delete returns 404 for another occupants invoice', function () {
     ['invoice' => $otherInvoice] = makeInvoiceForTrash();
     $otherInvoice->delete();
 
@@ -371,7 +371,7 @@ it('download pdf returns 404 for a non-existent invoice', function () {
         ->assertNotFound();
 });
 
-it('download pdf returns 404 for another tenants invoice', function () {
+it('download pdf returns 404 for another occupants invoice', function () {
     ['invoice' => $otherInvoice] = makeInvoiceForTrash();
     $myUser = adminUser();
 
@@ -408,9 +408,9 @@ it('csv export contains the expected column headers', function () {
 
     $firstLine = strtok($response->streamedContent(), "\n");
     expect($firstLine)->toContain('Invoice #');
-    expect($firstLine)->toContain('Estate');
+    expect($firstLine)->toContain('Community');
     expect($firstLine)->toContain('Unit');
-    expect($firstLine)->toContain('Charge Type');
+    expect($firstLine)->toContain('Ledger');
     expect($firstLine)->toContain('Amount');
     expect($firstLine)->toContain('Status');
 });
@@ -429,11 +429,11 @@ it('csv export contains a data row for each invoice', function () {
     expect($content)->toContain($invoice->invoice_number);
 });
 
-it('csv export only includes the current tenants invoices', function () {
-    // Other tenant invoice
+it('csv export only includes the current occupants invoices', function () {
+    // Other occupant invoice
     ['invoice' => $otherInvoice] = makeInvoiceForTrash();
 
-    // My tenant
+    // My occupant
     ['user' => $myUser, 'invoice' => $myInvoice] = makeInvoiceForTrash();
 
     $content = $this->actingAs($myUser, 'api')
@@ -466,9 +466,9 @@ it('export invoices returns 400 for an unsupported format', function () {
 
 it('_limit parameter caps the number of records exported', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     Invoice::factory()->count(5)->sequence(fn ($s) => [
@@ -476,7 +476,7 @@ it('_limit parameter caps the number of records exported', function () {
     ])->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
     ]);
@@ -493,20 +493,20 @@ it('_limit parameter caps the number of records exported', function () {
 
 it('csv export respects the status filter', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
     $base = [
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
     ];
 
-    // Different billing periods to avoid unique constraint (unit_id, charge_type_id, billing_period)
+    // Different billing periods to avoid unique constraint (unit_id, ledger_id, billing_period)
     $paid   = Invoice::factory()->create(array_merge($base, ['status' => 'paid',   'billing_period' => '2026-02-01']));
     $unpaid = Invoice::factory()->create(array_merge($base, ['status' => 'unpaid', 'billing_period' => '2026-03-01']));
 

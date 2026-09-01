@@ -24,7 +24,7 @@ return new class extends Migration
             // Human-readable event description, e.g. "Updated owner details"
             $table->string('event');
 
-            // Category for badge colouring: unit | owner | tenant | charges
+            // Category for badge colouring: unit | owner | occupant | charges
             $table->string('category', 20);
 
             // Field-level diff: [{ field, old, new }, ...]

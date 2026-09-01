@@ -5,7 +5,7 @@ use App\Models\ComplianceChecklistItem;
 use App\Models\ComplianceItemAttachment;
 use App\Models\ComplianceTemplate;
 use App\Models\ComplianceTemplateItem;
-use App\Models\Estate;
+use App\Models\Community;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -17,31 +17,31 @@ use Illuminate\Support\Str;
 function makeChecklist(array $overrides = []): array
 {
     $user    = adminUser();
-    $estate  = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community  = Community::factory()->create(['organization_id' => $user->organization_id]);
     $checklist = ComplianceChecklist::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'created_by_id'   => $user->id,
     ], $overrides));
 
-    return compact('user', 'estate', 'checklist');
+    return compact('user', 'community', 'checklist');
 }
 
 function makeChecklistWithItem(array $itemOverrides = []): array
 {
-    ['user' => $user, 'estate' => $estate, 'checklist' => $checklist] = makeChecklist();
+    ['user' => $user, 'community' => $community, 'checklist' => $checklist] = makeChecklist();
 
     $item = ComplianceChecklistItem::factory()->create(array_merge([
         'compliance_checklist_id' => $checklist->id,
         'organization_id'         => $user->organization_id,
     ], $itemOverrides));
 
-    return compact('user', 'estate', 'checklist', 'item');
+    return compact('user', 'community', 'checklist', 'item');
 }
 
 function makeChecklistWithAttachment(): array
 {
-    ['user' => $user, 'estate' => $estate, 'checklist' => $checklist, 'item' => $item] = makeChecklistWithItem();
+    ['user' => $user, 'community' => $community, 'checklist' => $checklist, 'item' => $item] = makeChecklistWithItem();
 
     $attachment = ComplianceItemAttachment::factory()->create([
         'compliance_checklist_item_id' => $item->id,
@@ -50,7 +50,7 @@ function makeChecklistWithAttachment(): array
         'file_name'                    => 'test.pdf',
     ]);
 
-    return compact('user', 'estate', 'checklist', 'item', 'attachment');
+    return compact('user', 'community', 'checklist', 'item', 'attachment');
 }
 
 function makeTemplate(array $overrides = []): array
@@ -81,7 +81,7 @@ it('show checklists returns paginated data', function () {
         ->assertJsonStructure(['data', 'meta', 'links']);
 });
 
-it('show checklists returns tenant checklists', function () {
+it('show checklists returns occupant checklists', function () {
     ['user' => $user, 'checklist' => $checklist] = makeChecklist();
 
     $ids = $this->actingAs($user, 'api')
@@ -104,40 +104,40 @@ it('show checklists does not return other org checklists', function () {
     expect($ids)->not->toContain($otherChecklist->id);
 });
 
-it('show checklists filters by estate_id', function () {
+it('show checklists filters by community_id', function () {
     ['user' => $user, 'checklist' => $checklist] = makeChecklist();
-    $otherEstate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $otherCommunity = Community::factory()->create(['organization_id' => $user->organization_id]);
     ComplianceChecklist::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $otherEstate->id,
+        'community_id'       => $otherCommunity->id,
     ]);
 
     $ids = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.compliance-checklists') . '?estate_id=' . $checklist->estate_id)
+        ->getJson(route('api.v1.show.compliance-checklists') . '?community_id=' . $checklist->community_id)
         ->assertOk()
         ->json('data.*.id');
 
     expect($ids)->toContain($checklist->id);
     expect($ids)->not->toContain(
-        ComplianceChecklist::where('estate_id', $otherEstate->id)->first()->id
+        ComplianceChecklist::where('community_id', $otherCommunity->id)->first()->id
     );
 });
 
 it('show checklists filters by financial_year_label', function () {
     $user    = adminUser();
-    $estate1 = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $estate2 = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community1 = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $community2 = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $fy2025 = ComplianceChecklist::factory()->create([
         'organization_id'      => $user->organization_id,
-        'estate_id'            => $estate1->id,
+        'community_id'            => $community1->id,
         'financial_year_label' => '2025/2026',
         'financial_year_start' => '2025-03-01',
         'financial_year_end'   => '2026-02-28',
     ]);
     ComplianceChecklist::factory()->create([
         'organization_id'      => $user->organization_id,
-        'estate_id'            => $estate2->id,
+        'community_id'            => $community2->id,
         'financial_year_label' => '2024/2025',
         'financial_year_start' => '2024-03-01',
         'financial_year_end'   => '2025-02-28',
@@ -181,7 +181,7 @@ it('show checklist response has expected fields', function () {
         ->json('data');
 
     expect($data)->toHaveKeys([
-        'id', 'estate_id', 'financial_year_label', 'financial_year_start',
+        'id', 'community_id', 'financial_year_label', 'financial_year_start',
         'financial_year_end', 'items_count', 'completed_items_count',
         'overdue_items_count', 'progress_percentage', 'items',
     ]);
@@ -230,22 +230,22 @@ it('create checklist returns 401 without auth', function () {
 
 it('create checklist persists and returns the checklist', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.compliance-checklist'), [
-            'estate_id'            => $estate->id,
+            'community_id'            => $community->id,
             'financial_year_label' => '2025/2026',
             'financial_year_start' => '2025-03-01',
             'financial_year_end'   => '2026-02-28',
         ])
         ->assertOk();
 
-    expect(ComplianceChecklist::where('estate_id', $estate->id)->exists())->toBeTrue();
+    expect(ComplianceChecklist::where('community_id', $community->id)->exists())->toBeTrue();
     expect($response->json('data.financial_year_label'))->toBe('2025/2026');
 });
 
-it('create checklist requires estate_id', function () {
+it('create checklist requires community_id', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
@@ -255,16 +255,16 @@ it('create checklist requires estate_id', function () {
             'financial_year_end'   => '2026-02-28',
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('estate_id');
+        ->assertJsonValidationErrors('community_id');
 });
 
 it('create checklist requires financial_year_start before financial_year_end', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.compliance-checklist'), [
-            'estate_id'            => $estate->id,
+            'community_id'            => $community->id,
             'financial_year_label' => '2025/2026',
             'financial_year_start' => '2026-03-01',
             'financial_year_end'   => '2025-02-28',
@@ -273,12 +273,12 @@ it('create checklist requires financial_year_start before financial_year_end', f
         ->assertJsonValidationErrors('financial_year_end');
 });
 
-it('create checklist returns 409 when estate and financial year already exist', function () {
+it('create checklist returns 409 when community and financial year already exist', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $payload = [
-        'estate_id'            => $estate->id,
+        'community_id'            => $community->id,
         'financial_year_label' => '2025/2026',
         'financial_year_start' => '2025-03-01',
         'financial_year_end'   => '2026-02-28',
@@ -295,7 +295,7 @@ it('create checklist returns 409 when estate and financial year already exist', 
 
 it('create checklist with template_id generates items from template', function () {
     $user     = adminUser();
-    $estate   = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community   = Community::factory()->create(['organization_id' => $user->organization_id]);
     $template = ComplianceTemplate::factory()->create(['organization_id' => $user->organization_id]);
     ComplianceTemplateItem::create([
         'name'                   => 'Annual Audit',
@@ -308,7 +308,7 @@ it('create checklist with template_id generates items from template', function (
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.compliance-checklist'), [
-            'estate_id'            => $estate->id,
+            'community_id'            => $community->id,
             'financial_year_label' => '2025/2026',
             'financial_year_start' => '2025-03-01',
             'financial_year_end'   => '2026-02-28',
@@ -316,18 +316,18 @@ it('create checklist with template_id generates items from template', function (
         ])
         ->assertOk();
 
-    $checklist = ComplianceChecklist::where('estate_id', $estate->id)->first();
+    $checklist = ComplianceChecklist::where('community_id', $community->id)->first();
     expect($checklist->items()->count())->toBe(1);
     expect($checklist->items()->first()->name)->toBe('Annual Audit');
 });
 
 it('create checklist stores notes', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.compliance-checklist'), [
-            'estate_id'            => $estate->id,
+            'community_id'            => $community->id,
             'financial_year_label' => '2025/2026',
             'financial_year_start' => '2025-03-01',
             'financial_year_end'   => '2026-02-28',
@@ -335,24 +335,24 @@ it('create checklist stores notes', function () {
         ])
         ->assertOk();
 
-    expect(ComplianceChecklist::where('estate_id', $estate->id)->first()->notes)
+    expect(ComplianceChecklist::where('community_id', $community->id)->first()->notes)
         ->toBe('Reviewed by legal team.');
 });
 
 it('create checklist assigns organization_id from authenticated user', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.compliance-checklist'), [
-            'estate_id'            => $estate->id,
+            'community_id'            => $community->id,
             'financial_year_label' => '2025/2026',
             'financial_year_start' => '2025-03-01',
             'financial_year_end'   => '2026-02-28',
         ])
         ->assertOk();
 
-    $checklist = ComplianceChecklist::where('estate_id', $estate->id)->first();
+    $checklist = ComplianceChecklist::where('community_id', $community->id)->first();
     expect($checklist->organization_id)->toBe($user->organization_id);
     expect($checklist->created_by_id)->toBe($user->id);
 });
@@ -896,7 +896,7 @@ it('show templates returns 401 without auth', function () {
         ->assertUnauthorized();
 });
 
-it('show templates returns tenant templates', function () {
+it('show templates returns occupant templates', function () {
     ['user' => $user, 'template' => $template] = makeTemplate();
 
     $ids = $this->actingAs($user, 'api')
@@ -1165,13 +1165,13 @@ it('portfolio summary returns 401 without auth', function () {
         ->assertUnauthorized();
 });
 
-it('portfolio summary returns summary, estates, and financial_years keys', function () {
+it('portfolio summary returns summary, communities, and financial_years keys', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.compliance.portfolio-summary'))
         ->assertOk()
-        ->assertJsonStructure(['summary', 'estates', 'financial_years']);
+        ->assertJsonStructure(['summary', 'communities', 'financial_years']);
 });
 
 it('portfolio summary summary has expected metric keys', function () {
@@ -1183,26 +1183,26 @@ it('portfolio summary summary has expected metric keys', function () {
         ->json('summary');
 
     expect($summary)->toHaveKeys([
-        'total_estates', 'fully_compliant', 'partially_compliant',
+        'total_communities', 'fully_compliant', 'partially_compliant',
         'not_started', 'total_items', 'total_completed',
         'total_overdue', 'portfolio_progress',
     ]);
 });
 
-it('portfolio summary counts estates correctly', function () {
+it('portfolio summary counts communities correctly', function () {
     $user    = adminUser();
-    $estate1 = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $estate2 = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community1 = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $community2 = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     ComplianceChecklist::factory()->create([
         'organization_id'      => $user->organization_id,
-        'estate_id'            => $estate1->id,
+        'community_id'            => $community1->id,
         'financial_year_start' => '2025-03-01',
         'financial_year_end'   => '2026-02-28',
     ]);
     ComplianceChecklist::factory()->create([
         'organization_id'      => $user->organization_id,
-        'estate_id'            => $estate2->id,
+        'community_id'            => $community2->id,
         'financial_year_start' => '2025-03-01',
         'financial_year_end'   => '2026-02-28',
     ]);
@@ -1212,7 +1212,7 @@ it('portfolio summary counts estates correctly', function () {
         ->assertOk()
         ->json('summary');
 
-    expect($summary['total_estates'])->toBe(2);
+    expect($summary['total_communities'])->toBe(2);
 });
 
 it('portfolio summary reports fully_compliant when all items completed', function () {
@@ -1235,11 +1235,11 @@ it('portfolio summary reports fully_compliant when all items completed', functio
 
 it('portfolio summary financial_years lists available financial year labels', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     ComplianceChecklist::factory()->create([
         'organization_id'      => $user->organization_id,
-        'estate_id'            => $estate->id,
+        'community_id'            => $community->id,
         'financial_year_label' => '2025/2026',
         'financial_year_start' => '2025-03-01',
         'financial_year_end'   => '2026-02-28',
@@ -1263,5 +1263,5 @@ it('portfolio summary does not include other org checklists', function () {
         ->assertOk()
         ->json('summary');
 
-    expect($summary['total_estates'])->toBe(0);
+    expect($summary['total_communities'])->toBe(0);
 });

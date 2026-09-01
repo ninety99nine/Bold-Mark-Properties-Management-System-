@@ -3,8 +3,8 @@
 use App\Enums\CashbookEntryType;
 use App\Enums\InvoiceStatus;
 use App\Models\CashbookEntry;
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
 use App\Models\Unit;
@@ -15,40 +15,40 @@ use App\Models\Unit;
 
 /**
  * Build a minimal cashbook entry with its dependencies.
- * Returns ['user', 'estate', 'entry'].
+ * Returns ['user', 'community', 'entry'].
  */
 function makeEntry(array $overrides = []): array
 {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ], $overrides));
-    return compact('user', 'estate', 'entry');
+    return compact('user', 'community', 'entry');
 }
 
 /**
  * Build a fully-wired invoice for allocation tests.
- * Returns ['user', 'estate', 'unit', 'owner', 'invoice'].
+ * Returns ['user', 'community', 'unit', 'owner', 'invoice'].
  */
 function makeInvoiceForAllocation(float $amount = 1000.0): array
 {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'amount'          => $amount,
         'status'          => InvoiceStatus::UNPAID->value,
     ]);
-    return compact('user', 'estate', 'unit', 'owner', 'invoice');
+    return compact('user', 'community', 'unit', 'owner', 'invoice');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ it('returns 401 on auto-allocate when unauthenticated', function () {
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('returns the complete cashbook entry payload on show', function () {
-    ['user' => $user, 'estate' => $estate, 'entry' => $entry] = makeEntry(['type' => 'credit']);
+    ['user' => $user, 'community' => $community, 'entry' => $entry] = makeEntry(['type' => 'credit']);
 
     $data = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $entry))
@@ -78,10 +78,10 @@ it('returns the complete cashbook entry payload on show', function () {
         ->json('data');
 
     expect($data['id'])->toBe($entry->id);
-    expect($data['estate_id'])->toBe($estate->id);
+    expect($data['community_id'])->toBe($community->id);
     expect($data['organization_id'])->toBe($user->organization_id);
     expect($data)->toHaveKeys([
-        'unit_id', 'invoice_id', 'charge_type_id', 'parent_entry_id',
+        'unit_id', 'invoice_id', 'ledger_id', 'parent_entry_id',
         'description', 'amount', 'type', 'date', 'notes',
         'proof_of_payment_url', 'created_at', 'updated_at', 'is_allocated',
     ]);
@@ -98,8 +98,8 @@ it('returns the complete cashbook entry payload on index', function () {
         ->json('data.0');
 
     expect($data)->toHaveKeys([
-        'id', 'estate_id', 'organization_id', 'unit_id', 'invoice_id',
-        'charge_type_id', 'parent_entry_id', 'description', 'amount',
+        'id', 'community_id', 'organization_id', 'unit_id', 'invoice_id',
+        'ledger_id', 'parent_entry_id', 'description', 'amount',
         'type', 'date', 'notes', 'proof_of_payment_url',
         'created_at', 'updated_at', 'is_allocated',
     ]);
@@ -129,17 +129,17 @@ it('date is returned as a Y-m-d string', function () {
 
 it('is_allocated is true when entry has invoice_id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
     ]);
 
@@ -163,23 +163,23 @@ it('proof_of_payment_url is null when no file uploaded', function () {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Filtering — estate_id
+// Filtering — community_id
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('filters cashbook entries by estate_id', function () {
+it('filters cashbook entries by community_id', function () {
     $user    = adminUser();
-    $estateA = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $estateB = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $communityA = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $communityB = Community::factory()->create(['organization_id' => $user->organization_id]);
 
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estateA->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estateB->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $communityA->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $communityB->id]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.entries') . '?estate_id=' . $estateA->id)
+        ->getJson(route('api.v1.show.cashbook.entries') . '?community_id=' . $communityA->id)
         ->assertOk();
 
     expect($response->json('meta.total'))->toBe(1);
-    expect($response->json('data.0.estate_id'))->toBe($estateA->id);
+    expect($response->json('data.0.community_id'))->toBe($communityA->id);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -188,8 +188,8 @@ it('filters cashbook entries by estate_id', function () {
 
 it('filters cashbook entries by type credit', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->credit()->create($base);
     CashbookEntry::factory()->credit()->create($base);
@@ -205,8 +205,8 @@ it('filters cashbook entries by type credit', function () {
 
 it('filters cashbook entries by type debit', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->credit()->create($base);
     CashbookEntry::factory()->debit()->create($base);
@@ -226,13 +226,13 @@ it('filters cashbook entries by type debit', function () {
 
 it('filters cashbook entries by unit_id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unitA  = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $unitB  = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unitA  = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $unitB  = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'unit_id' => $unitA->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'unit_id' => $unitB->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'unit_id' => null]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'unit_id' => $unitA->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'unit_id' => $unitB->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'unit_id' => null]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?unit_id=' . $unitA->id)
@@ -248,17 +248,17 @@ it('filters cashbook entries by unit_id', function () {
 
 it('filters cashbook entries with allocation_status=allocated', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'invoice_id' => $invoice->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'invoice_id' => null]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'invoice_id' => $invoice->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'invoice_id' => null]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?allocation_status=allocated')
@@ -270,18 +270,18 @@ it('filters cashbook entries with allocation_status=allocated', function () {
 
 it('filters cashbook entries with allocation_status=unallocated', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'invoice_id' => $invoice->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'invoice_id' => null]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'invoice_id' => null]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'invoice_id' => $invoice->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'invoice_id' => null]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'invoice_id' => null]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?allocation_status=unallocated')
@@ -292,25 +292,25 @@ it('filters cashbook entries with allocation_status=unallocated', function () {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Filtering — charge_type_id
+// Filtering — ledger_id
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('filters cashbook entries by charge_type_id', function () {
+it('filters cashbook entries by ledger_id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $ctA    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
-    $ctB    = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $ctA    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $ctB    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'charge_type_id' => $ctA->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'charge_type_id' => $ctB->id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id, 'charge_type_id' => null]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'ledger_id' => $ctA->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'ledger_id' => $ctB->id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'ledger_id' => null]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.entries') . '?charge_type_id=' . $ctA->id)
+        ->getJson(route('api.v1.show.cashbook.entries') . '?ledger_id=' . $ctA->id)
         ->assertOk();
 
     expect($response->json('meta.total'))->toBe(1);
-    expect($response->json('data.0.charge_type_id'))->toBe($ctA->id);
+    expect($response->json('data.0.ledger_id'))->toBe($ctA->id);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -319,8 +319,8 @@ it('filters cashbook entries by charge_type_id', function () {
 
 it('sorts cashbook entries by amount ascending', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->create(array_merge($base, ['amount' => 3000]));
     CashbookEntry::factory()->create(array_merge($base, ['amount' => 1000]));
@@ -338,8 +338,8 @@ it('sorts cashbook entries by amount ascending', function () {
 
 it('sorts cashbook entries by amount descending', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->create(array_merge($base, ['amount' => 500]));
     CashbookEntry::factory()->create(array_merge($base, ['amount' => 2500]));
@@ -356,8 +356,8 @@ it('sorts cashbook entries by amount descending', function () {
 
 it('sorts cashbook entries by date ascending', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->create(array_merge($base, ['date' => '2026-03-01']));
     CashbookEntry::factory()->create(array_merge($base, ['date' => '2026-01-01']));
@@ -374,8 +374,8 @@ it('sorts cashbook entries by date ascending', function () {
 
 it('sorts cashbook entries by date descending by default when no _sort given', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->create(array_merge($base, ['date' => '2026-01-01']));
     CashbookEntry::factory()->create(array_merge($base, ['date' => '2026-03-01']));
@@ -396,8 +396,8 @@ it('sorts cashbook entries by date descending by default when no _sort given', f
 
 it('filters cashbook entries by date_range=today using the date column', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     // This one has date = today
     CashbookEntry::factory()->create(array_merge($base, ['date' => today()->toDateString()]));
@@ -414,8 +414,8 @@ it('filters cashbook entries by date_range=today using the date column', functio
 
 it('filters cashbook entries by date_range=this_month', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     // This month
     CashbookEntry::factory()->create(array_merge($base, ['date' => now()->startOfMonth()->toDateString()]));
@@ -432,8 +432,8 @@ it('filters cashbook entries by date_range=this_month', function () {
 
 it('filters cashbook entries by custom date range', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->create(array_merge($base, ['date' => '2026-03-10']));
     CashbookEntry::factory()->create(array_merge($base, ['date' => '2026-03-20']));
@@ -448,8 +448,8 @@ it('filters cashbook entries by custom date range', function () {
 
 it('returns all entries when date_range=all_time', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->count(4)->create($base);
 
@@ -466,10 +466,10 @@ it('returns all entries when date_range=all_time', function () {
 
 it('paginates cashbook entries with _per_page', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     CashbookEntry::factory()->count(7)->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
@@ -487,11 +487,11 @@ it('paginates cashbook entries with _per_page', function () {
 
 it('returns parentEntry relationship when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $parent = CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $parent = CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
     $child  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'parent_entry_id' => $parent->id,
     ]);
 
@@ -505,11 +505,11 @@ it('returns parentEntry relationship when requested', function () {
 
 it('returns childEntries relationship on index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $parent = CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $parent = CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
     CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'parent_entry_id' => $parent->id,
     ]);
 
@@ -534,21 +534,21 @@ it('ignores disallowed relationship names', function () {
 // CRUD — create additional scenarios
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('creates an entry with optional fields (unit_id, notes, charge_type_id)', function () {
+it('creates an entry with optional fields (unit_id, notes, ledger_id)', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'      => $estate->id,
+            'community_id'      => $community->id,
             'date'           => '2026-04-02',
             'type'           => 'credit',
             'description'    => 'EFT – Jane',
             'amount'         => 1500,
             'unit_id'        => $unit->id,
-            'charge_type_id' => $chargeType->id,
+            'ledger_id' => $ledger->id,
             'notes'          => 'Payment ref: EFT-0042',
         ])
         ->assertCreated()
@@ -558,11 +558,11 @@ it('creates an entry with optional fields (unit_id, notes, charge_type_id)', fun
 
 it('returns 422 when amount is not a number', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -574,11 +574,11 @@ it('returns 422 when amount is not a number', function () {
 
 it('returns 422 when date is not a valid date', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => 'not-a-date',
             'type'        => 'credit',
             'description' => 'Test',
@@ -588,28 +588,28 @@ it('returns 422 when date is not a valid date', function () {
         ->assertJsonValidationErrors(['date']);
 });
 
-it('returns 422 when estate_id does not exist in the database', function () {
+it('returns 422 when community_id does not exist in the database', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => \Illuminate\Support\Str::uuid(),
+            'community_id'   => \Illuminate\Support\Str::uuid(),
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
             'amount'      => 100,
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['estate_id']);
+        ->assertJsonValidationErrors(['community_id']);
 });
 
 it('create response contains the new entry id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'debit',
             'description' => 'Insurance premium',
@@ -689,11 +689,11 @@ it('delete returns a success message', function () {
     expect($response->json('message'))->toBeString();
 });
 
-it('returns 404 when deleting a cashbook entry from another tenant', function () {
+it('returns 404 when deleting a cashbook entry from another occupant', function () {
     $user        = adminUser();
-    $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
-    $otherEntry  = CashbookEntry::factory()->create(['organization_id' => $otherTenant->id, 'estate_id' => $otherEstate->id]);
+    $otherOccupant = createOrganization();
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
+    $otherEntry  = CashbookEntry::factory()->create(['organization_id' => $otherOccupant->id, 'community_id' => $otherCommunity->id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entry', $otherEntry))
@@ -702,8 +702,8 @@ it('returns 404 when deleting a cashbook entry from another tenant', function ()
 
 it('bulk delete returns a success message', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $entry  = CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
 
     $response = $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entries'), ['entry_ids' => [$entry->id]])
@@ -712,13 +712,13 @@ it('bulk delete returns a success message', function () {
     expect($response->json('message'))->toBeString();
 });
 
-it('bulk delete silently ignores ids not belonging to the tenant', function () {
+it('bulk delete silently ignores ids not belonging to the occupant', function () {
     $user        = adminUser();
-    $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
-    $otherEntry  = CashbookEntry::factory()->create(['organization_id' => $otherTenant->id, 'estate_id' => $otherEstate->id]);
+    $otherOccupant = createOrganization();
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
+    $otherEntry  = CashbookEntry::factory()->create(['organization_id' => $otherOccupant->id, 'community_id' => $otherCommunity->id]);
 
-    // Sending a cross-tenant id — service scopes by org, so nothing deleted → throws exception
+    // Sending a cross-occupant id — service scopes by org, so nothing deleted → throws exception
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entries'), ['entry_ids' => [$otherEntry->id]])
         ->assertStatus(500);
@@ -731,11 +731,11 @@ it('bulk delete silently ignores ids not belonging to the tenant', function () {
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('partial payment marks invoice as partially_paid', function () {
-    ['user' => $user, 'estate' => $estate, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(1000.0);
+    ['user' => $user, 'community' => $community, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(1000.0);
 
     $entry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 600, // < 1000 outstanding
     ]);
@@ -751,11 +751,11 @@ it('partial payment marks invoice as partially_paid', function () {
 });
 
 it('partial payment sets invoice_id on the entry', function () {
-    ['user' => $user, 'estate' => $estate, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(1000.0);
+    ['user' => $user, 'community' => $community, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(1000.0);
 
     $entry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 400,
     ]);
@@ -775,11 +775,11 @@ it('partial payment sets invoice_id on the entry', function () {
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('exact match allocation marks invoice as paid', function () {
-    ['user' => $user, 'estate' => $estate, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
+    ['user' => $user, 'community' => $community, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
 
     $entry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 500, // exact match
     ]);
@@ -799,11 +799,11 @@ it('exact match allocation marks invoice as paid', function () {
 // ──────────────────────────────────────────────────────────────────────────────
 
 it('overpayment splits entry into two child entries', function () {
-    ['user' => $user, 'estate' => $estate, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
+    ['user' => $user, 'community' => $community, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
 
     $entry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 800, // 300 over the 500 invoice
     ]);
@@ -818,13 +818,13 @@ it('overpayment splits entry into two child entries', function () {
     // Original entry is deleted (replaced by two children)
     $this->assertDatabaseMissing('cashbook_entries', ['id' => $entry->id]);
 
-    // Two child entries created for this estate/org (SQLite nullOnDelete clears parent_entry_id)
+    // Two child entries created for this community/org (SQLite nullOnDelete clears parent_entry_id)
     $allocated   = CashbookEntry::where('organization_id', $user->organization_id)
         ->where('invoice_id', $invoice->id)
         ->first();
     $unallocated = CashbookEntry::where('organization_id', $user->organization_id)
         ->whereNull('invoice_id')
-        ->where('estate_id', $estate->id)
+        ->where('community_id', $community->id)
         ->first();
 
     expect($allocated)->not->toBeNull();
@@ -834,11 +834,11 @@ it('overpayment splits entry into two child entries', function () {
 });
 
 it('overpayment marks invoice as paid', function () {
-    ['user' => $user, 'estate' => $estate, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
+    ['user' => $user, 'community' => $community, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
 
     $entry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 750,
     ]);
@@ -859,24 +859,24 @@ it('overpayment marks invoice as paid', function () {
 
 it('rejects allocating an already-allocated entry', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoiceA = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 500, 'billing_period' => '2026-01-01',
     ]);
     $invoiceB = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 500, 'billing_period' => '2026-02-01',
     ]);
 
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoiceA->id, // already allocated
         'amount'          => 500,
     ]);
@@ -890,12 +890,12 @@ it('rejects allocating an already-allocated entry', function () {
 });
 
 it('rejects allocating to an already fully-paid invoice', function () {
-    ['user' => $user, 'estate' => $estate, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
+    ['user' => $user, 'community' => $community, 'unit' => $unit, 'invoice' => $invoice] = makeInvoiceForAllocation(500.0);
 
     // First allocation — exact match, marks invoice paid
     $firstEntry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 500,
     ]);
@@ -909,7 +909,7 @@ it('rejects allocating to an already fully-paid invoice', function () {
     // Second attempt to allocate to the same invoice — should fail
     $secondEntry = CashbookEntry::factory()->unallocated()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'type'            => 'credit',
         'amount'          => 100,
     ]);
@@ -927,18 +927,18 @@ it('rejects allocating to an already fully-paid invoice', function () {
 
 it('deallocates an entry and clears its invoice_id', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 1000, 'status' => InvoiceStatus::PARTIALLY_PAID->value,
     ]);
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
         'amount'          => 400,
     ]);
@@ -954,18 +954,18 @@ it('deallocates an entry and clears its invoice_id', function () {
 
 it('deallocate reverts invoice status to unpaid when no other payments remain', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 500, 'status' => InvoiceStatus::PARTIALLY_PAID->value,
     ]);
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
         'amount'          => 200,
     ]);
@@ -981,18 +981,18 @@ it('deallocate reverts invoice status to unpaid when no other payments remain', 
 
 it('deallocate appends the reason to entry notes', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 500,
     ]);
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
         'amount'          => 100,
     ]);
@@ -1008,17 +1008,17 @@ it('deallocate appends the reason to entry notes', function () {
 
 it('returns 422 when deallocate reason is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
     ]);
 
@@ -1030,17 +1030,17 @@ it('returns 422 when deallocate reason is missing', function () {
 
 it('returns 422 when deallocate reason exceeds 500 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
     $entry = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
     ]);
 
@@ -1053,7 +1053,7 @@ it('returns 422 when deallocate reason exceeds 500 characters', function () {
 });
 
 it('rejects deallocating an unallocated entry', function () {
-    ['user' => $user, 'estate' => $estate, 'entry' => $entry] = makeEntry(['invoice_id' => null]);
+    ['user' => $user, 'community' => $community, 'entry' => $entry] = makeEntry(['invoice_id' => null]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.deallocate.cashbook.entry', $entry), [
@@ -1062,13 +1062,13 @@ it('rejects deallocating an unallocated entry', function () {
         ->assertStatus(500);
 });
 
-it('returns 404 when deallocating an entry from another tenant', function () {
+it('returns 404 when deallocating an entry from another occupant', function () {
     $user        = adminUser();
-    $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['organization_id' => $otherTenant->id]);
+    $otherOccupant = createOrganization();
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
     $otherEntry  = CashbookEntry::factory()->create([
-        'organization_id' => $otherTenant->id,
-        'estate_id'       => $otherEstate->id,
+        'organization_id' => $otherOccupant->id,
+        'community_id'       => $otherCommunity->id,
     ]);
 
     $this->actingAs($user, 'api')
@@ -1084,11 +1084,11 @@ it('returns 404 when deallocating an entry from another tenant', function () {
 
 it('auto-allocate returns ok with matched and message fields', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->postJson(route('api.v1.auto.allocate.cashbook.entries'), [
-            'estate_id' => $estate->id,
+            'community_id' => $community->id,
         ])
         ->assertOk();
 
@@ -1115,8 +1115,8 @@ it('returns cashbook summary with correct structure', function () {
 
 it('summary calculates correct totals', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $base   = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $base   = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
 
     CashbookEntry::factory()->credit()->create(array_merge($base, ['amount' => 3000]));
     CashbookEntry::factory()->credit()->create(array_merge($base, ['amount' => 2000]));
@@ -1131,15 +1131,15 @@ it('summary calculates correct totals', function () {
     expect($response->json('net_balance'))->toBeGreaterThanOrEqual(3500.0);
 });
 
-it('summary is scoped to the authenticated tenant', function () {
+it('summary is scoped to the authenticated occupant', function () {
     $user      = adminUser();
-    $otherOrg  = createTenant();
-    $otherEst  = Estate::factory()->create(['organization_id' => $otherOrg->id]);
+    $otherOrg  = createOrganization();
+    $otherEst  = Community::factory()->create(['organization_id' => $otherOrg->id]);
 
-    // Another tenant's big credit — must not appear in user's summary
+    // Another occupant's big credit — must not appear in user's summary
     CashbookEntry::factory()->credit()->create([
         'organization_id' => $otherOrg->id,
-        'estate_id'       => $otherEst->id,
+        'community_id'       => $otherEst->id,
         'amount'          => 999999,
     ]);
 
@@ -1152,16 +1152,16 @@ it('summary is scoped to the authenticated tenant', function () {
 
 it('summary unallocated_count counts only unallocated credit entries', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner  = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'ledger_id' => $ct->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
 
-    $base = ['organization_id' => $user->organization_id, 'estate_id' => $estate->id];
+    $base = ['organization_id' => $user->organization_id, 'community_id' => $community->id];
     CashbookEntry::factory()->credit()->create(array_merge($base, ['invoice_id' => null,        'amount' => 200]));
     CashbookEntry::factory()->credit()->create(array_merge($base, ['invoice_id' => null,        'amount' => 300]));
     CashbookEntry::factory()->credit()->create(array_merge($base, ['invoice_id' => $invoice->id, 'amount' => 500]));
@@ -1174,16 +1174,16 @@ it('summary unallocated_count counts only unallocated credit entries', function 
     expect($response->json('unallocated_amount'))->toBeGreaterThanOrEqual(500.0);
 });
 
-it('summary filtered by estate_id returns only that estate\'s entries', function () {
+it('summary filtered by community_id returns only that community\'s entries', function () {
     $user    = adminUser();
-    $estateA = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $estateB = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $communityA = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $communityB = Community::factory()->create(['organization_id' => $user->organization_id]);
 
-    CashbookEntry::factory()->credit()->create(['organization_id' => $user->organization_id, 'estate_id' => $estateA->id, 'amount' => 1000]);
-    CashbookEntry::factory()->credit()->create(['organization_id' => $user->organization_id, 'estate_id' => $estateB->id, 'amount' => 9000]);
+    CashbookEntry::factory()->credit()->create(['organization_id' => $user->organization_id, 'community_id' => $communityA->id, 'amount' => 1000]);
+    CashbookEntry::factory()->credit()->create(['organization_id' => $user->organization_id, 'community_id' => $communityB->id, 'amount' => 9000]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.summary') . '?estate_id=' . $estateA->id)
+        ->getJson(route('api.v1.show.cashbook.summary') . '?community_id=' . $communityA->id)
         ->assertOk();
 
     expect($response->json('total_credits'))->toBe(1000);

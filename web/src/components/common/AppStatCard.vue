@@ -2,7 +2,7 @@
   AppStatCard — KPI summary card used on every page header row.
 
   Props:
-    label      — card label e.g. "Total Estates"
+    label      — card label e.g. "Total Communities"
     value      — primary display value e.g. "7" or "R 32 050"
     subtitle   — small text below value e.g. "241 units"
     valueClass — Tailwind class for value colour (default: text-foreground)

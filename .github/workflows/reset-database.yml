@@ -1,7 +1,7 @@
 name: Reset Database (DESTRUCTIVE)
 
 # ⚠️  WARNING: This drops ALL tables and re-runs every migration from scratch.
-# All estates, units, owners, tenants, invoices, and user data will be permanently deleted.
+# All communities, units, owners, tenants, invoices, and user data will be permanently deleted.
 # Only the production seed data (org, roles, charge types, compliance templates, admin users) will remain.
 #
 # Run manually from the GitHub Actions tab — only when you explicitly want a clean slate.

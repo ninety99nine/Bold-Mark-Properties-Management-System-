@@ -33,8 +33,8 @@ class OrganizationResource extends JsonResource
             'updated_at'       => $this->updated_at?->toDateTimeString(),
 
             'users'         => UserResource::collection($this->whenLoaded('users')),
-            'estates'       => EstateResource::collection($this->whenLoaded('estates')),
-            'charge_types'  => ChargeTypeResource::collection($this->whenLoaded('chargeTypes')),
+            'communities'       => CommunityResource::collection($this->whenLoaded('communities')),
+            'ledgers'  => LedgerResource::collection($this->whenLoaded('ledgers')),
         ];
     }
 }

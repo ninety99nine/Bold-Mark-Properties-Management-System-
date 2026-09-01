@@ -134,13 +134,27 @@ describe('LoginPage', () => {
     expect(pushMock).toHaveBeenCalledWith('/billing/invoices/42')
   })
 
-  it('falls back to /dashboard when there is no redirect target', async () => {
+  it('falls back to /select-profile when there is no redirect target', async () => {
     const wrapper = mountLogin()
     await wrapper.find('#email').setValue('manager@boldmark.test')
     await wrapper.find('#password').setValue('password123')
     await completeLoginWith2fa(wrapper)
 
-    expect(pushMock).toHaveBeenCalledWith('/dashboard')
+    expect(pushMock).toHaveBeenCalledWith('/select-profile')
+  })
+
+  // Opening the app cold at the root makes the router guard bounce to
+  // /login?redirect=/dashboard. That generic landing target must NOT skip the
+  // profile-selection anchor — otherwise first-time (2FA-setup) logins land
+  // straight on the dashboard.
+  it('routes to /select-profile even when the redirect is the generic /dashboard target', async () => {
+    routeQuery = { redirect: '/dashboard' }
+    const wrapper = mountLogin()
+    await wrapper.find('#email').setValue('manager@boldmark.test')
+    await wrapper.find('#password').setValue('password123')
+    await completeLoginWith2fa(wrapper)
+
+    expect(pushMock).toHaveBeenCalledWith('/select-profile')
   })
 
   it('does not issue a redirect on the password step alone — it shows the 2FA challenge first (BUG-003)', async () => {

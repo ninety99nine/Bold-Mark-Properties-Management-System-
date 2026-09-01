@@ -31,7 +31,7 @@ class ResendWebhookController extends Controller
             return ['message' => 'Unhandled event type: ' . $type];
         }
 
-        // Find the original sent event to get invoice and tenant context
+        // Find the original sent event to get invoice and occupant context
         $sentEvent = InvoiceEmailEvent::where('resend_email_id', $resendEmailId)
             ->where('event_type', 'sent')
             ->first();

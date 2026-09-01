@@ -7,7 +7,7 @@ use App\Models\ComplianceChecklistItem;
 use App\Models\ComplianceItemAttachment;
 use App\Models\ComplianceTemplate;
 use App\Models\ComplianceTemplateItem;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Http\Resources\ComplianceChecklistResource;
 use App\Http\Resources\ComplianceChecklistResources;
 use App\Http\Resources\ComplianceChecklistItemResource;
@@ -28,21 +28,21 @@ class ComplianceService extends BaseService
      */
     public function showChecklists(array $data): ComplianceChecklistResources
     {
-        $tenantId = auth()->user()->organization_id;
+        $organizationId = auth()->user()->organization_id;
 
         $query = ComplianceChecklist::query()
-            ->where('organization_id', $tenantId)
+            ->where('organization_id', $organizationId)
             ->withCount(['items', 'completedItems', 'overdueItems'])
-            ->with(['estate:id,name,country,type']);
+            ->with(['community:id,name,country,entity_type']);
 
-        // Filter by estate
-        if (! empty($data['estate_id'])) {
-            $query->where('estate_id', $data['estate_id']);
+        // Filter by community
+        if (! empty($data['community_id'])) {
+            $query->where('community_id', $data['community_id']);
         }
 
-        // Filter by country (through estate)
+        // Filter by country (through community)
         if (! empty($data['country'])) {
-            $query->whereHas('estate', function ($q) use ($data) {
+            $query->whereHas('community', function ($q) use ($data) {
                 $q->where('country', $data['country']);
             });
         }
@@ -63,7 +63,7 @@ class ComplianceService extends BaseService
     public function showChecklist(ComplianceChecklist $checklist): ComplianceChecklistResource
     {
         $checklist->load([
-            'estate:id,name,address,country,type',
+            'community:id,name,address,country,entity_type',
             'createdBy:id,name,email',
             'items' => fn ($q) => $q->orderBy('category')->orderBy('sort_order'),
             'items.assignedTo:id,name,email',
@@ -112,11 +112,11 @@ class ComplianceService extends BaseService
                 'financial_year_end'   => $data['financial_year_end'],
                 'notes'                => $data['notes'] ?? null,
                 'organization_id'            => $user->organization_id,
-                'estate_id'            => $data['estate_id'],
+                'community_id'            => $data['community_id'],
                 'created_by_id'        => $user->id,
             ]);
         } catch (UniqueConstraintViolationException) {
-            abort(409, 'A compliance checklist already exists for this estate and financial year period. Please choose a different financial year.');
+            abort(409, 'A compliance checklist already exists for this community and financial year period. Please choose a different financial year.');
         }
 
         // If a template was provided, generate items from it
@@ -124,7 +124,7 @@ class ComplianceService extends BaseService
             $this->generateItemsFromTemplate($checklist, $data['template_id']);
         }
 
-        $checklist->load(['estate:id,name,country,type', 'items']);
+        $checklist->load(['community:id,name,country,entity_type', 'items']);
         $checklist->loadCount(['items', 'completedItems', 'overdueItems']);
 
         return $this->showCreatedResource($checklist);
@@ -136,7 +136,7 @@ class ComplianceService extends BaseService
     public function updateChecklist(ComplianceChecklist $checklist, array $data): array
     {
         $checklist->update($data);
-        $checklist->load(['estate:id,name,country,type']);
+        $checklist->load(['community:id,name,country,entity_type']);
 
         return $this->showUpdatedResource($checklist);
     }
@@ -313,10 +313,10 @@ class ComplianceService extends BaseService
      */
     public function showTemplates(array $data): ComplianceTemplateResources
     {
-        $tenantId = auth()->user()->organization_id;
+        $organizationId = auth()->user()->organization_id;
 
         $query = ComplianceTemplate::query()
-            ->where('organization_id', $tenantId)
+            ->where('organization_id', $organizationId)
             ->withCount('items')
             ->with('items');
 
@@ -437,19 +437,19 @@ class ComplianceService extends BaseService
      */
     public function portfolioSummary(array $data): array
     {
-        $tenantId = auth()->user()->organization_id;
+        $organizationId = auth()->user()->organization_id;
 
         $query = ComplianceChecklist::query()
-            ->where('organization_id', $tenantId)
+            ->where('organization_id', $organizationId)
             ->withCount(['items', 'completedItems', 'overdueItems', 'waivedItems'])
             ->with([
-                'estate:id,name,address,country,type',
+                'community:id,name,address,country,entity_type',
                 'nextItem:id,compliance_checklist_id,name,due_date,status,priority,category',
             ]);
 
         // Filter by country
         if (! empty($data['country'])) {
-            $query->whereHas('estate', fn ($q) => $q->where('country', $data['country']));
+            $query->whereHas('community', fn ($q) => $q->where('country', $data['country']));
         }
 
         // Filter by financial year
@@ -459,8 +459,8 @@ class ComplianceService extends BaseService
 
         $checklists = $query->get();
 
-        // Build per-estate summary
-        $estatesSummary = $checklists->map(function ($checklist) {
+        // Build per-community summary
+        $communitiesSummary = $checklists->map(function ($checklist) {
             $total = $checklist->items_count;
             $completed = $checklist->completed_items_count;
             $overdue = $checklist->overdue_items_count;
@@ -470,10 +470,10 @@ class ComplianceService extends BaseService
 
             return [
                 'checklist_id'     => $checklist->id,
-                'estate_id'        => $checklist->estate_id,
-                'estate_name'      => $checklist->estate->name ?? 'Unknown',
-                'estate_country'   => $checklist->estate->country ?? null,
-                'estate_type'      => $checklist->estate->type?->value ?? null,
+                'community_id'        => $checklist->community_id,
+                'community_name'      => $checklist->community->name ?? 'Unknown',
+                'community_country'   => $checklist->community->country ?? null,
+                'community_type'      => $checklist->community->type?->value ?? null,
                 'financial_year'   => $checklist->financial_year_label,
                 'total_items'      => $total,
                 'completed_items'  => $completed,
@@ -492,15 +492,15 @@ class ComplianceService extends BaseService
         })->sortBy('progress')->values();
 
         // Aggregate portfolio metrics
-        $totalEstates = $estatesSummary->count();
-        $totalItems = $estatesSummary->sum('total_items');
-        $totalCompleted = $estatesSummary->sum('completed_items');
-        $totalOverdue = $estatesSummary->sum('overdue_items');
-        $fullyCompliant = $estatesSummary->where('progress', 100)->count();
+        $totalCommunities = $communitiesSummary->count();
+        $totalItems = $communitiesSummary->sum('total_items');
+        $totalCompleted = $communitiesSummary->sum('completed_items');
+        $totalOverdue = $communitiesSummary->sum('overdue_items');
+        $fullyCompliant = $communitiesSummary->where('progress', 100)->count();
         $portfolioProgress = $totalItems > 0 ? round(($totalCompleted / $totalItems) * 100) : 0;
 
         // Available financial years for filter
-        $financialYears = ComplianceChecklist::where('organization_id', $tenantId)
+        $financialYears = ComplianceChecklist::where('organization_id', $organizationId)
             ->select('financial_year_label', 'financial_year_start')
             ->distinct()
             ->orderByDesc('financial_year_start')
@@ -509,16 +509,16 @@ class ComplianceService extends BaseService
 
         return [
             'summary' => [
-                'total_estates'      => $totalEstates,
+                'total_communities'      => $totalCommunities,
                 'fully_compliant'    => $fullyCompliant,
-                'partially_compliant' => $estatesSummary->where('progress', '>', 0)->where('progress', '<', 100)->count(),
-                'not_started'        => $estatesSummary->where('progress', 0)->count(),
+                'partially_compliant' => $communitiesSummary->where('progress', '>', 0)->where('progress', '<', 100)->count(),
+                'not_started'        => $communitiesSummary->where('progress', 0)->count(),
                 'total_items'        => $totalItems,
                 'total_completed'    => $totalCompleted,
                 'total_overdue'      => $totalOverdue,
                 'portfolio_progress' => $portfolioProgress,
             ],
-            'estates'         => $estatesSummary,
+            'communities'         => $communitiesSummary,
             'financial_years' => $financialYears,
         ];
     }

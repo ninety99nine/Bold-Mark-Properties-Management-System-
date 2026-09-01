@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\SendInvoiceEmail;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\InvoiceService;
@@ -16,9 +16,9 @@ class RunScheduledBilling extends Command
 {
     protected $signature = 'billing:run-scheduled
                             {--dry-run : Preview invoices that would be created without saving}
-                            {--estate= : Run for a specific estate ID only}';
+                            {--community= : Run for a specific community ID only}';
 
-    protected $description = 'Auto-generate invoices for estates due today or missed this month, then queue invoice emails.';
+    protected $description = 'Auto-generate invoices for communities due today or missed this month, then queue invoice emails.';
 
     public function __construct(private readonly InvoiceService $invoiceService)
     {
@@ -29,7 +29,7 @@ class RunScheduledBilling extends Command
     {
         $today    = Carbon::today(config('app.timezone', 'Africa/Johannesburg'));
         $isDryRun = (bool) $this->option('dry-run');
-        $onlyId   = $this->option('estate');
+        $onlyId   = $this->option('community');
 
         $this->info(sprintf(
             '[billing:run-scheduled] %s%s',
@@ -37,35 +37,35 @@ class RunScheduledBilling extends Command
             $isDryRun ? ' [DRY RUN]' : ''
         ));
 
-        $estates = $this->estatesDueForBilling($today, $onlyId);
+        $communities = $this->communitiesDueForBilling($today, $onlyId);
 
-        if ($estates->isEmpty()) {
-            $this->info('No estates due for billing today.');
+        if ($communities->isEmpty()) {
+            $this->info('No communities due for billing today.');
             return self::SUCCESS;
         }
 
         // Separate on-time from catch-up so the log is clear.
-        $onTime  = $estates->filter(fn ($e) => $this->effectiveBillingDay($e, $today) === $today->day);
-        $catchUp = $estates->filter(fn ($e) => $this->effectiveBillingDay($e, $today) !== $today->day);
+        $onTime  = $communities->filter(fn ($e) => $this->effectiveBillingDay($e, $today) === $today->day);
+        $catchUp = $communities->filter(fn ($e) => $this->effectiveBillingDay($e, $today) !== $today->day);
 
-        $this->info("Found {$estates->count()} estate(s) due for billing "
+        $this->info("Found {$communities->count()} community(s) due for billing "
             . "(on-time: {$onTime->count()}, catch-up: {$catchUp->count()}).");
 
         $totalInvoices = 0;
         $totalEmails   = 0;
         $errors        = 0;
 
-        foreach ($estates as $estate) {
-            $isCatchUp = $this->effectiveBillingDay($estate, $today) !== $today->day;
+        foreach ($communities as $community) {
+            $isCatchUp = $this->effectiveBillingDay($community, $today) !== $today->day;
             try {
-                [$invoices, $emails] = $this->processEstate($estate, $today, $isDryRun, $isCatchUp);
+                [$invoices, $emails] = $this->processCommunity($community, $today, $isDryRun, $isCatchUp);
                 $totalInvoices += $invoices;
                 $totalEmails   += $emails;
             } catch (Throwable $e) {
                 $errors++;
-                $this->error("  ✗ [{$estate->name}] {$e->getMessage()}");
-                Log::error("billing:run-scheduled estate={$estate->id} error={$e->getMessage()}", [
-                    'estate_id' => $estate->id,
+                $this->error("  ✗ [{$community->name}] {$e->getMessage()}");
+                Log::error("billing:run-scheduled community={$community->id} error={$e->getMessage()}", [
+                    'community_id' => $community->id,
                     'exception' => $e,
                 ]);
             }
@@ -77,7 +77,7 @@ class RunScheduledBilling extends Command
         Log::info('billing:run-scheduled completed', [
             'date'           => $today->toDateString(),
             'dry_run'        => $isDryRun,
-            'estates'        => $estates->count(),
+            'communities'        => $communities->count(),
             'invoices'       => $totalInvoices,
             'emails_queued'  => $totalEmails,
             'errors'         => $errors,
@@ -86,20 +86,20 @@ class RunScheduledBilling extends Command
         return $errors > 0 ? self::FAILURE : self::SUCCESS;
     }
 
-    private function processEstate(Estate $estate, Carbon $today, bool $isDryRun, bool $isCatchUp = false): array
+    private function processCommunity(Community $community, Carbon $today, bool $isDryRun, bool $isCatchUp = false): array
     {
         $billingPeriod = $today->format('Y-m');
-        $actor         = $this->actorForOrg($estate->organization_id);
+        $actor         = $this->actorForOrg($community->organization_id);
 
         if (!$actor) {
-            throw new \RuntimeException("No active admin user found for organization {$estate->organization_id}.");
+            throw new \RuntimeException("No active admin user found for organization {$community->organization_id}.");
         }
 
         $tag = $isCatchUp ? '[CATCH-UP]' : '[ON-TIME]';
-        $this->line("  → {$tag} [{$estate->name}] billing period {$billingPeriod}");
+        $this->line("  → {$tag} [{$community->name}] billing period {$billingPeriod}");
 
-        $result = $this->invoiceService->runBillingForEstate(
-            $estate,
+        $result = $this->invoiceService->runBillingForCommunity(
+            $community,
             $billingPeriod,
             $isDryRun,
             $actor
@@ -125,17 +125,17 @@ class RunScheduledBilling extends Command
     }
 
     /**
-     * Return estates that need billing today:
+     * Return communities that need billing today:
      *   1. On-time  — billing_day == today (normal case).
      *   2. Catch-up — billing_day already passed this month but no invoices
      *                 were ever created for this period (system was down).
      *
-     * The duplicate check inside runBillingForEstate guarantees idempotency,
-     * so running catch-up on an estate that already billed is always safe.
+     * The duplicate check inside runBillingForCommunity guarantees idempotency,
+     * so running catch-up on an community that already billed is always safe.
      */
-    private function estatesDueForBilling(Carbon $today, ?string $onlyId): \Illuminate\Support\Collection
+    private function communitiesDueForBilling(Carbon $today, ?string $onlyId): \Illuminate\Support\Collection
     {
-        $query = Estate::active()->where('billing_paused', false)->with('organization');
+        $query = Community::active()->where('billing_paused', false)->with('organization');
 
         if ($onlyId) {
             return $query->where('id', $onlyId)->get();
@@ -143,8 +143,8 @@ class RunScheduledBilling extends Command
 
         $billingPeriodDate = $today->copy()->startOfMonth()->format('Y-m-d');
 
-        return $query->get()->filter(function (Estate $estate) use ($today, $billingPeriodDate): bool {
-            $effective = $this->effectiveBillingDay($estate, $today);
+        return $query->get()->filter(function (Community $community) use ($today, $billingPeriodDate): bool {
+            $effective = $this->effectiveBillingDay($community, $today);
 
             // Billing day hasn't arrived yet this month — skip entirely.
             if ($effective > $today->day) {
@@ -160,7 +160,7 @@ class RunScheduledBilling extends Command
             // has no invoices yet (i.e. the system missed the scheduled run).
             return !Invoice::whereHas(
                 'unit',
-                fn ($q) => $q->where('estate_id', $estate->id)
+                fn ($q) => $q->where('community_id', $community->id)
             )->where('billing_period', $billingPeriodDate)->exists();
         });
     }
@@ -169,9 +169,9 @@ class RunScheduledBilling extends Command
      * Clamp billing_day to the actual number of days in the current month.
      * e.g. billing_day=31 → 30 in April, 28/29 in February.
      */
-    private function effectiveBillingDay(Estate $estate, Carbon $today): int
+    private function effectiveBillingDay(Community $community, Carbon $today): int
     {
-        return min((int) $estate->billing_day, $today->daysInMonth);
+        return min((int) $community->billing_day, $today->daysInMonth);
     }
 
     private function actorForOrg(string $organizationId): ?User

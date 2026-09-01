@@ -15,7 +15,7 @@ class ShowComplianceChecklistsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'estate_id'            => ['nullable', 'uuid', 'exists:estates,id'],
+            'community_id'            => ['nullable', 'uuid', 'exists:communities,id'],
             'country'              => ['nullable', 'string', 'max:2'],
             'financial_year_label' => ['nullable', 'string'],
         ];

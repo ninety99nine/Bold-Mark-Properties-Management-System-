@@ -36,7 +36,7 @@ class ComplianceChecklist extends Model
         'financial_year_end',
         'notes',
         'organization_id',
-        'estate_id',
+        'community_id',
         'created_by_id',
     ];
 
@@ -47,13 +47,13 @@ class ComplianceChecklist extends Model
     protected function search(Builder $query, string $searchTerm): void
     {
         $query->whereLike('financial_year_label', $searchTerm)
-              ->orWhereHas('estate', function ($q) use ($searchTerm) {
+              ->orWhereHas('community', function ($q) use ($searchTerm) {
                   $q->whereLike('name', $searchTerm);
               });
     }
 
     /**
-     * Get the tenant (organisation) this checklist belongs to.
+     * Get the occupant (organisation) this checklist belongs to.
      */
     public function organization(): BelongsTo
     {
@@ -61,11 +61,11 @@ class ComplianceChecklist extends Model
     }
 
     /**
-     * Get the estate this checklist belongs to.
+     * Get the community this checklist belongs to.
      */
-    public function estate(): BelongsTo
+    public function community(): BelongsTo
     {
-        return $this->belongsTo(Estate::class);
+        return $this->belongsTo(Community::class);
     }
 
     /**

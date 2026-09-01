@@ -17,7 +17,7 @@ class UnitFactory extends Factory
     public function definition(): array
     {
         return [
-            'estate_id'      => null,
+            'community_id'      => null,
             'organization_id'      => null,
             'unit_number'    => strtoupper(fake()->lexify('?')) . fake()->unique()->numberBetween(1, 9999),
             'address'        => fake()->streetAddress(),
@@ -35,10 +35,10 @@ class UnitFactory extends Factory
         ]);
     }
 
-    public function tenantOccupied(): static
+    public function occupantOccupied(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::TENANT_OCCUPIED->value,
+            'occupancy_type' => OccupancyType::OCCUPANT_OCCUPIED->value,
         ]);
     }
 

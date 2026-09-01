@@ -22,38 +22,38 @@ class OrganizationController extends Controller
     }
 
     /**
-     * Return the authenticated user's tenant (company settings).
+     * Return the authenticated user's organization (company settings).
      */
-    public function showCurrentTenant(Request $request): OrganizationResource
+    public function showCurrentOrganization(Request $request): OrganizationResource
     {
-        $tenant = $request->user()->organization;
+        $organization = $request->user()->organization;
 
-        return $this->service->showTenant($tenant);
+        return $this->service->showOrganization($organization);
     }
 
     /**
-     * Update the authenticated user's tenant company settings and branding.
+     * Update the authenticated user's organization company settings and branding.
      */
-    public function updateCurrentTenant(UpdateOrganizationRequest $request): array
+    public function updateCurrentOrganization(UpdateOrganizationRequest $request): array
     {
-        $tenant = $request->user()->organization;
+        $organization = $request->user()->organization;
 
-        return $this->service->updateTenant($tenant, $request->validated());
+        return $this->service->updateOrganization($organization, $request->validated());
     }
 
     /**
      * Dispatch a background job to flush selected data categories.
      * Returns a job ID for progress polling.
      */
-    public function flushCurrentTenant(FlushOrganizationRequest $request): array
+    public function flushCurrentOrganization(FlushOrganizationRequest $request): array
     {
-        $tenant = $request->user()->organization;
+        $organization = $request->user()->organization;
 
-        $this->authorize('flush', $tenant);
+        $this->authorize('flush', $organization);
 
         $validated = $request->validated();
 
-        // Strip display-only targets that are handled internally (compliance_checklists via estates)
+        // Strip display-only targets that are handled internally (compliance_checklists via communities)
         $targets = array_values(array_filter(
             $validated['targets'],
             fn($t) => $t !== 'compliance_checklists'
@@ -62,14 +62,14 @@ class OrganizationController extends Controller
         $steps = FlushOrganizationJob::buildSteps($targets);
 
         $flushJob = FlushJob::create([
-            'organization_id' => $tenant->id,
+            'organization_id' => $organization->id,
             'status'          => 'dispatched',
             'steps'           => $steps,
         ]);
 
         FlushOrganizationJob::dispatch(
             $flushJob->id,
-            $tenant->id,
+            $organization->id,
             $targets,
             $validated['keep_user_ids'] ?? [],
         );

@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\Estate;
+use App\Models\Community;
 use App\Notifications\BillingRunCompleted;
 use Illuminate\Support\Str;
 
@@ -10,16 +10,16 @@ use Illuminate\Support\Str;
 
 /**
  * Create a user who already has one database notification.
- * Returns ['user', 'estate', 'notification'].
+ * Returns ['user', 'community', 'notification'].
  */
 function makeNotifiedUser(): array
 {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $user->notify(new BillingRunCompleted($estate, 3, 'April 2026'));
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $user->notify(new BillingRunCompleted($community, 3, 'April 2026'));
     $notification = $user->notifications()->first();
 
-    return compact('user', 'estate', 'notification');
+    return compact('user', 'community', 'notification');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -84,15 +84,15 @@ it('notifications index type is the class basename of the notification', functio
 });
 
 it('notifications index data contains the notification payload', function () {
-    ['user' => $user, 'estate' => $estate] = makeNotifiedUser();
+    ['user' => $user, 'community' => $community] = makeNotifiedUser();
 
     $data = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.notifications'))
         ->assertOk()
         ->json('data.0.data');
 
-    expect($data)->toHaveKeys(['estate_id', 'estate_name', 'invoice_count', 'billing_period', 'message']);
-    expect($data['estate_id'])->toBe($estate->id);
+    expect($data)->toHaveKeys(['community_id', 'community_name', 'invoice_count', 'billing_period', 'message']);
+    expect($data['community_id'])->toBe($community->id);
     expect($data['invoice_count'])->toBe(3);
     expect($data['billing_period'])->toBe('April 2026');
 });
@@ -109,9 +109,9 @@ it('notifications index read_at is null for an unread notification', function ()
 });
 
 it('notifications index unread_count equals the number of unread notifications', function () {
-    ['user' => $user, 'estate' => $estate] = makeNotifiedUser();
+    ['user' => $user, 'community' => $community] = makeNotifiedUser();
     // Add a second notification
-    $user->notify(new BillingRunCompleted($estate, 5, 'May 2026'));
+    $user->notify(new BillingRunCompleted($community, 5, 'May 2026'));
 
     $unreadCount = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.notifications'))
@@ -136,8 +136,8 @@ it('notifications index unread_count is 0 when all notifications are already rea
 it('notifications index does not return other users notifications', function () {
     // Another user gets a notification
     $otherUser = adminUser();
-    $estate    = Estate::factory()->create(['organization_id' => $otherUser->organization_id]);
-    $otherUser->notify(new BillingRunCompleted($estate, 2, 'March 2026'));
+    $community    = Community::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherUser->notify(new BillingRunCompleted($community, 2, 'March 2026'));
 
     // My user has zero notifications
     $myUser = adminUser();
@@ -152,10 +152,10 @@ it('notifications index does not return other users notifications', function () 
 
 it('notifications index caps results at 30', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     for ($i = 0; $i < 35; $i++) {
-        $user->notify(new BillingRunCompleted($estate, $i, 'Jan 2026'));
+        $user->notify(new BillingRunCompleted($community, $i, 'Jan 2026'));
     }
 
     $data = $this->actingAs($user, 'api')
@@ -206,8 +206,8 @@ it('mark as read returns 404 for a non-existent notification id', function () {
 it('mark as read returns 404 when trying to read another users notification', function () {
     // Other user gets a notification
     $otherUser = adminUser();
-    $estate    = Estate::factory()->create(['organization_id' => $otherUser->organization_id]);
-    $otherUser->notify(new BillingRunCompleted($estate, 1, 'Feb 2026'));
+    $community    = Community::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherUser->notify(new BillingRunCompleted($community, 1, 'Feb 2026'));
     $otherNotification = $otherUser->notifications()->first();
 
     $myUser = adminUser();
@@ -222,8 +222,8 @@ it('mark as read returns 404 when trying to read another users notification', fu
 });
 
 it('unread_count decrements by one after marking a notification as read', function () {
-    ['user' => $user, 'estate' => $estate, 'notification' => $notification] = makeNotifiedUser();
-    $user->notify(new BillingRunCompleted($estate, 2, 'May 2026'));
+    ['user' => $user, 'community' => $community, 'notification' => $notification] = makeNotifiedUser();
+    $user->notify(new BillingRunCompleted($community, 2, 'May 2026'));
 
     // Initially 2 unread
     $before = $this->actingAs($user, 'api')
@@ -252,9 +252,9 @@ it('mark all as read returns 401 without auth', function () {
 
 it('mark all as read sets read_at on all unread notifications', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $user->notify(new BillingRunCompleted($estate, 1, 'Jan 2026'));
-    $user->notify(new BillingRunCompleted($estate, 2, 'Feb 2026'));
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $user->notify(new BillingRunCompleted($community, 1, 'Jan 2026'));
+    $user->notify(new BillingRunCompleted($community, 2, 'Feb 2026'));
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.mark.all.notifications.read'))
@@ -276,8 +276,8 @@ it('mark all as read returns a success message', function () {
 it('mark all as read only affects the authenticated users notifications', function () {
     // Other user has an unread notification
     $otherUser = adminUser();
-    $estate    = Estate::factory()->create(['organization_id' => $otherUser->organization_id]);
-    $otherUser->notify(new BillingRunCompleted($estate, 5, 'Mar 2026'));
+    $community    = Community::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherUser->notify(new BillingRunCompleted($community, 5, 'Mar 2026'));
 
     // My user marks all their own as read (they have none, but the call should not touch other users)
     $myUser = adminUser();
@@ -291,9 +291,9 @@ it('mark all as read only affects the authenticated users notifications', functi
 
 it('unread_count is 0 after marking all notifications as read', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $user->notify(new BillingRunCompleted($estate, 1, 'Jan 2026'));
-    $user->notify(new BillingRunCompleted($estate, 2, 'Feb 2026'));
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $user->notify(new BillingRunCompleted($community, 1, 'Jan 2026'));
+    $user->notify(new BillingRunCompleted($community, 2, 'Feb 2026'));
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.mark.all.notifications.read'))

@@ -18,7 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\SendPaymentReminders::class,
     ])
     ->withSchedule(function (Schedule $schedule): void {
-        // Run billing for all estates whose billing_day matches today.
+        // Run billing for all communities whose billing_day matches today.
         // Fires at 06:00 Africa/Johannesburg — before the business day starts.
         $schedule->command('billing:run-scheduled')
                  ->dailyAt('06:00')

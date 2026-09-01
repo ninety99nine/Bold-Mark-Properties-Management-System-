@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\CashbookEntry;
-use App\Models\Estate;
+use App\Models\Community;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -12,11 +12,11 @@ use Illuminate\Support\Facades\Storage;
 function makeCashbookEntry(array $overrides = []): CashbookEntry
 {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     return CashbookEntry::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ], $overrides));
 }
 
@@ -35,10 +35,10 @@ it('upload proof of payment stores the file on the public disk', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $file = UploadedFile::fake()->create('receipt.pdf', 100, 'application/pdf');
@@ -54,10 +54,10 @@ it('upload proof of payment updates proof_of_payment_path on the entry', functio
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $file = UploadedFile::fake()->create('receipt.pdf', 100, 'application/pdf');
@@ -72,10 +72,10 @@ it('upload proof of payment returns a cashbook entry resource', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $file = UploadedFile::fake()->create('receipt.pdf', 100, 'application/pdf');
@@ -90,10 +90,10 @@ it('upload proof of payment replaces an existing file', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id'      => $user->organization_id,
-        'estate_id'            => $estate->id,
+        'community_id'            => $community->id,
         'proof_of_payment_path' => 'proof-of-payment/old-receipt.pdf',
     ]);
 
@@ -110,10 +110,10 @@ it('upload proof of payment replaces an existing file', function () {
 
 it('upload proof of payment requires the file field', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $this->actingAs($user, 'api')
@@ -126,10 +126,10 @@ it('upload proof of payment rejects unsupported mime types', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $file = UploadedFile::fake()->create('spreadsheet.xlsx', 100, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -145,10 +145,10 @@ it('upload proof of payment accepts jpg files', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $file = UploadedFile::fake()->image('receipt.jpg');
@@ -162,10 +162,10 @@ it('upload proof of payment accepts png files', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
     ]);
 
     $file = UploadedFile::fake()->image('receipt.png');
@@ -190,13 +190,13 @@ it('download proof of payment streams the file with content-disposition header',
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     Storage::disk('public')->put('proof-of-payment/receipt.pdf', 'dummy pdf content');
 
     $entry = CashbookEntry::factory()->create([
         'organization_id'       => $user->organization_id,
-        'estate_id'             => $estate->id,
+        'community_id'             => $community->id,
         'proof_of_payment_path' => 'proof-of-payment/receipt.pdf',
     ]);
 
@@ -209,10 +209,10 @@ it('download proof of payment streams the file with content-disposition header',
 
 it('download proof of payment returns 500 when no file is attached', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id'       => $user->organization_id,
-        'estate_id'             => $estate->id,
+        'community_id'             => $community->id,
         'proof_of_payment_path' => null,
     ]);
 
@@ -236,13 +236,13 @@ it('delete proof of payment removes the file from the public disk', function () 
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     Storage::disk('public')->put('proof-of-payment/receipt.pdf', 'content');
 
     $entry = CashbookEntry::factory()->create([
         'organization_id'       => $user->organization_id,
-        'estate_id'             => $estate->id,
+        'community_id'             => $community->id,
         'proof_of_payment_path' => 'proof-of-payment/receipt.pdf',
     ]);
 
@@ -257,13 +257,13 @@ it('delete proof of payment clears proof_of_payment_path on the entry', function
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     Storage::disk('public')->put('proof-of-payment/receipt.pdf', 'content');
 
     $entry = CashbookEntry::factory()->create([
         'organization_id'       => $user->organization_id,
-        'estate_id'             => $estate->id,
+        'community_id'             => $community->id,
         'proof_of_payment_path' => 'proof-of-payment/receipt.pdf',
     ]);
 
@@ -278,13 +278,13 @@ it('delete proof of payment returns a success message', function () {
     Storage::fake('public');
 
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     Storage::disk('public')->put('proof-of-payment/receipt.pdf', 'content');
 
     $entry = CashbookEntry::factory()->create([
         'organization_id'       => $user->organization_id,
-        'estate_id'             => $estate->id,
+        'community_id'             => $community->id,
         'proof_of_payment_path' => 'proof-of-payment/receipt.pdf',
     ]);
 
@@ -296,10 +296,10 @@ it('delete proof of payment returns a success message', function () {
 
 it('delete proof of payment is idempotent when no file is attached', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $entry  = CashbookEntry::factory()->create([
         'organization_id'       => $user->organization_id,
-        'estate_id'             => $estate->id,
+        'community_id'             => $community->id,
         'proof_of_payment_path' => null,
     ]);
 
@@ -320,8 +320,8 @@ it('cashbook export returns 401 without auth', function () {
 
 it('cashbook export returns a csv response by default', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
 
     $response = $this->actingAs($user, 'api')
         ->get(route('api.v1.export.cashbook.entries'));
@@ -332,8 +332,8 @@ it('cashbook export returns a csv response by default', function () {
 
 it('cashbook export csv contains expected headings', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
 
     $response = $this->actingAs($user, 'api')
         ->get(route('api.v1.export.cashbook.entries'));
@@ -347,10 +347,10 @@ it('cashbook export csv contains expected headings', function () {
 
 it('cashbook export csv contains entry data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'description'     => 'Rent payment from unit 4',
     ]);
 
@@ -361,20 +361,20 @@ it('cashbook export csv contains entry data', function () {
     expect($csv)->toContain('Rent payment from unit 4');
 });
 
-it('cashbook export only includes the authenticated tenants entries', function () {
+it('cashbook export only includes the authenticated occupants entries', function () {
     $otherUser   = adminUser();
-    $otherEstate = Estate::factory()->create(['organization_id' => $otherUser->organization_id]);
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherUser->organization_id]);
     CashbookEntry::factory()->create([
         'organization_id' => $otherUser->organization_id,
-        'estate_id'       => $otherEstate->id,
-        'description'     => 'Other tenant payment',
+        'community_id'       => $otherCommunity->id,
+        'description'     => 'Other occupant payment',
     ]);
 
     $myUser   = adminUser();
-    $myEstate = Estate::factory()->create(['organization_id' => $myUser->organization_id]);
+    $myCommunity = Community::factory()->create(['organization_id' => $myUser->organization_id]);
     CashbookEntry::factory()->create([
         'organization_id' => $myUser->organization_id,
-        'estate_id'       => $myEstate->id,
+        'community_id'       => $myCommunity->id,
         'description'     => 'My payment',
     ]);
 
@@ -383,13 +383,13 @@ it('cashbook export only includes the authenticated tenants entries', function (
         ->streamedContent();
 
     expect($csv)->toContain('My payment');
-    expect($csv)->not->toContain('Other tenant payment');
+    expect($csv)->not->toContain('Other occupant payment');
 });
 
 it('cashbook export returns csv content-disposition header', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
 
     $response = $this->actingAs($user, 'api')
         ->get(route('api.v1.export.cashbook.entries'));
@@ -400,8 +400,8 @@ it('cashbook export returns csv content-disposition header', function () {
 
 it('cashbook export with _format=csv returns csv', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
 
     $response = $this->actingAs($user, 'api')
         ->get(route('api.v1.export.cashbook.entries') . '?_format=csv');

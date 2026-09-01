@@ -15,7 +15,7 @@ use App\Http\Resources\CashbookEntryResources;
 
 class CashbookEntryService extends BaseService
 {
-    protected array $allowedRelationships = ['estate', 'unit', 'invoice', 'chargeType', 'parentEntry', 'childEntries'];
+    protected array $allowedRelationships = ['community', 'unit', 'invoice', 'ledger', 'parentEntry', 'childEntries'];
 
     public function __construct(private readonly UnitBalanceService $unitBalance)
     {
@@ -23,7 +23,7 @@ class CashbookEntryService extends BaseService
     }
 
     /**
-     * Return a paginated, filtered list of cashbook entries for the authenticated tenant.
+     * Return a paginated, filtered list of cashbook entries for the authenticated occupant.
      *
      * @param array $data
      * @return CashbookEntryResources
@@ -34,8 +34,8 @@ class CashbookEntryService extends BaseService
         $query = CashbookEntry::where('organization_id', $user->organization_id)
             ->with(['unit', 'invoice']);
 
-        if (!empty($data['estate_id'])) {
-            $query->where('estate_id', $data['estate_id']);
+        if (!empty($data['community_id'])) {
+            $query->where('community_id', $data['community_id']);
         }
 
         if (!empty($data['type'])) {
@@ -55,8 +55,8 @@ class CashbookEntryService extends BaseService
             }
         }
 
-        if (!empty($data['charge_type_id'])) {
-            $query->where('charge_type_id', $data['charge_type_id']);
+        if (!empty($data['ledger_id'])) {
+            $query->where('ledger_id', $data['ledger_id']);
         }
 
         // Date range on the transaction date column
@@ -93,8 +93,8 @@ class CashbookEntryService extends BaseService
         $query = CashbookEntry::where('organization_id', $user->organization_id)
             ->with(['unit', 'invoice']);
 
-        if (!empty($data['estate_id'])) {
-            $query->where('estate_id', $data['estate_id']);
+        if (!empty($data['community_id'])) {
+            $query->where('community_id', $data['community_id']);
         }
         if (!empty($data['type'])) {
             $query->where('type', $data['type']);
@@ -109,8 +109,8 @@ class CashbookEntryService extends BaseService
                 $query->whereNull('invoice_id');
             }
         }
-        if (!empty($data['charge_type_id'])) {
-            $query->where('charge_type_id', $data['charge_type_id']);
+        if (!empty($data['ledger_id'])) {
+            $query->where('ledger_id', $data['ledger_id']);
         }
         if (!empty($data['date_range'])) {
             $query = $this->applyDateRange(
@@ -177,8 +177,8 @@ class CashbookEntryService extends BaseService
         $query = CashbookEntry::where('organization_id', $user->organization_id)
             ->with(['invoice']);
 
-        if (!empty($data['estate_id'])) {
-            $query->where('estate_id', $data['estate_id']);
+        if (!empty($data['community_id'])) {
+            $query->where('community_id', $data['community_id']);
         }
 
         $stats = (clone $query)->selectRaw(
@@ -216,7 +216,7 @@ class CashbookEntryService extends BaseService
         $user = Auth::user();
 
         $entryData = collect($data)
-            ->only(['estate_id', 'date', 'type', 'description', 'amount', 'notes', 'unit_id', 'invoice_id', 'charge_type_id'])
+            ->only(['community_id', 'date', 'type', 'description', 'amount', 'notes', 'unit_id', 'invoice_id', 'ledger_id'])
             ->toArray();
 
         if (request()->hasFile('proof_of_payment')) {
@@ -225,7 +225,9 @@ class CashbookEntryService extends BaseService
         }
 
         $entry = CashbookEntry::create(array_merge($entryData, [
-            'organization_id' => $user->organization_id,
+            'organization_id'   => $user->organization_id,
+            'allocated_by_name' => $user->name,
+            'allocated_at'      => now(),
         ]));
 
         // Auto-update invoice status when the entry is created with an invoice_id
@@ -271,7 +273,7 @@ class CashbookEntryService extends BaseService
      */
     public function showCashbookEntry(CashbookEntry $cashbookEntry): CashbookEntryResource
     {
-        $cashbookEntry->load(['estate', 'unit', 'invoice.chargeType', 'chargeType', 'parentEntry']);
+        $cashbookEntry->load(['community', 'unit', 'invoice.ledger', 'ledger', 'parentEntry']);
 
         return $this->showResource($cashbookEntry);
     }
@@ -333,7 +335,7 @@ class CashbookEntryService extends BaseService
 
             // Allocated child — covers the invoice amount exactly
             CashbookEntry::create([
-                'estate_id'       => $cashbookEntry->estate_id,
+                'community_id'       => $cashbookEntry->community_id,
                 'date'            => $cashbookEntry->date,
                 'type'            => $cashbookEntry->type,
                 'description'     => $cashbookEntry->description,
@@ -342,13 +344,13 @@ class CashbookEntryService extends BaseService
                 'organization_id'       => $cashbookEntry->organization_id,
                 'unit_id'         => $unitId,
                 'invoice_id'      => $invoice->id,
-                'charge_type_id'  => $invoice->charge_type_id,
+                'ledger_id'  => $invoice->ledger_id,
                 'parent_entry_id' => $cashbookEntry->id,
             ]);
 
             // Unallocated remainder — credit on account
             CashbookEntry::create([
-                'estate_id'       => $cashbookEntry->estate_id,
+                'community_id'       => $cashbookEntry->community_id,
                 'date'            => $cashbookEntry->date,
                 'type'            => $cashbookEntry->type,
                 'description'     => $cashbookEntry->description,
@@ -357,7 +359,7 @@ class CashbookEntryService extends BaseService
                 'organization_id'       => $cashbookEntry->organization_id,
                 'unit_id'         => $unitId,
                 'invoice_id'      => null,
-                'charge_type_id'  => null,
+                'ledger_id'  => null,
                 'parent_entry_id' => $cashbookEntry->id,
             ]);
 
@@ -380,7 +382,7 @@ class CashbookEntryService extends BaseService
             $cashbookEntry->update([
                 'unit_id'        => $unitId,
                 'invoice_id'     => $invoice->id,
-                'charge_type_id' => $invoice->charge_type_id,
+                'ledger_id' => $invoice->ledger_id,
             ]);
 
             $this->recalculateInvoiceStatus($invoice->fresh());
@@ -399,7 +401,7 @@ class CashbookEntryService extends BaseService
             $cashbookEntry->update([
                 'unit_id'        => $unitId,
                 'invoice_id'     => $invoice->id,
-                'charge_type_id' => $invoice->charge_type_id,
+                'ledger_id' => $invoice->ledger_id,
             ]);
 
             $this->recalculateInvoiceStatus($invoice->fresh());
@@ -419,7 +421,7 @@ class CashbookEntryService extends BaseService
     /**
      * Deallocate a cashbook entry from its invoice.
      *
-     * Clears invoice_id and charge_type_id on the entry, stores the reason in notes,
+     * Clears invoice_id and ledger_id on the entry, stores the reason in notes,
      * and recalculates the invoice status based on remaining allocated payments.
      *
      * @param CashbookEntry $cashbookEntry
@@ -444,7 +446,7 @@ class CashbookEntryService extends BaseService
 
         $cashbookEntry->update([
             'invoice_id'     => null,
-            'charge_type_id' => null,
+            'ledger_id' => null,
             'notes'          => $updatedNotes,
         ]);
 

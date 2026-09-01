@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
-use App\Models\Tenant;
+use App\Models\Occupant;
 use App\Models\Unit;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Auth;
 class SearchController extends Controller
 {
     /**
-     * Perform a global search across estates, units, people, and invoices.
+     * Perform a global search across communities, units, people, and invoices.
      *
      * @param Request $request
      * @return JsonResponse
@@ -29,66 +29,66 @@ class SearchController extends Controller
 
         $term     = $request->input('q');
         $user     = Auth::user();
-        $tenantId = $user->organization_id;
+        $organizationId = $user->organization_id;
         $limit    = 5;
 
-        // Estates
-        $estates = Estate::where('organization_id', $tenantId)
+        // Communities
+        $communities = Community::where('organization_id', $organizationId)
             ->where(fn ($q) => $q->search($term))
             ->withCount('units')
             ->limit($limit)
             ->get()
-            ->map(fn (Estate $e) => [
+            ->map(fn (Community $e) => [
                 'id'          => $e->id,
                 'name'        => $e->name,
-                'type'        => $e->type?->value,
+                'entity_type' => $e->entity_type?->value,
                 'units_count' => $e->units_count,
             ]);
 
         // Units — already wraps orWhere in a nested where inside its search scope
-        $units = Unit::where('units.organization_id', $tenantId)
+        $units = Unit::where('units.organization_id', $organizationId)
             ->search($term)
-            ->with(['estate:id,name', 'owner:id,unit_id,full_name'])
+            ->with(['community:id,name', 'owner:id,unit_id,full_name'])
             ->limit($limit)
             ->get()
             ->map(fn (Unit $u) => [
                 'id'          => $u->id,
                 'unit_number' => $u->unit_number,
-                'estate_id'   => $u->estate_id,
-                'estate_name' => $u->estate?->name,
+                'community_id'   => $u->community_id,
+                'community_name' => $u->community?->name,
                 'owner_name'  => $u->owner?->full_name,
             ]);
 
         // People — owners, unit organizations, and system users
-        $owners = Owner::where('organization_id', $tenantId)
+        $owners = Owner::where('organization_id', $organizationId)
             ->where(fn ($q) => $q->search($term))
-            ->with(['unit:id,unit_number,estate_id', 'unit.estate:id,name'])
+            ->with(['unit:id,unit_number,community_id', 'unit.community:id,name'])
             ->limit($limit)
             ->get()
             ->map(fn (Owner $o) => [
                 'id'        => $o->id,
                 'name'      => $o->full_name,
                 'role'      => 'Owner',
-                'context'   => $o->unit ? ($o->unit->unit_number . ' · ' . ($o->unit->estate?->name ?? '')) : null,
-                'estate_id' => $o->unit?->estate_id,
+                'context'   => $o->unit ? ($o->unit->unit_number . ' · ' . ($o->unit->community?->name ?? '')) : null,
+                'community_id' => $o->unit?->community_id,
                 'unit_id'   => $o->unit_id,
             ]);
 
-        $unitTenants = Tenant::where('organization_id', $tenantId)
+        $unitOccupants = Occupant::where('organization_id', $organizationId)
             ->where(fn ($q) => $q->search($term))
-            ->with(['unit:id,unit_number,estate_id', 'unit.estate:id,name'])
+            ->with(['unit:id,unit_number,community_id', 'unit.community:id,name'])
             ->limit($limit)
             ->get()
-            ->map(fn (Tenant $t) => [
+            ->map(fn (Occupant $t) => [
                 'id'        => $t->id,
                 'name'      => $t->full_name,
                 'role'      => 'Organization',
-                'context'   => $t->unit ? ($t->unit->unit_number . ' · ' . ($t->unit->estate?->name ?? '')) : null,
-                'estate_id' => $t->unit?->estate_id,
+                'context'   => $t->unit ? ($t->unit->unit_number . ' · ' . ($t->unit->community?->name ?? '')) : null,
+                'community_id' => $t->unit?->community_id,
                 'unit_id'   => $t->unit_id,
             ]);
 
-        $users = User::where('organization_id', $tenantId)
+        $users = User::where('organization_id', $organizationId)
             ->where(fn ($q) => $q->search($term))
             ->limit($limit)
             ->get()
@@ -99,15 +99,15 @@ class SearchController extends Controller
                 'context' => null,
             ]);
 
-        $people = $owners->concat($unitTenants)->concat($users)
+        $people = $owners->concat($unitOccupants)->concat($users)
             ->unique(fn ($p) => $p['role'] . ':' . $p['id'])
             ->take($limit)
             ->values();
 
         // Invoices
-        $invoices = Invoice::where('organization_id', $tenantId)
+        $invoices = Invoice::where('organization_id', $organizationId)
             ->where(fn ($q) => $q->search($term))
-            ->with(['unit:id,unit_number,estate_id', 'unit.estate:id,name'])
+            ->with(['unit:id,unit_number,community_id', 'unit.community:id,name'])
             ->limit($limit)
             ->get()
             ->map(fn (Invoice $i) => [
@@ -116,11 +116,11 @@ class SearchController extends Controller
                 'amount'         => $i->amount,
                 'status'         => $i->status?->value,
                 'unit_number'    => $i->unit?->unit_number,
-                'estate_name'    => $i->unit?->estate?->name,
+                'community_name'    => $i->unit?->community?->name,
             ]);
 
         return response()->json([
-            'estates'  => $estates,
+            'communities'  => $communities,
             'units'    => $units,
             'people'   => $people,
             'invoices' => $invoices,

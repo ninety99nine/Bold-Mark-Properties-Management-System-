@@ -11,7 +11,7 @@ use App\Http\Resources\OwnerResources;
 class OwnerService extends BaseService
 {
     /**
-     * Return a paginated, filtered list of owners for the authenticated tenant.
+     * Return a paginated, filtered list of owners for the authenticated occupant.
      *
      * @param array $data
      * @return OwnerResources
@@ -20,10 +20,10 @@ class OwnerService extends BaseService
     {
         $user  = Auth::user();
         $query = Owner::where('organization_id', $user->organization_id)
-            ->with(['unit.estate']);
+            ->with(['unit.community']);
 
-        if (!empty($data['estate_id'])) {
-            $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
+        if (!empty($data['community_id'])) {
+            $query->whereHas('unit', fn($q) => $q->where('community_id', $data['community_id']));
         }
 
         if (!request()->has('_sort')) {
@@ -70,7 +70,7 @@ class OwnerService extends BaseService
      */
     public function showOwner(Owner $owner): OwnerResource
     {
-        $owner->load(['unit.estate', 'invoices.chargeType']);
+        $owner->load(['unit.community', 'invoices.ledger']);
 
         return $this->showResource($owner);
     }

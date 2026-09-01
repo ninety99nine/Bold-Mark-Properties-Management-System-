@@ -32,11 +32,12 @@ const NAV = [
     ],
   },
   {
-    group: 'Company',
+    group: 'General Settings',
     items: [
-      { id: 'general',      label: 'General',      icon: 'building'  },
-      { id: 'branding',     label: 'Branding',     icon: 'palette'   },
-      { id: 'charge-types', label: 'Charge Types', icon: 'tag'       },
+      { id: 'general',  label: 'Company',  icon: 'building' },
+      { id: 'users',    label: 'Users',    icon: 'users', route: '/users' },
+      { id: 'branding', label: 'Branding', icon: 'palette'  },
+      { id: 'ledgers',  label: 'Default Ledgers', icon: 'tag' },
     ],
   },
   {
@@ -51,9 +52,9 @@ const SECTION_META = {
   'profile':      { title: 'Profile',       subtitle: 'Update your personal information and contact details' },
   'password':     { title: 'Password',      subtitle: 'Change your account password' },
   'security':     { title: 'Security',      subtitle: 'Manage two-factor authentication and active sessions' },
-  'general':      { title: 'General',       subtitle: 'Configure company name, contact info, and regional settings' },
+  'general':      { title: 'Company',       subtitle: 'Configure company name, contact info, and regional settings' },
   'branding':     { title: 'Branding',      subtitle: 'Customise your company colours and visual identity' },
-  'charge-types': { title: 'Charge Types',  subtitle: 'Define the billing categories used across your estates' },
+  'ledgers': { title: 'Default Ledgers',  subtitle: 'Define the billing categories used across your communities' },
   'login-audit':  { title: 'Login Audit',   subtitle: 'Audit log of all login attempts across the platform' },
   'danger-zone':  { title: 'Danger Zone',   subtitle: 'Irreversible data operations — proceed with extreme caution' },
 }
@@ -434,14 +435,14 @@ onMounted(async () => {
       }
       brandingReady.value = true
     }).catch(() => {}),
-    loadChargeTypes(),
+    loadLedgers(),
   ])
 })
 
-// ─── Company — Charge Types ───────────────────────────────────────────────────
+// ─── Company — Ledgers ───────────────────────────────────────────────────
 const APPLIES_TO_OPTS = [
   { value: 'owner',  label: 'Owner'  },
-  { value: 'tenant', label: 'Tenant' },
+  { value: 'occupant', label: 'Occupant' },
   { value: 'either', label: 'Either' },
 ]
 const RECURRING_OPTS = [
@@ -449,7 +450,7 @@ const RECURRING_OPTS = [
   { value: 'No',  label: 'No — Ad-hoc'  },
 ]
 
-function normalizeChargeType(ct) {
+function normalizeLedger(ct) {
   return {
     id:          ct.id,
     name:        ct.name,
@@ -461,164 +462,164 @@ function normalizeChargeType(ct) {
   }
 }
 
-const chargeTypes        = ref([])
-const chargeTypesLoading = ref(false)
-const chargeTypesError   = ref('')
+const ledgers        = ref([])
+const ledgersLoading = ref(false)
+const ledgersError   = ref('')
 
-async function loadChargeTypes() {
-  chargeTypesLoading.value = true
-  chargeTypesError.value   = ''
+async function loadLedgers() {
+  ledgersLoading.value = true
+  ledgersError.value   = ''
   try {
-    const { data } = await api.get('/charge-types', { params: { _per_page: 200 } })
-    chargeTypes.value = (data.data ?? data).map(normalizeChargeType)
+    const { data } = await api.get('/ledgers', { params: { _per_page: 200 } })
+    ledgers.value = (data.data ?? data).map(normalizeLedger)
   } catch {
-    chargeTypesError.value = 'Failed to load charge types.'
+    ledgersError.value = 'Failed to load ledgers.'
   } finally {
-    chargeTypesLoading.value = false
+    ledgersLoading.value = false
   }
 }
 
 // ── Add ──
-const showAddChargeType    = ref(false)
-const newChargeType        = ref({ name: '', description: '', appliesTo: 'either', recurring: 'No' })
-const addChargeTypeLoading = ref(false)
-const addChargeTypeError   = ref('')
+const showAddLedger    = ref(false)
+const newLedger        = ref({ name: '', description: '', appliesTo: 'either', recurring: 'No' })
+const addLedgerLoading = ref(false)
+const addLedgerError   = ref('')
 
-function closeAddChargeType() {
-  showAddChargeType.value    = false
-  addChargeTypeError.value   = ''
-  addChargeTypeLoading.value = false
-  newChargeType.value = { name: '', description: '', appliesTo: 'either', recurring: 'No' }
+function closeAddLedger() {
+  showAddLedger.value    = false
+  addLedgerError.value   = ''
+  addLedgerLoading.value = false
+  newLedger.value = { name: '', description: '', appliesTo: 'either', recurring: 'No' }
 }
 
-async function saveChargeType() {
-  if (addChargeTypeLoading.value) return
-  addChargeTypeError.value   = ''
-  addChargeTypeLoading.value = true
+async function saveLedger() {
+  if (addLedgerLoading.value) return
+  addLedgerError.value   = ''
+  addLedgerLoading.value = true
   try {
-    const { data } = await api.post('/charge-types', {
-      name:         newChargeType.value.name,
-      description:  newChargeType.value.description || null,
-      applies_to:   newChargeType.value.appliesTo,
-      is_recurring: newChargeType.value.recurring === 'Yes',
+    const { data } = await api.post('/ledgers', {
+      name:         newLedger.value.name,
+      description:  newLedger.value.description || null,
+      applies_to:   newLedger.value.appliesTo,
+      is_recurring: newLedger.value.recurring === 'Yes',
     })
-    const created = normalizeChargeType(data.data ?? data)
-    chargeTypes.value.push(created)
-    closeAddChargeType()
-    toastSuccess(`Charge type "${created.name}" added.`)
+    const created = normalizeLedger(data.data ?? data)
+    ledgers.value.push(created)
+    closeAddLedger()
+    toastSuccess(`Ledger "${created.name}" added.`)
   } catch (err) {
-    addChargeTypeError.value = err?.response?.data?.message ?? 'Something went wrong.'
-    toastError(addChargeTypeError.value)
+    addLedgerError.value = err?.response?.data?.message ?? 'Something went wrong.'
+    toastError(addLedgerError.value)
   } finally {
-    addChargeTypeLoading.value = false
+    addLedgerLoading.value = false
   }
 }
 
 // ── Edit ──
-const showEditChargeType    = ref(false)
-const editChargeType        = ref(null)
-const editChargeTypeLoading = ref(false)
-const editChargeTypeError   = ref('')
+const showEditLedger    = ref(false)
+const editLedger        = ref(null)
+const editLedgerLoading = ref(false)
+const editLedgerError   = ref('')
 
-function openEditChargeType(ct) {
-  editChargeType.value = {
+function openEditLedger(ct) {
+  editLedger.value = {
     id:          ct.id,
     name:        ct.name,
     description: ct.description,
     appliesTo:   ct.appliesTo,
     recurring:   ct.recurring === 'Monthly' ? 'Yes' : 'No',
   }
-  editChargeTypeError.value = ''
-  showEditChargeType.value  = true
+  editLedgerError.value = ''
+  showEditLedger.value  = true
 }
 
-function closeEditChargeType() {
-  showEditChargeType.value    = false
-  editChargeType.value        = null
-  editChargeTypeError.value   = ''
-  editChargeTypeLoading.value = false
+function closeEditLedger() {
+  showEditLedger.value    = false
+  editLedger.value        = null
+  editLedgerError.value   = ''
+  editLedgerLoading.value = false
 }
 
-async function updateChargeType() {
-  if (editChargeTypeLoading.value) return
-  editChargeTypeError.value   = ''
-  editChargeTypeLoading.value = true
+async function updateLedger() {
+  if (editLedgerLoading.value) return
+  editLedgerError.value   = ''
+  editLedgerLoading.value = true
   try {
     const payload = {
-      name:        editChargeType.value.name,
-      description: editChargeType.value.description || null,
+      name:        editLedger.value.name,
+      description: editLedger.value.description || null,
     }
-    if (!editChargeType.value.isSystem) {
-      payload.applies_to   = editChargeType.value.appliesTo
-      payload.is_recurring = editChargeType.value.recurring === 'Yes'
+    if (!editLedger.value.isSystem) {
+      payload.applies_to   = editLedger.value.appliesTo
+      payload.is_recurring = editLedger.value.recurring === 'Yes'
     }
-    const { data } = await api.put(`/charge-types/${editChargeType.value.id}`, payload)
-    const updated = normalizeChargeType(data.data ?? data)
-    const idx = chargeTypes.value.findIndex(c => c.id === updated.id)
-    if (idx !== -1) chargeTypes.value[idx] = updated
-    closeEditChargeType()
-    toastSuccess(`Charge type "${updated.name}" updated.`)
+    const { data } = await api.put(`/ledgers/${editLedger.value.id}`, payload)
+    const updated = normalizeLedger(data.data ?? data)
+    const idx = ledgers.value.findIndex(c => c.id === updated.id)
+    if (idx !== -1) ledgers.value[idx] = updated
+    closeEditLedger()
+    toastSuccess(`Ledger "${updated.name}" updated.`)
   } catch (err) {
-    editChargeTypeError.value = err?.response?.data?.message ?? 'Something went wrong.'
-    toastError(editChargeTypeError.value)
+    editLedgerError.value = err?.response?.data?.message ?? 'Something went wrong.'
+    toastError(editLedgerError.value)
   } finally {
-    editChargeTypeLoading.value = false
+    editLedgerLoading.value = false
   }
 }
 
 // ── Delete ──
-const deletingChargeTypeId  = ref(null)
-const chargeTypeToDelete    = ref(null)
+const deletingLedgerId  = ref(null)
+const ledgerToDelete    = ref(null)
 
-function confirmDeleteChargeType(ct) {
-  chargeTypeToDelete.value = ct
+function confirmDeleteLedger(ct) {
+  ledgerToDelete.value = ct
 }
 
-async function deleteChargeType() {
-  const ct = chargeTypeToDelete.value
+async function deleteLedger() {
+  const ct = ledgerToDelete.value
   if (!ct) return
-  deletingChargeTypeId.value = ct.id
-  chargeTypeToDelete.value = null
+  deletingLedgerId.value = ct.id
+  ledgerToDelete.value = null
   try {
-    await api.delete(`/charge-types/${ct.id}`)
-    chargeTypes.value = chargeTypes.value.filter(c => c.id !== ct.id)
+    await api.delete(`/ledgers/${ct.id}`)
+    ledgers.value = ledgers.value.filter(c => c.id !== ct.id)
     toastSuccess(`"${ct.name}" deleted.`)
   } catch (err) {
     toastError(err?.response?.data?.message ?? 'Delete failed.')
   } finally {
-    deletingChargeTypeId.value = null
+    deletingLedgerId.value = null
   }
 }
 
-const togglingChargeTypeId = ref(null)
+const togglingLedgerId = ref(null)
 
-async function toggleChargeTypeActive(ct) {
-  if (ct.isSystem || togglingChargeTypeId.value === ct.id) return
-  togglingChargeTypeId.value = ct.id
+async function toggleLedgerActive(ct) {
+  if (ct.isSystem || togglingLedgerId.value === ct.id) return
+  togglingLedgerId.value = ct.id
   const next = !ct.isActive
   try {
-    await api.put(`/charge-types/${ct.id}`, { is_active: next })
-    const idx = chargeTypes.value.findIndex(c => c.id === ct.id)
-    if (idx !== -1) chargeTypes.value[idx] = { ...chargeTypes.value[idx], isActive: next }
+    await api.put(`/ledgers/${ct.id}`, { is_active: next })
+    const idx = ledgers.value.findIndex(c => c.id === ct.id)
+    if (idx !== -1) ledgers.value[idx] = { ...ledgers.value[idx], isActive: next }
   } catch (err) {
     toastError(err?.response?.data?.message ?? 'Failed to update.')
   } finally {
-    togglingChargeTypeId.value = null
+    togglingLedgerId.value = null
   }
 }
 
 
 function appliesToVariant(v) {
   if (v === 'owner')  return 'warning'
-  if (v === 'tenant') return 'primary'
+  if (v === 'occupant') return 'primary'
   return 'default'
 }
 
-const chargeTypeGroups = computed(() => [
-  { key: 'system', label: 'System',          items: chargeTypes.value.filter(c => c.isSystem) },
-  { key: 'owner',  label: 'Owner',           items: chargeTypes.value.filter(c => !c.isSystem && c.appliesTo === 'owner') },
-  { key: 'tenant', label: 'Tenant',          items: chargeTypes.value.filter(c => !c.isSystem && c.appliesTo === 'tenant') },
-  { key: 'either', label: 'Shared / Either', items: chargeTypes.value.filter(c => !c.isSystem && c.appliesTo === 'either') },
+const ledgerGroups = computed(() => [
+  { key: 'system', label: 'System',          items: ledgers.value.filter(c => c.isSystem) },
+  { key: 'owner',  label: 'Owner',           items: ledgers.value.filter(c => !c.isSystem && c.appliesTo === 'owner') },
+  { key: 'occupant', label: 'Occupant',          items: ledgers.value.filter(c => !c.isSystem && c.appliesTo === 'occupant') },
+  { key: 'either', label: 'Shared / Either', items: ledgers.value.filter(c => !c.isSystem && c.appliesTo === 'either') },
 ].filter(g => g.items.length > 0))
 
 // ─── Danger Zone ──────────────────────────────────────────────────────────────
@@ -626,10 +627,10 @@ const chargeTypeGroups = computed(() => [
 // `hidden` = implied by a parent; never shown as a standalone row
 const FLUSH_TARGETS = [
   {
-    id: 'estates',
-    label: 'Estates',
-    description: 'All estates and their associated data',
-    forces: ['units', 'owners', 'tenants', 'invoices', 'cashbook_entries', 'compliance_checklists'],
+    id: 'communities',
+    label: 'Communities',
+    description: 'All communities and their associated data',
+    forces: ['units', 'owners', 'occupants', 'invoices', 'cashbook_entries', 'compliance_checklists'],
     hidden: false,
   },
   {
@@ -643,7 +644,7 @@ const FLUSH_TARGETS = [
     id: 'units',
     label: 'Units',
     description: 'All units, charge configurations, and activity history',
-    forces: ['owners', 'tenants', 'invoices', 'cashbook_entries'],
+    forces: ['owners', 'occupants', 'invoices', 'cashbook_entries'],
     hidden: true,
   },
   {
@@ -654,9 +655,9 @@ const FLUSH_TARGETS = [
     hidden: true,
   },
   {
-    id: 'tenants',
-    label: 'Tenants',
-    description: 'All tenant/occupant records',
+    id: 'occupants',
+    label: 'Occupants',
+    description: 'All occupant/occupant records',
     forces: ['invoices', 'cashbook_entries'],
     hidden: true,
   },
@@ -781,24 +782,24 @@ function toggleKeepUser(id) {
   else            flushKeepUserIds.value.splice(idx, 1)
 }
 
-const affectedEstates        = ref([])
-const affectedEstatesLoading = ref(false)
+const affectedCommunities        = ref([])
+const affectedCommunitiesLoading = ref(false)
 
 async function openFlushModal() {
   flushConfirmation.value = ''
   flushError.value        = ''
-  affectedEstates.value   = []
+  affectedCommunities.value   = []
   showFlushModal.value    = true
 
-  if (flushTargets.value.includes('estates')) {
-    affectedEstatesLoading.value = true
+  if (flushTargets.value.includes('communities')) {
+    affectedCommunitiesLoading.value = true
     try {
-      const res = await api.get('/estates', { params: { _per_page: 200 } })
-      affectedEstates.value = (res.data.data ?? []).map(e => e.name)
+      const res = await api.get('/communities', { params: { _per_page: 200 } })
+      affectedCommunities.value = (res.data.data ?? []).map(e => e.name)
     } catch {
-      affectedEstates.value = []
+      affectedCommunities.value = []
     } finally {
-      affectedEstatesLoading.value = false
+      affectedCommunitiesLoading.value = false
     }
   }
 }
@@ -893,7 +894,7 @@ async function executeFlush() {
             <button
               v-for="item in group.items"
               :key="item.id"
-              @click="router.push(`/settings/${item.id}`)"
+              @click="item.route ? router.push(item.route) : router.push(`/settings/${item.id}`)"
               :class="[
                 'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors text-left',
                 activeSection === item.id
@@ -931,6 +932,13 @@ async function executeFlush() {
                   <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
                   <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
                   <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+                </svg>
+              </template>
+              <!-- users icon -->
+              <template v-else-if="item.icon === 'users'">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
               </template>
               <!-- palette icon -->
@@ -1176,7 +1184,7 @@ async function executeFlush() {
           <div class="flex flex-col gap-1.5">
             <label class="text-sm font-medium text-fg">Country</label>
             <AppSelect v-model="company.country" :options="COUNTRY_OPTS" />
-            <p class="text-xs text-muted-foreground">Default country for new estates.</p>
+            <p class="text-xs text-muted-foreground">Default country for new communities.</p>
           </div>
 
           <!-- Currency (derived) -->
@@ -1258,19 +1266,19 @@ async function executeFlush() {
         </template>
       </div>
 
-      <!-- ───── CHARGE TYPES ───── -->
-      <div v-if="activeSection === 'charge-types'">
+      <!-- ───── LEDGERS ───── -->
+      <div v-if="activeSection === 'ledgers'">
         <div class="flex items-center justify-between mb-4">
           <p class="text-sm text-muted-foreground">
-            <span v-if="chargeTypesLoading">Loading...</span>
-            <span v-else-if="chargeTypesError" class="text-destructive">{{ chargeTypesError }}</span>
-            <span v-else>{{ chargeTypes.length }} charge types configured</span>
+            <span v-if="ledgersLoading">Loading...</span>
+            <span v-else-if="ledgersError" class="text-destructive">{{ ledgersError }}</span>
+            <span v-else>{{ ledgers.length }} ledgers configured</span>
           </p>
-          <AppButton variant="primary" size="sm" @click="showAddChargeType = true">
+          <AppButton variant="primary" size="sm" @click="showAddLedger = true">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14"/><path d="M12 5v14"/>
             </svg>
-            Add Charge Type
+            Add Ledger
           </AppButton>
         </div>
 
@@ -1285,7 +1293,7 @@ async function executeFlush() {
               </tr>
             </thead>
             <tbody>
-              <template v-for="group in chargeTypeGroups" :key="group.key">
+              <template v-for="group in ledgerGroups" :key="group.key">
                 <!-- Section header row -->
                 <tr class="bg-primary/8 border-y border-primary/15">
                   <td colspan="4" class="py-2.5 px-4">
@@ -1312,14 +1320,14 @@ async function executeFlush() {
                       <button
                         v-else
                         type="button"
-                        :disabled="togglingChargeTypeId === ct.id"
+                        :disabled="togglingLedgerId === ct.id"
                         :class="[
                           'relative h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50 disabled:cursor-wait',
                           ct.isActive ? 'bg-green-500' : 'bg-muted-foreground/25',
                         ]"
                         :aria-checked="ct.isActive"
                         role="switch"
-                        @click="toggleChargeTypeActive(ct)"
+                        @click="toggleLedgerActive(ct)"
                       >
                         <span
                           :class="[
@@ -1340,14 +1348,14 @@ async function executeFlush() {
                         </AppButton>
                       </template>
                       <template #default="{ close }">
-                        <AppDropdownItem label="Edit" @click="close(); openEditChargeType(ct)">
+                        <AppDropdownItem label="Edit" @click="close(); openEditLedger(ct)">
                           <template #icon>
                             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                               <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>
                             </svg>
                           </template>
                         </AppDropdownItem>
-                        <AppDropdownItem v-if="!ct.isSystem" label="Delete" variant="danger" @click="close(); confirmDeleteChargeType(ct)">
+                        <AppDropdownItem v-if="!ct.isSystem" label="Delete" variant="danger" @click="close(); confirmDeleteLedger(ct)">
                           <template #icon>
                             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                               <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
@@ -1749,15 +1757,15 @@ async function executeFlush() {
             </span>
           </div>
 
-          <!-- Estate names list -->
-          <div v-if="target.id === 'estates'" class="mt-2 ml-5">
-            <div v-if="affectedEstatesLoading" class="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <!-- Community names list -->
+          <div v-if="target.id === 'communities'" class="mt-2 ml-5">
+            <div v-if="affectedCommunitiesLoading" class="flex items-center gap-1.5 text-xs text-muted-foreground">
               <svg class="w-3 h-3 animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-              Loading estates…
+              Loading communities…
             </div>
-            <ul v-else-if="affectedEstates.length" class="space-y-0.5 mb-2">
+            <ul v-else-if="affectedCommunities.length" class="space-y-0.5 mb-2">
               <li
-                v-for="name in affectedEstates"
+                v-for="name in affectedCommunities"
                 :key="name"
                 class="flex items-center gap-1.5 text-xs text-destructive/80"
               >
@@ -1797,47 +1805,47 @@ async function executeFlush() {
     </template>
   </AppModal>
 
-  <!-- ─── Add Charge Type modal ─────────────────────────────────────────── -->
-  <AppModal :show="showAddChargeType" title="Add Custom Charge Type" size="md" @close="closeAddChargeType">
+  <!-- ─── Add Ledger modal ─────────────────────────────────────────── -->
+  <AppModal :show="showAddLedger" title="Add Custom Ledger" size="md" @close="closeAddLedger">
     <div class="space-y-4">
-      <AppInput v-model="newChargeType.name"        label="Name"        placeholder="e.g. Generator Fee" required />
-      <AppInput v-model="newChargeType.description" label="Description" type="textarea" :rows="2" placeholder="Brief description..." />
-      <AppSelect v-model="newChargeType.appliesTo"  label="Applies To"  :options="APPLIES_TO_OPTS" required />
-      <AppSelect v-model="newChargeType.recurring"  label="Recurring?"  :options="RECURRING_OPTS"  required />
-      <p v-if="addChargeTypeError" class="text-sm text-destructive">{{ addChargeTypeError }}</p>
+      <AppInput v-model="newLedger.name"        label="Name"        placeholder="e.g. Generator Fee" required />
+      <AppInput v-model="newLedger.description" label="Description" type="textarea" :rows="2" placeholder="Brief description..." />
+      <AppSelect v-model="newLedger.appliesTo"  label="Applies To"  :options="APPLIES_TO_OPTS" required />
+      <AppSelect v-model="newLedger.recurring"  label="Recurring?"  :options="RECURRING_OPTS"  required />
+      <p v-if="addLedgerError" class="text-sm text-destructive">{{ addLedgerError }}</p>
     </div>
     <template #footer>
-      <AppButton variant="outline" @click="closeAddChargeType">Cancel</AppButton>
-      <AppButton variant="primary" :loading="addChargeTypeLoading" @click="saveChargeType">Save</AppButton>
+      <AppButton variant="outline" @click="closeAddLedger">Cancel</AppButton>
+      <AppButton variant="primary" :loading="addLedgerLoading" @click="saveLedger">Save</AppButton>
     </template>
   </AppModal>
 
-  <!-- ─── Edit Charge Type modal ────────────────────────────────────────── -->
-  <AppModal v-if="editChargeType" :show="showEditChargeType" title="Edit Charge Type" size="md" @close="closeEditChargeType">
+  <!-- ─── Edit Ledger modal ────────────────────────────────────────── -->
+  <AppModal v-if="editLedger" :show="showEditLedger" title="Edit Ledger" size="md" @close="closeEditLedger">
     <div class="space-y-4">
-      <AppInput v-model="editChargeType.name"        label="Name"        placeholder="e.g. Generator Fee" required />
-      <AppInput v-model="editChargeType.description" label="Description" type="textarea" :rows="2" placeholder="Brief description..." />
-      <template v-if="!editChargeType.isSystem">
-        <AppSelect v-model="editChargeType.appliesTo"  label="Applies To"  :options="APPLIES_TO_OPTS" required />
-        <AppSelect v-model="editChargeType.recurring"  label="Recurring?"  :options="RECURRING_OPTS"  required />
+      <AppInput v-model="editLedger.name"        label="Name"        placeholder="e.g. Generator Fee" required />
+      <AppInput v-model="editLedger.description" label="Description" type="textarea" :rows="2" placeholder="Brief description..." />
+      <template v-if="!editLedger.isSystem">
+        <AppSelect v-model="editLedger.appliesTo"  label="Applies To"  :options="APPLIES_TO_OPTS" required />
+        <AppSelect v-model="editLedger.recurring"  label="Recurring?"  :options="RECURRING_OPTS"  required />
       </template>
-      <p v-if="editChargeTypeError" class="text-sm text-destructive">{{ editChargeTypeError }}</p>
+      <p v-if="editLedgerError" class="text-sm text-destructive">{{ editLedgerError }}</p>
     </div>
     <template #footer>
-      <AppButton variant="outline" @click="closeEditChargeType">Cancel</AppButton>
-      <AppButton variant="primary" :loading="editChargeTypeLoading" @click="updateChargeType">Save Changes</AppButton>
+      <AppButton variant="outline" @click="closeEditLedger">Cancel</AppButton>
+      <AppButton variant="primary" :loading="editLedgerLoading" @click="updateLedger">Save Changes</AppButton>
     </template>
   </AppModal>
 
-  <!-- ─── Delete charge type confirmation ─────────────────────────────────── -->
-  <AppModal :show="!!chargeTypeToDelete" title="Delete Charge Type" size="sm" @close="chargeTypeToDelete = null">
+  <!-- ─── Delete ledger confirmation ─────────────────────────────────── -->
+  <AppModal :show="!!ledgerToDelete" title="Delete Ledger" size="sm" @close="ledgerToDelete = null">
     <div class="space-y-2">
-      <p class="text-sm text-foreground">Are you sure you want to delete <span class="font-semibold">{{ chargeTypeToDelete?.name }}</span>?</p>
+      <p class="text-sm text-foreground">Are you sure you want to delete <span class="font-semibold">{{ ledgerToDelete?.name }}</span>?</p>
       <p class="text-sm text-muted-foreground">This cannot be undone.</p>
     </div>
     <template #footer>
-      <AppButton variant="outline" @click="chargeTypeToDelete = null">Cancel</AppButton>
-      <AppButton variant="danger" :loading="!!deletingChargeTypeId" @click="deleteChargeType">Delete</AppButton>
+      <AppButton variant="outline" @click="ledgerToDelete = null">Cancel</AppButton>
+      <AppButton variant="danger" :loading="!!deletingLedgerId" @click="deleteLedger">Delete</AppButton>
     </template>
   </AppModal>
 

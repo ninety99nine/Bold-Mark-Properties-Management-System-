@@ -62,7 +62,7 @@ class RiskRule extends Model
     }
 
     /**
-     * Get tenant.
+     * Get occupant.
      *
      * @return BelongsTo
      */

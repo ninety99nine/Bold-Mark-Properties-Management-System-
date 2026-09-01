@@ -16,7 +16,7 @@ use App\Http\Resources\UserResources;
 class UserService extends BaseService
 {
     /**
-     * Return a paginated, filtered list of users for the authenticated tenant.
+     * Return a paginated, filtered list of users for the authenticated occupant.
      *
      * @param array $data
      * @return UserResources
@@ -25,7 +25,7 @@ class UserService extends BaseService
     {
         $user  = Auth::user();
         $query = User::where('organization_id', $user->organization_id)
-            ->with(['roles', 'estates']);
+            ->with(['roles', 'communities']);
 
         if (!empty($data['role'])) {
             $query->whereHas('roles', fn($q) => $q->where('name', $data['role']));
@@ -51,9 +51,9 @@ class UserService extends BaseService
     public function showUsersSummary(array $data): array
     {
         $user     = Auth::user();
-        $tenantId = $user->organization_id;
+        $organizationId = $user->organization_id;
 
-        $query = User::where('organization_id', $tenantId);
+        $query = User::where('organization_id', $organizationId);
 
         $total    = (clone $query)->count();
         $active   = (clone $query)->where('status', UserStatus::ACTIVE->value)->count();
@@ -79,7 +79,7 @@ class UserService extends BaseService
     }
 
     /**
-     * Invite a new user to the tenant: create the record and assign their role.
+     * Invite a new user to the occupant: create the record and assign their role.
      *
      * @param array $data
      * @return array
@@ -166,22 +166,22 @@ class UserService extends BaseService
      */
     public function showUser(User $user): UserResource
     {
-        $user->load(['roles', 'estates']);
+        $user->load(['roles', 'communities']);
 
         return $this->showResource($user);
     }
 
     /**
-     * Sync the estates assigned to a user.
+     * Sync the communities assigned to a user.
      *
      * @param User  $user
-     * @param array $estateIds
+     * @param array $communityIds
      * @return array
      */
-    public function syncUserEstates(User $user, array $estateIds): array
+    public function syncUserCommunities(User $user, array $communityIds): array
     {
-        $user->estates()->sync($estateIds);
-        $user->load(['roles', 'estates']);
+        $user->communities()->sync($communityIds);
+        $user->load(['roles', 'communities']);
 
         return $this->showUpdatedResource($user);
     }

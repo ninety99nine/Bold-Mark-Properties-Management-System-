@@ -1,16 +1,32 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
 import { useCountryStore } from '@/stores/country'
+import { useCommunityStore } from '@/stores/community'
 import AppInput from '@/components/common/AppInput.vue'
+import { entityTypeLabel, entityTypeBadgeClass } from '@/utils/communityEntityType'
 import api from '@/composables/useApi'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const notifStore = useNotificationStore()
 const countryStore = useCountryStore()
+const communityStore = useCommunityStore()
+
+// When inside a community, WeConnectU shows the community "CODE - NAME" in the
+// topbar (in place of the global search). Detect community-scoped routes and
+// read the active community from the store (kept in sync by CommunityDetailPage).
+const insideCommunity = computed(() =>
+  /^\/communities\/[^/]+/.test(route.path) && !!communityStore.selected?.name
+)
+const activeCommunityLabel = computed(() => {
+  const c = communityStore.selected
+  if (!c) return ''
+  return c.code ? `${c.code} - ${c.name}` : c.name
+})
 
 // --- Country Switcher ---
 const countryOpen = ref(false)
@@ -26,10 +42,10 @@ function toggleCountry() {
 
 // Detail routes that are region-specific → map to their parent list page
 const detailRouteParents = {
-  'estate-detail': 'estates',
-  'unit-detail': 'estates',
-  'tenant-detail': 'estates',
-  'owner-detail': 'estates',
+  'community-detail': 'communities',
+  'unit-detail': 'communities',
+  'occupant-detail': 'communities',
+  'owner-detail': 'communities',
   'invoice-detail': 'billing',
   'cashbook-entry': 'cashbook',
   'user-detail': 'users',
@@ -66,8 +82,8 @@ function handleNotifClick(notif) {
     notifStore.markAsRead(notif.id)
   }
   // Navigate based on notification type
-  if (notif.data?.estate_id) {
-    router.push(`/estates/${notif.data.estate_id}`)
+  if (notif.data?.community_id) {
+    router.push(`/communities/${notif.data.community_id}`)
   }
   notifOpen.value = false
 }
@@ -98,10 +114,10 @@ const searchRef = ref(null)
 const searchLoading = ref(false)
 let searchDebounce = null
 
-const searchResults = ref({ estates: [], units: [], people: [], invoices: [] })
+const searchResults = ref({ communities: [], units: [], people: [], invoices: [] })
 
 const hasResults = computed(() =>
-  searchResults.value.estates.length > 0 ||
+  searchResults.value.communities.length > 0 ||
   searchResults.value.units.length > 0 ||
   searchResults.value.people.length > 0 ||
   searchResults.value.invoices.length > 0
@@ -109,7 +125,7 @@ const hasResults = computed(() =>
 
 async function performSearch(query) {
   if (!query || query.trim().length < 1) {
-    searchResults.value = { estates: [], units: [], people: [], invoices: [] }
+    searchResults.value = { communities: [], units: [], people: [], invoices: [] }
     return
   }
   searchLoading.value = true
@@ -117,7 +133,7 @@ async function performSearch(query) {
     const { data } = await api.get('/search', { params: { q: query.trim() } })
     searchResults.value = data
   } catch {
-    searchResults.value = { estates: [], units: [], people: [], invoices: [] }
+    searchResults.value = { communities: [], units: [], people: [], invoices: [] }
   } finally {
     searchLoading.value = false
   }
@@ -137,25 +153,25 @@ function closeSearch() {
   searchOpen.value = false
 }
 
-function navigateToEstate(estate) {
+function navigateToCommunity(community) {
   closeSearch()
   searchQuery.value = ''
-  router.push(`/estates/${estate.id}`)
+  router.push(`/communities/${community.id}`)
 }
 
 function navigateToUnit(unit) {
   closeSearch()
   searchQuery.value = ''
-  router.push(`/estates/${unit.estate_id}/units/${unit.id}`)
+  router.push(`/communities/${unit.community_id}/units/${unit.id}`)
 }
 
 function navigateToPerson(person) {
   closeSearch()
   searchQuery.value = ''
-  if (person.role === 'Owner' && person.estate_id && person.unit_id) {
-    router.push(`/estates/${person.estate_id}/units/${person.unit_id}`)
-  } else if (person.role === 'Tenant' && person.estate_id && person.unit_id) {
-    router.push(`/estates/${person.estate_id}/units/${person.unit_id}`)
+  if (person.role === 'Owner' && person.community_id && person.unit_id) {
+    router.push(`/communities/${person.community_id}/units/${person.unit_id}`)
+  } else if (person.role === 'Occupant' && person.community_id && person.unit_id) {
+    router.push(`/communities/${person.community_id}/units/${person.unit_id}`)
   } else {
     router.push(`/users/${person.id}`)
   }
@@ -167,25 +183,8 @@ function navigateToInvoice(invoice) {
   router.push(`/billing/invoices/${invoice.id}`)
 }
 
-function estateTypeBadgeClass(type) {
-  const map = {
-    'sectional_title': 'bg-primary/10 text-primary',
-    'mixed': 'bg-[#717B99]/10 text-[#717B99]',
-    'residential_rental': 'bg-green-100 text-green-700',
-    'commercial_rental': 'bg-amber-100 text-amber-700',
-  }
-  return map[type] || 'bg-muted text-muted-foreground'
-}
-
-function estateTypeLabel(type) {
-  const map = {
-    'sectional_title': 'Sectional Title',
-    'mixed': 'Mixed',
-    'residential_rental': 'Residential',
-    'commercial_rental': 'Commercial',
-  }
-  return map[type] || type
-}
+const communityTypeBadgeClass = entityTypeBadgeClass
+const communityTypeLabel = entityTypeLabel
 
 function invoiceStatusClass(status) {
   const map = {
@@ -261,13 +260,19 @@ onUnmounted(() => {
 <template>
   <header class="h-14 border-b border-border bg-card flex items-center justify-between px-6 shrink-0 z-10">
 
-    <!-- Left: Global search -->
-    <div class="flex items-center gap-3">
-      <div class="relative w-80" ref="searchRef">
+    <!-- Left: community name (inside a community) OR global search -->
+    <div class="flex items-center gap-3 min-w-0">
+      <!-- Community context title — mirrors WeConnectU's topbar -->
+      <h1
+        v-if="insideCommunity"
+        class="font-body text-lg font-bold text-navy truncate"
+      >{{ activeCommunityLabel }}</h1>
+
+      <div v-else class="relative w-80" ref="searchRef">
         <AppInput
           v-model="searchQuery"
           leading-icon="search"
-          placeholder="Search estates, units, people..."
+          placeholder="Search communities, units, people..."
           size="sm"
           @focus="onSearchFocus"
           @input="onSearchInput"
@@ -307,13 +312,13 @@ onUnmounted(() => {
               </div>
 
               <template v-else-if="searchQuery">
-                <!-- Estates section -->
-                <div v-if="searchResults.estates.length > 0" class="px-2 pt-2">
-                  <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Estates</p>
+                <!-- Communities section -->
+                <div v-if="searchResults.communities.length > 0" class="px-2 pt-2">
+                  <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Communities</p>
                   <button
-                    v-for="estate in searchResults.estates"
-                    :key="estate.id"
-                    @click="navigateToEstate(estate)"
+                    v-for="community in searchResults.communities"
+                    :key="community.id"
+                    @click="navigateToCommunity(community)"
                     class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left group"
                   >
                     <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -322,17 +327,17 @@ onUnmounted(() => {
                       </svg>
                     </div>
                     <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-foreground truncate">{{ estate.name }}</p>
-                      <p class="text-xs text-muted-foreground">{{ estate.units_count }} units</p>
+                      <p class="text-sm font-medium text-foreground truncate">{{ community.name }}</p>
+                      <p class="text-xs text-muted-foreground">{{ community.units_count }} units</p>
                     </div>
-                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" :class="estateTypeBadgeClass(estate.type)">
-                      {{ estateTypeLabel(estate.type) }}
+                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" :class="communityTypeBadgeClass(community.entity_type)">
+                      {{ communityTypeLabel(community.entity_type) }}
                     </span>
                   </button>
                 </div>
 
                 <!-- Divider -->
-                <div v-if="searchResults.estates.length > 0 && (searchResults.units.length > 0 || searchResults.people.length > 0 || searchResults.invoices.length > 0)" class="mx-3 my-1.5 h-px bg-border" />
+                <div v-if="searchResults.communities.length > 0 && (searchResults.units.length > 0 || searchResults.people.length > 0 || searchResults.invoices.length > 0)" class="mx-3 my-1.5 h-px bg-border" />
 
                 <!-- Units section -->
                 <div v-if="searchResults.units.length > 0" class="px-2">
@@ -350,7 +355,7 @@ onUnmounted(() => {
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm font-medium text-foreground">Unit {{ unit.unit_number }}</p>
-                      <p class="text-xs text-muted-foreground truncate">{{ unit.owner_name || '—' }} · {{ unit.estate_name }}</p>
+                      <p class="text-xs text-muted-foreground truncate">{{ unit.owner_name || '—' }} · {{ unit.community_name }}</p>
                     </div>
                   </button>
                 </div>
@@ -368,7 +373,7 @@ onUnmounted(() => {
                     class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
                   >
                     <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
-                      :class="person.role === 'Tenant' ? 'bg-blue-100 text-blue-700' : (person.role === 'Owner' ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary')"
+                      :class="person.role === 'Occupant' ? 'bg-blue-100 text-blue-700' : (person.role === 'Owner' ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary')"
                     >
                       {{ person.name.split(' ').map(n => n[0]).join('').slice(0, 2) }}
                     </div>
@@ -377,7 +382,7 @@ onUnmounted(() => {
                       <p class="text-xs text-muted-foreground truncate">{{ person.context || 'System User' }}</p>
                     </div>
                     <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
-                      :class="person.role === 'Tenant' ? 'bg-blue-100 text-blue-700' : (person.role === 'Owner' ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary')"
+                      :class="person.role === 'Occupant' ? 'bg-blue-100 text-blue-700' : (person.role === 'Owner' ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary')"
                     >
                       {{ person.role }}
                     </span>
@@ -403,7 +408,7 @@ onUnmounted(() => {
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm font-medium text-foreground">{{ invoice.invoice_number }}</p>
-                      <p class="text-xs text-muted-foreground truncate">{{ invoice.unit_number ? `Unit ${invoice.unit_number}` : '' }}{{ invoice.unit_number && invoice.estate_name ? ' · ' : '' }}{{ invoice.estate_name || '' }}</p>
+                      <p class="text-xs text-muted-foreground truncate">{{ invoice.unit_number ? `Unit ${invoice.unit_number}` : '' }}{{ invoice.unit_number && invoice.community_name ? ' · ' : '' }}{{ invoice.community_name || '' }}</p>
                     </div>
                     <div class="flex items-center gap-2 flex-shrink-0">
                       <span class="text-xs font-medium text-foreground">{{ formatCurrency(invoice.amount) }}</span>
@@ -420,7 +425,7 @@ onUnmounted(() => {
                     <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
                   </svg>
                   <p class="text-sm text-muted-foreground">No results for "<span class="font-medium">{{ searchQuery }}</span>"</p>
-                  <p class="text-xs text-muted-foreground mt-0.5">Try searching for an estate name, unit number, invoice number, or person</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">Try searching for an community name, unit number, invoice number, or person</p>
                 </div>
               </template>
 
@@ -429,7 +434,7 @@ onUnmounted(() => {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/30 mx-auto mb-2">
                   <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
                 </svg>
-                <p class="text-sm text-muted-foreground">Search estates, units, people, invoices...</p>
+                <p class="text-sm text-muted-foreground">Search communities, units, people, invoices...</p>
                 <p class="text-xs text-muted-foreground/60 mt-0.5">Start typing to find results</p>
               </div>
 
@@ -448,7 +453,7 @@ onUnmounted(() => {
     <!-- Right: Country Switcher + Notifications + User -->
     <div class="flex items-center gap-2">
 
-      <!-- Country switcher — only shown when estates span multiple countries -->
+      <!-- Country switcher — only shown when communities span multiple countries -->
       <div v-if="countryStore.isMultiCountry" class="relative" ref="countryRef">
         <button
           @click="toggleCountry"
@@ -493,7 +498,7 @@ onUnmounted(() => {
               <span class="text-base leading-none">{{ c.flag }}</span>
               <span class="flex-1">{{ c.name }}</span>
               <span class="w-[20px] text-center text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
-                {{ c.estateCount }}
+                {{ c.communityCount }}
               </span>
               <span class="w-3.5 shrink-0 flex items-center justify-center">
                 <svg

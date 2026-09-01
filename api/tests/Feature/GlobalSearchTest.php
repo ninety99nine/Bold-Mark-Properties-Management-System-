@@ -1,10 +1,10 @@
 <?php
 
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
-use App\Models\Tenant;
+use App\Models\Occupant;
 use App\Models\Unit;
 use Illuminate\Support\Str;
 
@@ -20,15 +20,15 @@ function makeSearchableData(string $token): array
 {
     $user = adminUser();
 
-    $estate = Estate::factory()->create([
+    $community = Community::factory()->create([
         'organization_id' => $user->organization_id,
-        'name'            => "Estate {$token}",
+        'name'            => "Community {$token}",
         'address'         => "99 {$token} Road",
     ]);
 
     $unit = Unit::factory()->create([
         'organization_id' => $user->organization_id,
-        'estate_id'       => $estate->id,
+        'community_id'       => $community->id,
         'unit_number'     => "U{$token}",
     ]);
 
@@ -39,26 +39,26 @@ function makeSearchableData(string $token): array
         'email'           => "owner{$token}@example.com",
     ]);
 
-    $tenant = Tenant::factory()->create([
+    $occupant = Occupant::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'full_name'       => "Tenant {$token}",
-        'email'           => "tenant{$token}@example.com",
+        'full_name'       => "Occupant {$token}",
+        'email'           => "occupant{$token}@example.com",
     ]);
 
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'billing_period'  => '2026-03-01',
         'invoice_number'  => "INV-TEST-{$token}",
     ]);
 
-    return compact('user', 'estate', 'unit', 'owner', 'tenant', 'invoice', 'token');
+    return compact('user', 'community', 'unit', 'owner', 'occupant', 'invoice', 'token');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -101,13 +101,13 @@ it('global search returns 422 when q exceeds 100 characters', function () {
 // Response structure
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('global search response has estates, units, people, and invoices keys', function () {
+it('global search response has communities, units, people, and invoices keys', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.global.search') . '?q=nothing')
         ->assertOk()
-        ->assertJsonStructure(['estates', 'units', 'people', 'invoices']);
+        ->assertJsonStructure(['communities', 'units', 'people', 'invoices']);
 });
 
 it('global search returns empty collections when nothing matches', function () {
@@ -117,68 +117,68 @@ it('global search returns empty collections when nothing matches', function () {
         ->getJson(route('api.v1.global.search') . '?q=ZZZZNOMATCH99999')
         ->assertOk();
 
-    expect($response->json('estates'))->toBeEmpty();
+    expect($response->json('communities'))->toBeEmpty();
     expect($response->json('units'))->toBeEmpty();
     expect($response->json('people'))->toBeEmpty();
     expect($response->json('invoices'))->toBeEmpty();
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Estate search
+// Community search
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('global search finds an estate matching its name', function () {
+it('global search finds an community matching its name', function () {
     $token = strtoupper(Str::random(8));
-    ['user' => $user, 'estate' => $estate] = makeSearchableData($token);
+    ['user' => $user, 'community' => $community] = makeSearchableData($token);
 
-    $estates = $this->actingAs($user, 'api')
+    $communities = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.global.search') . "?q={$token}")
         ->assertOk()
-        ->json('estates');
+        ->json('communities');
 
-    expect(array_column($estates, 'id'))->toContain($estate->id);
+    expect(array_column($communities, 'id'))->toContain($community->id);
 });
 
-it('global search estate result has id, name, type, and units_count fields', function () {
+it('global search community result has id, name, type, and units_count fields', function () {
     $token = strtoupper(Str::random(8));
     ['user' => $user] = makeSearchableData($token);
 
-    $estate = $this->actingAs($user, 'api')
+    $community = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.global.search') . "?q={$token}")
         ->assertOk()
-        ->json('estates.0');
+        ->json('communities.0');
 
-    expect($estate)->toHaveKeys(['id', 'name', 'type', 'units_count']);
+    expect($community)->toHaveKeys(['id', 'name', 'entity_type', 'units_count']);
 });
 
-it('global search estate units_count reflects the correct count', function () {
+it('global search community units_count reflects the correct count', function () {
     $token = strtoupper(Str::random(8));
-    ['user' => $user, 'estate' => $estate] = makeSearchableData($token);
-    // makeSearchableData already created 1 unit for this estate
+    ['user' => $user, 'community' => $community] = makeSearchableData($token);
+    // makeSearchableData already created 1 unit for this community
 
     $result = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.global.search') . "?q={$token}")
         ->assertOk()
-        ->json('estates.0');
+        ->json('communities.0');
 
     expect($result['units_count'])->toBe(1);
 });
 
-it('global search finds an estate matching its address', function () {
+it('global search finds an community matching its address', function () {
     $token  = strtoupper(Str::random(8));
     $user   = adminUser();
-    $estate = Estate::factory()->create([
+    $community = Community::factory()->create([
         'organization_id' => $user->organization_id,
         'name'            => 'Something Else',
         'address'         => "99 {$token} Street",
     ]);
 
-    $estates = $this->actingAs($user, 'api')
+    $communities = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.global.search') . "?q={$token}")
         ->assertOk()
-        ->json('estates');
+        ->json('communities');
 
-    expect(array_column($estates, 'id'))->toContain($estate->id);
+    expect(array_column($communities, 'id'))->toContain($community->id);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ it('global search finds a unit matching its unit_number', function () {
     expect(array_column($units, 'id'))->toContain($unit->id);
 });
 
-it('global search unit result has id, unit_number, estate_id, estate_name, owner_name', function () {
+it('global search unit result has id, unit_number, community_id, community_name, owner_name', function () {
     $token = strtoupper(Str::random(8));
     ['user' => $user] = makeSearchableData($token);
 
@@ -206,7 +206,7 @@ it('global search unit result has id, unit_number, estate_id, estate_name, owner
         ->assertOk()
         ->json('units.0');
 
-    expect($unit)->toHaveKeys(['id', 'unit_number', 'estate_id', 'estate_name', 'owner_name']);
+    expect($unit)->toHaveKeys(['id', 'unit_number', 'community_id', 'community_name', 'owner_name']);
 });
 
 it('global search unit result owner_name is populated when an owner exists', function () {
@@ -249,7 +249,7 @@ it('global search owner in people has role Owner', function () {
 
     $owner = collect($people)->firstWhere('role', 'Owner');
     expect($owner)->not->toBeNull();
-    expect($owner)->toHaveKeys(['id', 'name', 'role', 'context', 'estate_id', 'unit_id']);
+    expect($owner)->toHaveKeys(['id', 'name', 'role', 'context', 'community_id', 'unit_id']);
 });
 
 it('global search finds an owner matching their email', function () {
@@ -265,33 +265,33 @@ it('global search finds an owner matching their email', function () {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// People search — tenants
+// People search — occupants
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('global search finds a tenant matching their full_name', function () {
+it('global search finds a occupant matching their full_name', function () {
     $token = strtoupper(Str::random(8));
-    ['user' => $user, 'tenant' => $tenant] = makeSearchableData($token);
+    ['user' => $user, 'occupant' => $occupant] = makeSearchableData($token);
 
     $people = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.global.search') . "?q=Tenant+{$token}")
+        ->getJson(route('api.v1.global.search') . "?q=Occupant+{$token}")
         ->assertOk()
         ->json('people');
 
     $ids = array_column($people, 'id');
-    expect($ids)->toContain($tenant->id);
+    expect($ids)->toContain($occupant->id);
 });
 
-it('global search tenant in people has role Organization', function () {
+it('global search occupant in people has role Organization', function () {
     $token = strtoupper(Str::random(8));
     ['user' => $user] = makeSearchableData($token);
 
     $people = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.global.search') . "?q=Tenant+{$token}")
+        ->getJson(route('api.v1.global.search') . "?q=Occupant+{$token}")
         ->assertOk()
         ->json('people');
 
-    $tenant = collect($people)->firstWhere('role', 'Organization');
-    expect($tenant)->not->toBeNull();
+    $occupant = collect($people)->firstWhere('role', 'Organization');
+    expect($occupant)->not->toBeNull();
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ it('global search finds an invoice matching its invoice_number', function () {
     expect(array_column($invoices, 'id'))->toContain($invoice->id);
 });
 
-it('global search invoice result has id, invoice_number, amount, status, unit_number, estate_name', function () {
+it('global search invoice result has id, invoice_number, amount, status, unit_number, community_name', function () {
     $token = strtoupper(Str::random(8));
     ['user' => $user] = makeSearchableData($token);
 
@@ -339,7 +339,7 @@ it('global search invoice result has id, invoice_number, amount, status, unit_nu
         ->assertOk()
         ->json('invoices.0');
 
-    expect($invoice)->toHaveKeys(['id', 'invoice_number', 'amount', 'status', 'unit_number', 'estate_name']);
+    expect($invoice)->toHaveKeys(['id', 'invoice_number', 'amount', 'status', 'unit_number', 'community_name']);
 });
 
 it('global search finds invoice by normalized number (no dashes)', function () {
@@ -361,30 +361,30 @@ it('global search finds invoice by normalized number (no dashes)', function () {
 // Per-category result cap
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('global search returns at most 5 estates', function () {
+it('global search returns at most 5 communities', function () {
     $token = strtoupper(Str::random(8));
     $user  = adminUser();
 
-    // Create 7 estates all matching the token
-    Estate::factory()->count(7)->create([
+    // Create 7 communities all matching the token
+    Community::factory()->count(7)->create([
         'organization_id' => $user->organization_id,
-        'name'            => "Estate {$token}",
+        'name'            => "Community {$token}",
     ]);
 
-    $estates = $this->actingAs($user, 'api')
+    $communities = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.global.search') . "?q={$token}")
         ->assertOk()
-        ->json('estates');
+        ->json('communities');
 
-    expect(count($estates))->toBeLessThanOrEqual(5);
+    expect(count($communities))->toBeLessThanOrEqual(5);
 });
 
 it('global search returns at most 5 invoices', function () {
     $token      = strtoupper(Str::random(6));
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['organization_id' => $user->organization_id, 'estate_id' => $estate->id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(['organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     // Create 7 invoices with the token in the number
@@ -393,7 +393,7 @@ it('global search returns at most 5 invoices', function () {
         Invoice::factory()->create([
             'organization_id' => $user->organization_id,
             'unit_id'         => $unit->id,
-            'charge_type_id'  => $chargeType->id,
+            'ledger_id'  => $ledger->id,
             'billed_to_type'  => 'owner',
             'billed_to_id'    => $owner->id,
             'billing_period'  => \Carbon\Carbon::create(2010 + $i, 1, 1)->toDateString(),
@@ -410,27 +410,27 @@ it('global search returns at most 5 invoices', function () {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Cross-tenant isolation — the most critical gap
+// Cross-occupant isolation — the most critical gap
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('global search estates are scoped to the authenticated tenant', function () {
+it('global search communities are scoped to the authenticated occupant', function () {
     $token = strtoupper(Str::random(8));
 
-    // Other tenant creates an estate with the token name
-    ['estate' => $otherEstate] = makeSearchableData($token);
+    // Other occupant creates an community with the token name
+    ['community' => $otherCommunity] = makeSearchableData($token);
 
     // My user searches for the same token — should get nothing
     $myUser = adminUser();
 
-    $estates = $this->actingAs($myUser, 'api')
+    $communities = $this->actingAs($myUser, 'api')
         ->getJson(route('api.v1.global.search') . "?q={$token}")
         ->assertOk()
-        ->json('estates');
+        ->json('communities');
 
-    expect(array_column($estates, 'id'))->not->toContain($otherEstate->id);
+    expect(array_column($communities, 'id'))->not->toContain($otherCommunity->id);
 });
 
-it('global search units are scoped to the authenticated tenant', function () {
+it('global search units are scoped to the authenticated occupant', function () {
     $token = strtoupper(Str::random(8));
     ['unit' => $otherUnit] = makeSearchableData($token);
 
@@ -444,7 +444,7 @@ it('global search units are scoped to the authenticated tenant', function () {
     expect(array_column($units, 'id'))->not->toContain($otherUnit->id);
 });
 
-it('global search owners are scoped to the authenticated tenant', function () {
+it('global search owners are scoped to the authenticated occupant', function () {
     $token = strtoupper(Str::random(8));
     ['owner' => $otherOwner] = makeSearchableData($token);
 
@@ -458,21 +458,21 @@ it('global search owners are scoped to the authenticated tenant', function () {
     expect(array_column($people, 'id'))->not->toContain($otherOwner->id);
 });
 
-it('global search tenants are scoped to the authenticated tenant', function () {
+it('global search occupants are scoped to the authenticated occupant', function () {
     $token = strtoupper(Str::random(8));
-    ['tenant' => $otherTenant] = makeSearchableData($token);
+    ['occupant' => $otherOccupant] = makeSearchableData($token);
 
     $myUser = adminUser();
 
     $people = $this->actingAs($myUser, 'api')
-        ->getJson(route('api.v1.global.search') . "?q=Tenant+{$token}")
+        ->getJson(route('api.v1.global.search') . "?q=Occupant+{$token}")
         ->assertOk()
         ->json('people');
 
-    expect(array_column($people, 'id'))->not->toContain($otherTenant->id);
+    expect(array_column($people, 'id'))->not->toContain($otherOccupant->id);
 });
 
-it('global search invoices are scoped to the authenticated tenant', function () {
+it('global search invoices are scoped to the authenticated occupant', function () {
     $token = strtoupper(Str::random(8));
     ['invoice' => $otherInvoice] = makeSearchableData($token);
 
@@ -486,7 +486,7 @@ it('global search invoices are scoped to the authenticated tenant', function () 
     expect(array_column($invoices, 'id'))->not->toContain($otherInvoice->id);
 });
 
-it('global search users are scoped to the authenticated tenant', function () {
+it('global search users are scoped to the authenticated occupant', function () {
     $token     = strtoupper(Str::random(8));
     $otherUser = adminUser();
     $otherUser->update(['name' => "OtherSysUser {$token}"]);

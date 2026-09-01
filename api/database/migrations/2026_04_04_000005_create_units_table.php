@@ -25,18 +25,18 @@ return new class extends Migration
             $table->decimal('levy_override', 12, 2)->nullable();
             $table->decimal('rent_amount', 12, 2)->nullable();
 
-            $table->foreignUuid('estate_id')->constrained('estates')->cascadeOnDelete();
+            $table->foreignUuid('community_id')->constrained('communities')->cascadeOnDelete();
             $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
-            $table->unique(['estate_id', 'unit_number']);
-            $table->index('estate_id');
+            $table->unique(['community_id', 'unit_number']);
+            $table->index('community_id');
             $table->index('organization_id');
             $table->index('status');
             $table->index('occupancy_type');
-            $table->index(['estate_id', 'status']);
-            $table->index(['estate_id', 'occupancy_type']);
+            $table->index(['community_id', 'status']);
+            $table->index(['community_id', 'occupancy_type']);
             $table->index(['organization_id', 'status']);
         });
     }

@@ -6,7 +6,7 @@
     'portfolio-assistant'  => 'Portfolio Assistant',
     'trustee'              => 'Trustee / Director',
     'owner'                => 'Property Owner',
-    'tenant'               => 'Organization',
+    'occupant'               => 'Organization',
     'contractor'           => 'Contractor',
   ];
 
@@ -21,24 +21,24 @@
     'portfolio-assistant'  => "Welcome to the team, {$name}.",
     'trustee'              => "Welcome, {$name}.",
     'owner'                => "Welcome to your owner portal, {$name}.",
-    'tenant'               => "Welcome, {$name}.",
+    'occupant'               => "Welcome, {$name}.",
     'contractor'           => "Welcome to BoldMark PMS, {$name}.",
   ];
 
   $bodies = [
     'company-admin' =>
-      "You've been added as <strong style=\"color:#1E2740;\">Company Administrator</strong> on the Bold Mark Properties Management System. You have full access to manage estates, billing, users, and all platform settings. Use the button below to set up your password and get started.",
+      "You've been added as <strong style=\"color:#1E2740;\">Company Administrator</strong> on the Bold Mark Properties Management System. You have full access to manage communities, billing, users, and all platform settings. Use the button below to set up your password and get started.",
     'portfolio-manager' =>
-      "You've been invited to join as a <strong style=\"color:#1E2740;\">Portfolio Manager</strong> on the Bold Mark Properties Management System. You'll be managing estates, overseeing billing, and keeping things running smoothly for your assigned portfolios. Use the button below to activate your account.",
+      "You've been invited to join as a <strong style=\"color:#1E2740;\">Portfolio Manager</strong> on the Bold Mark Properties Management System. You'll be managing communities, overseeing billing, and keeping things running smoothly for your assigned portfolios. Use the button below to activate your account.",
     'financial-controller' =>
-      "You've been invited to join as a <strong style=\"color:#1E2740;\">Financial Controller</strong> on the Bold Mark Properties Management System. You'll have access to invoicing, cashbook management, age analysis, and full financial reporting across your assigned estates. Use the button below to activate your account.",
+      "You've been invited to join as a <strong style=\"color:#1E2740;\">Financial Controller</strong> on the Bold Mark Properties Management System. You'll have access to invoicing, cashbook management, age analysis, and full financial reporting across your assigned communities. Use the button below to activate your account.",
     'portfolio-assistant' =>
-      "You've been invited to join the team as a <strong style=\"color:#1E2740;\">Portfolio Assistant</strong> on the Bold Mark Properties Management System. You'll support daily operations, manage communications, and help keep estates running efficiently. Use the button below to activate your account.",
+      "You've been invited to join the team as a <strong style=\"color:#1E2740;\">Portfolio Assistant</strong> on the Bold Mark Properties Management System. You'll support daily operations, manage communications, and help keep communities running efficiently. Use the button below to activate your account.",
     'trustee' =>
       "You've been granted access to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Trustee / Director</strong> for your community scheme. You can view financial reports, track levy collections, and stay fully informed on your scheme's performance. Use the button below to set up your account.",
     'owner' =>
       "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Property Owner</strong>. You can view your account balance, download levy statements, and stay up to date on everything related to your property. Use the button below to set up your account.",
-    'tenant' =>
+    'occupant' =>
       "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Organization</strong>. You can access your account, view your invoices, and stay connected with your property manager. Use the button below to set up your account.",
     'contractor' =>
       "You've been added to the Bold Mark Properties Management System as a <strong style=\"color:#1E2740;\">Contractor</strong>. You'll be able to view and manage job cards assigned to you. Use the button below to set up your account and get started.",

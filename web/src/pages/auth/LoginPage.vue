@@ -8,7 +8,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import AuthBrandPanel from '@/components/auth/AuthBrandPanel.vue'
 
 const auth = useAuthStore()
-const tenant = useOrganizationStore()
+const organization = useOrganizationStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -22,6 +22,17 @@ const mounted     = ref(false)
 
 // Set when the user was bounced here by an expired/invalid session (BM-006).
 const sessionExpired = ref(route.query.expired === '1')
+
+// Where to land once authentication (incl. 2FA) completes.
+//
+// The profile-selection screen is the deliberate entry anchor (WeConnectU
+// parity) and must ALWAYS be shown first — even when a `redirect` query is
+// present (e.g. a session-expiry bounce off a deep link like /compliance).
+// Login is the start of a fresh session, so the user re-selects their profile
+// before continuing.
+function resolvePostAuthTarget() {
+  return '/select-profile'
+}
 
 // 2FA challenge state
 const twoFactorCode    = ref('')
@@ -78,7 +89,7 @@ async function handleTwoFactor() {
   twoFaLoading.value = true
   try {
     await auth.loginWithTwoFactor(twoFactorCode.value)
-    router.push(route.query.redirect || '/dashboard')
+    router.push(resolvePostAuthTarget())
   } catch (e) {
     twoFaError.value = e.response?.data?.message || 'Invalid code. Please try again.'
   } finally {
@@ -107,7 +118,7 @@ async function confirmTwoFaSetup() {
   setupConfirming.value = true
   try {
     await auth.completeTwoFactorEnrollment(setupCode.value)
-    router.push(route.query.redirect || '/dashboard')
+    router.push(resolvePostAuthTarget())
   } catch (e) {
     setupError.value = e.response?.data?.message || 'Invalid code. Please try again.'
   } finally {
@@ -185,7 +196,7 @@ function cancelTwoFactor() {
     <div class="flex-1 flex flex-col justify-center items-center px-6 py-12 bg-bg">
       <!-- Mobile logo -->
       <div class="lg:hidden mb-10">
-        <img :src="tenant.logoUrl" :alt="tenant.name" class="h-8" />
+        <img :src="organization.logoUrl" :alt="organization.name" class="h-8" />
       </div>
 
       <div
@@ -393,7 +404,7 @@ function cancelTwoFactor() {
 
         <!-- Footer -->
         <p class="mt-8 text-center text-xs text-muted-fg">
-          © {{ new Date().getFullYear() }} {{ tenant.copyrightName }} · All rights reserved
+          © {{ new Date().getFullYear() }} {{ organization.copyrightName }} · All rights reserved
         </p>
       </div>
     </div>

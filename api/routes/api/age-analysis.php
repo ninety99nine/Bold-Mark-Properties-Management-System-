@@ -9,4 +9,5 @@ Route::prefix('age-analysis')
     ->group(function () {
         Route::get('/', 'getAgeAnalysis')->name('show.age.analysis');
         Route::get('/export', 'exportAgeAnalysis')->name('export.age.analysis');
+        Route::post('/send-notices', 'sendNotices')->name('send.age.analysis.notices');
     });

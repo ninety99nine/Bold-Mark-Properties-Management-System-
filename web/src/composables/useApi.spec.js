@@ -39,7 +39,7 @@ describe('useApi 401 interceptor', () => {
   beforeEach(() => {
     replaceMock.mockClear()
     clearSessionMock.mockClear()
-    currentRoute = { name: 'estate-detail', fullPath: '/estates/5' }
+    currentRoute = { name: 'community-detail', fullPath: '/communities/5' }
     localStorage.clear()
   })
 
@@ -51,7 +51,7 @@ describe('useApi 401 interceptor', () => {
     expect(clearSessionMock).toHaveBeenCalledOnce()
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'login',
-      query: { redirect: '/estates/5', expired: '1' },
+      query: { redirect: '/communities/5', expired: '1' },
     })
   })
 
@@ -72,7 +72,7 @@ describe('useApi 401 interceptor', () => {
       throw err
     }
 
-    await expect(api.get('/estates')).rejects.toBeTruthy()
+    await expect(api.get('/communities')).rejects.toBeTruthy()
 
     expect(clearSessionMock).not.toHaveBeenCalled()
     expect(replaceMock).not.toHaveBeenCalled()

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 class RiskRuleService extends BaseService
 {
     /**
-     * Return a paginated list of risk rules for the authenticated tenant.
+     * Return a paginated list of risk rules for the authenticated occupant.
      *
      * @param array $data
      * @return RiskRuleResources
@@ -37,7 +37,7 @@ class RiskRuleService extends BaseService
     }
 
     /**
-     * Create a new risk rule for the authenticated tenant.
+     * Create a new risk rule for the authenticated occupant.
      *
      * @param array $data
      * @return array
@@ -123,10 +123,10 @@ class RiskRuleService extends BaseService
     public function evaluateRules(): array
     {
         $user     = Auth::user();
-        $tenantId = $user->organization_id;
+        $organizationId = $user->organization_id;
 
-        // Fetch ALL rules for this tenant (both active and inactive for display)
-        $allRules = RiskRule::where('organization_id', $tenantId)->orderBy('sort_order')->get();
+        // Fetch ALL rules for this occupant (both active and inactive for display)
+        $allRules = RiskRule::where('organization_id', $organizationId)->orderBy('sort_order')->get();
 
         // Only active rules are used for evaluation
         $activeRules = $allRules->filter(fn($r) => $r->is_active);
@@ -140,13 +140,13 @@ class RiskRuleService extends BaseService
         }
 
         // Query all units in arrears with computed metrics
-        $units = Unit::where('units.organization_id', $tenantId)
+        $units = Unit::where('units.organization_id', $organizationId)
             ->whereHas('invoices', fn($q) => $q->where('status', InvoiceStatus::OVERDUE))
-            ->with(['owner:id,full_name,email,unit_id', 'estate:id,name,type'])
+            ->with(['owner:id,full_name,email,unit_id', 'community:id,name,entity_type'])
             ->addSelect([
                 'units.*',
 
-                // Total overdue amount (reuses ArrearsService pattern)
+                // Total overdue amount (reuses CustomerManagementService pattern)
                 'overdue_amount' => Invoice::selectRaw(
                     "COALESCE(SUM(GREATEST(0, invoices.amount - COALESCE((SELECT SUM(ce.amount) FROM cashbook_entries ce WHERE ce.invoice_id = invoices.id), 0))), 0)"
                 )
@@ -230,8 +230,8 @@ class RiskRuleService extends BaseService
                 $flaggedUnits[] = [
                     'unit_id'        => $unit->id,
                     'unit_number'    => $unit->unit_number,
-                    'estate_id'     => $unit->estate_id,
-                    'estate_name'    => $unit->estate?->name,
+                    'community_id'     => $unit->community_id,
+                    'community_name'    => $unit->community?->name,
                     'owner_name'     => $unit->owner?->full_name,
                     'owner_email'    => $unit->owner?->email,
                     'overdue_amount' => $unitMetrics['overdue_amount'],

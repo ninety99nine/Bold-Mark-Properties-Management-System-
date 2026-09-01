@@ -21,24 +21,24 @@ class OrganizationPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view any organizations (organisations).
-     * Only super-admins and company-admins (tenant admins) may list organizations.
+     * Only super-admins and company-admins (organization admins) may list organizations.
      */
     public function viewAny(User $user): bool
     {
-        return $this->authService->isTenantAdmin($user);
+        return $this->authService->isOrganizationAdmin($user);
     }
 
     /**
-     * Determine whether the user can view a specific tenant.
-     * Users may only view their own tenant record.
+     * Determine whether the user can view a specific organization.
+     * Users may only view their own organization record.
      */
-    public function view(User $user, Organization $tenant): bool
+    public function view(User $user, Organization $organization): bool
     {
-        return (string) $user->organization_id === (string) $tenant->id;
+        return (string) $user->organization_id === (string) $organization->id;
     }
 
     /**
-     * Determine whether the user can create a new tenant.
+     * Determine whether the user can create a new organization.
      * Only super-admins (handled by before()) may create organizations.
      */
     public function create(User $user): bool
@@ -47,13 +47,13 @@ class OrganizationPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can update the tenant.
-     * Organization admins may update their own tenant. Super-admins handled by before().
+     * Determine whether the user can update the organization.
+     * Organization admins may update their own organization. Super-admins handled by before().
      */
-    public function update(User $user, Organization $tenant): bool
+    public function update(User $user, Organization $organization): bool
     {
-        return $this->authService->isTenantAdmin($user)
-            && (string) $user->organization_id === (string) $tenant->id;
+        return $this->authService->isOrganizationAdmin($user)
+            && (string) $user->organization_id === (string) $organization->id;
     }
 
     /**
@@ -66,21 +66,21 @@ class OrganizationPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can delete the tenant.
+     * Determine whether the user can delete the organization.
      * Only super-admins (handled by before()) may delete organizations.
      */
-    public function delete(User $user, Organization $tenant): bool
+    public function delete(User $user, Organization $organization): bool
     {
         return false;
     }
 
     /**
-     * Determine whether the user can flush all data within the tenant.
-     * Company-admins may flush their own tenant. Super-admins handled by before().
+     * Determine whether the user can flush all data within the organization.
+     * Company-admins may flush their own organization. Super-admins handled by before().
      */
-    public function flush(User $user, Organization $tenant): bool
+    public function flush(User $user, Organization $organization): bool
     {
-        return $this->authService->isTenantAdmin($user)
-            && (string) $user->organization_id === (string) $tenant->id;
+        return $this->authService->isOrganizationAdmin($user)
+            && (string) $user->organization_id === (string) $organization->id;
     }
 }

@@ -15,7 +15,7 @@ class FlushOrganizationRequest extends FormRequest
     {
         return [
             'targets'             => ['required', 'array', 'min:1'],
-            'targets.*'           => ['required', 'string', 'in:estates,units,owners,tenants,invoices,cashbook_entries,compliance_checklists,users'],
+            'targets.*'           => ['required', 'string', 'in:communities,units,owners,occupants,invoices,cashbook_entries,compliance_checklists,users'],
             'keep_user_ids'       => ['sometimes', 'array'],
             'keep_user_ids.*'     => ['sometimes', 'uuid'],
             'confirmation'        => ['required', 'string', 'in:DELETE'],

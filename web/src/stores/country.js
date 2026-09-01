@@ -11,10 +11,10 @@ const COUNTRY_MAP = {
 }
 
 export const useCountryStore = defineStore('country', () => {
-  /** All countries that have at least one estate */
+  /** All countries that have at least one community */
   const countries = ref([])
 
-  /** The tenant's default country (from company settings) */
+  /** The occupant's default country (from company settings) */
   const defaultCountry = ref(null)
 
   /** The currently selected country code (e.g. 'ZA', 'BW') */
@@ -23,7 +23,7 @@ export const useCountryStore = defineStore('country', () => {
   /** Whether data has been fetched */
   const loaded = ref(false)
 
-  /** Whether the tenant has estates in more than one country */
+  /** Whether the occupant has communities in more than one country */
   const isMultiCountry = computed(() => countries.value.length > 1)
 
   /** The active country code — resolved with fallback logic */
@@ -32,7 +32,7 @@ export const useCountryStore = defineStore('country', () => {
     if (selected.value && countries.value.some(c => c.code === selected.value)) {
       return selected.value
     }
-    // 2. Fall back to tenant default if it exists in available countries
+    // 2. Fall back to occupant default if it exists in available countries
     if (defaultCountry.value && countries.value.some(c => c.code === defaultCountry.value)) {
       return defaultCountry.value
     }
@@ -64,7 +64,7 @@ export const useCountryStore = defineStore('country', () => {
         flag: c.flag || COUNTRY_MAP[c.code]?.flag || '',
         currencyCode: c.currency_code || COUNTRY_MAP[c.code]?.currencyCode,
         symbol: c.currency_symbol || COUNTRY_MAP[c.code]?.symbol,
-        estateCount: c.estate_count ?? 0,
+        communityCount: c.community_count ?? 0,
       }))
       defaultCountry.value = data.default_country || null
       loaded.value = true

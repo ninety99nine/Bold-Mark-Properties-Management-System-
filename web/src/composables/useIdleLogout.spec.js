@@ -15,7 +15,7 @@ let authState
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
-    currentRoute: { value: { fullPath: '/estates/9' } },
+    currentRoute: { value: { fullPath: '/communities/9' } },
     replace: replaceMock,
   }),
 }))
@@ -50,7 +50,7 @@ describe('useIdleLogout', () => {
     expect(authState.clearSession).toHaveBeenCalledOnce()
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'login',
-      query: { redirect: '/estates/9', expired: '1' },
+      query: { redirect: '/communities/9', expired: '1' },
     })
   })
 

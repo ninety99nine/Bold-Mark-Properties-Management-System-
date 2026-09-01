@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Unit;
 use App\Models\UnitActivity;
 use Illuminate\Http\Request;
@@ -20,11 +20,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class UnitPqController extends Controller
 {
     /**
-     * Export a PQ spreadsheet for all units in an estate.
+     * Export a PQ spreadsheet for all units in an community.
      * Existing values are pre-filled so the manager only needs to update.
      * Supports ?format=csv or ?format=xlsx (default).
      */
-    public function export(Request $request, Estate $estate)
+    public function export(Request $request, Community $community)
     {
         $format = strtolower($request->query('format', 'xlsx'));
 
@@ -32,16 +32,47 @@ class UnitPqController extends Controller
             ? 'unit_number asc'
             : "CASE WHEN REGEXP_REPLACE(unit_number, '[^0-9]', '') = '' THEN 1 ELSE 0 END, CAST(NULLIF(REGEXP_REPLACE(unit_number, '[^0-9]', ''), '') AS UNSIGNED), unit_number";
 
-        $units = Unit::where('estate_id', $estate->id)
+        $units = Unit::where('community_id', $community->id)
             ->orderByRaw($orderRaw)
-            ->get(['unit_number', 'section', 'pq', 'levy_override']);
+            ->get(['unit_number', 'section', 'customer_code', 'pq', 'ratio_1', 'ratio_2', 'ratio_3', 'ratio_4', 'ratio_5', 'unit_size']);
 
-        $slug = 'pq-' . str_replace(' ', '-', strtolower($estate->name));
+        $count   = $units->count();
+        $totalPq = (float) $units->sum('pq');
+
+        // Ratio 1 = the unit's participation share as a percentage
+        // (falls back to an equal share across all units when PQs are unset).
+        $ratio1 = function ($unit) use ($totalPq, $count) {
+            $pq = (float) ($unit->pq ?? 0);
+            if ($totalPq > 0 && $pq > 0) {
+                return round(($pq / $totalPq) * 100, 10);
+            }
+            return $count > 0 ? round(100 / $count, 10) : 0;
+        };
+
+        // WeConnectU-identical batch layout (columns + sheet name + filename).
+        $headers = ['Section', 'Unit No', 'Customer Code', 'PQ', 'Ratio 1', 'Ratio 2', 'Ratio 3', 'Ratio 4', 'Ratio 5', 'Unit size(square metre)'];
+
+        $rowFor = function ($unit) use ($ratio1) {
+            return [
+                ($unit->section !== null && $unit->section !== '') ? $unit->section : $unit->unit_number,
+                $unit->unit_number,
+                $unit->customer_code ?? '',
+                (float) ($unit->pq ?? 0),
+                $unit->ratio_1 !== null ? (float) $unit->ratio_1 : $ratio1($unit),
+                (float) ($unit->ratio_2 ?? 0),
+                (float) ($unit->ratio_3 ?? 0),
+                (float) ($unit->ratio_4 ?? 0),
+                (float) ($unit->ratio_5 ?? 0),
+                (float) ($unit->unit_size ?? 0),
+            ];
+        };
+
+        $slug = 'unit pqs-' . preg_replace('/\s+/', '', strtolower($community->name)) . '-' . now()->format('Y-m-d');
 
         if ($format === 'csv') {
-            $rows = [['unit_number', 'section', 'pq', 'levy_override']];
+            $rows = [$headers];
             foreach ($units as $unit) {
-                $rows[] = [$unit->unit_number, $unit->section ?? '', $unit->pq ?? '', $unit->levy_override ?? ''];
+                $rows[] = $rowFor($unit);
             }
             $csv = '';
             foreach ($rows as $row) {
@@ -53,36 +84,24 @@ class UnitPqController extends Controller
             ]);
         }
 
-        // XLSX
+        // XLSX — sheet name + columns identical to WeConnectU.
         $spreadsheet = new Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('PQ Data');
+        $sheet->setTitle('Worksheet');
 
-        // Header row
-        $sheet->setCellValue('A1', 'unit_number');
-        $sheet->setCellValue('B1', 'section');
-        $sheet->setCellValue('C1', 'pq');
-        $sheet->setCellValue('D1', 'levy_override');
-
-        $sheet->getStyle('A1:D1')->applyFromArray([
-            'font' => ['bold' => true],
-            'fill' => [
-                'fillType'   => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => 'F3F4F6'],
-            ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
-        ]);
-
-        foreach (['A', 'B', 'C', 'D'] as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue("{$col}1", $header);
+            $col++;
         }
 
         foreach ($units as $i => $unit) {
             $row = $i + 2;
-            $sheet->setCellValue("A{$row}", $unit->unit_number);
-            $sheet->setCellValue("B{$row}", $unit->section ?? '');
-            $sheet->setCellValue("C{$row}", $unit->pq ?? '');
-            $sheet->setCellValue("D{$row}", $unit->levy_override ?? '');
+            $col = 'A';
+            foreach ($rowFor($unit) as $value) {
+                $sheet->setCellValue("{$col}{$row}", $value);
+                $col++;
+            }
         }
 
         $filename = $slug . '.xlsx';
@@ -99,7 +118,7 @@ class UnitPqController extends Controller
     /**
      * Parse an uploaded PQ file and return columns + rows for client-side mapping.
      */
-    public function parse(Request $request, Estate $estate)
+    public function parse(Request $request, Community $community)
     {
         $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
@@ -155,7 +174,7 @@ class UnitPqController extends Controller
      * Import PQ values from an uploaded spreadsheet.
      * Matches rows by unit_number; updates section and pq atomically.
      */
-    public function import(Request $request, Estate $estate)
+    public function import(Request $request, Community $community)
     {
         $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
@@ -179,35 +198,66 @@ class UnitPqController extends Controller
         $headers  = array_map('strtolower', array_map('trim', array_map('strval', $firstRow)));
         $colMap   = array_flip($headers);
 
-        if (! isset($colMap['unit_number'])) {
-            return response()->json(['message' => 'The file must contain a "unit_number" column.', 'updated' => 0], 422);
-        }
-
-        $unitNumberCol   = $colMap['unit_number'];
+        // Accept both our legacy headers and WeConnectU's batch headers.
+        $unitNumberCol   = $colMap['unit_number'] ?? $colMap['unit no'] ?? null;
+        $customerCodeCol = $colMap['customer code'] ?? $colMap['customer_code'] ?? null;
         $pqCol           = $colMap['pq'] ?? null;
         $sectionCol      = $colMap['section'] ?? null;
-        $levyOverrideCol = $colMap['levy_override'] ?? null;
+        $levyOverrideCol = $colMap['levy_override'] ?? $colMap['levy override'] ?? null;
 
-        $estateUnits = Unit::where('estate_id', $estate->id)
+        // WeConnectU Ratio 1–5 + Unit Size columns.
+        $ratioCols = [];
+        for ($i = 1; $i <= 5; $i++) {
+            $ratioCols[$i] = $colMap["ratio $i"] ?? $colMap["ratio_$i"] ?? $colMap["ratio{$i}"] ?? null;
+        }
+        $unitSizeCol = $colMap['unit size(square metre)'] ?? $colMap['unit_size'] ?? $colMap['unit size'] ?? null;
+
+        if ($unitNumberCol === null && $customerCodeCol === null) {
+            return response()->json([
+                'message' => 'The file must contain a "Unit No" (or "unit_number") or "Customer Code" column.',
+                'updated' => 0,
+            ], 422);
+        }
+
+        $unitsByNumber = Unit::where('community_id', $community->id)
             ->pluck('id', 'unit_number')
-            ->mapWithKeys(fn($id, $num) => [strtolower(trim($num)) => $id]);
+            ->mapWithKeys(fn($id, $num) => [strtolower(trim((string) $num)) => $id]);
+
+        $unitsByCode = Unit::where('community_id', $community->id)
+            ->whereNotNull('customer_code')
+            ->pluck('id', 'customer_code')
+            ->mapWithKeys(fn($id, $code) => [strtolower(trim((string) $code)) => $id]);
 
         $updates  = [];
         $notFound = [];
 
         foreach (array_slice($rows, 1, null, true) as $row) {
-            $unitNumber = trim(strval($row[$unitNumberCol] ?? ''));
-            if ($unitNumber === '') {
+            $ref    = '';
+            $unitId = null;
+
+            if ($unitNumberCol !== null) {
+                $ref = trim(strval($row[$unitNumberCol] ?? ''));
+                if ($ref !== '') {
+                    $unitId = $unitsByNumber[strtolower($ref)] ?? null;
+                }
+            }
+            if ($unitId === null && $customerCodeCol !== null) {
+                $code = trim(strval($row[$customerCodeCol] ?? ''));
+                if ($code !== '') {
+                    $ref    = $ref !== '' ? $ref : $code;
+                    $unitId = $unitsByCode[strtolower($code)] ?? null;
+                }
+            }
+
+            if ($ref === '') {
+                continue;
+            }
+            if ($unitId === null) {
+                $notFound[] = $ref;
                 continue;
             }
 
-            $key = strtolower($unitNumber);
-
-            if (! isset($estateUnits[$key])) {
-                $notFound[] = $unitNumber;
-                continue;
-            }
-
+            $key  = strtolower($ref);
             $data = [];
 
             if ($pqCol !== null) {
@@ -221,7 +271,29 @@ class UnitPqController extends Controller
             }
 
             if ($sectionCol !== null && isset($row[$sectionCol])) {
-                $data['section'] = trim(strval($row[$sectionCol]));
+                $section = trim(strval($row[$sectionCol]));
+                // Skip the "section = unit number" placeholder we emit on export.
+                if ($section !== '' && strtolower($section) !== $key) {
+                    $data['section'] = $section;
+                }
+            }
+
+            // WeConnectU Ratio 1–5 (store exactly as supplied).
+            foreach ($ratioCols as $i => $col) {
+                if ($col === null) {
+                    continue;
+                }
+                $val = trim(strval($row[$col] ?? ''));
+                if ($val !== '' && is_numeric($val)) {
+                    $data["ratio_{$i}"] = (float) $val;
+                }
+            }
+
+            if ($unitSizeCol !== null) {
+                $val = trim(strval($row[$unitSizeCol] ?? ''));
+                if ($val !== '' && is_numeric($val)) {
+                    $data['unit_size'] = (float) $val;
+                }
             }
 
             if ($levyOverrideCol !== null) {
@@ -237,7 +309,7 @@ class UnitPqController extends Controller
             }
 
             if (! empty($data)) {
-                $updates[$key] = ['id' => $estateUnits[$key], 'data' => $data];
+                $updates[$key] = ['id' => $unitId, 'data' => $data];
             }
         }
 
@@ -297,7 +369,7 @@ class UnitPqController extends Controller
 
         $message = "{$updated} unit" . ($updated !== 1 ? 's' : '') . ' updated successfully.';
         if (! empty($notFound)) {
-            $message .= ' ' . count($notFound) . ' row(s) skipped — unit number not found in this estate.';
+            $message .= ' ' . count($notFound) . ' row(s) skipped — unit number not found in this community.';
         }
 
         return response()->json([
@@ -307,15 +379,15 @@ class UnitPqController extends Controller
         ]);
     }
 
-    public function clearAll(Estate $estate)
+    public function clearAll(Community $community)
     {
-        $count = Unit::where('estate_id', $estate->id)
+        $count = Unit::where('community_id', $community->id)
             ->where(function ($q) {
                 $q->whereNotNull('pq')->orWhereNotNull('levy_override');
             })
             ->count();
 
-        Unit::where('estate_id', $estate->id)->update(['pq' => null, 'levy_override' => null]);
+        Unit::where('community_id', $community->id)->update(['pq' => null, 'levy_override' => null]);
 
         return response()->json([
             'message' => "PQs cleared for {$count} unit" . ($count !== 1 ? 's' : '') . '.',

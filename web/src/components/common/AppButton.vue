@@ -2,7 +2,7 @@
   AppButton — Platform-wide reusable button.
 
   Variants:
-    primary      — amber/accent fill          (Run Billing, Save, Create, Add Estate)
+    primary      — amber/accent fill          (Run Billing, Save, Create, Add Community)
     secondary    — navy fill                  (Upload Cashbook)
     outline      — border only               (Bulk Import, Cancel, Allocate, Edit Entry, Print)
     ghost        — transparent, hover reveal  (back nav, View All, icon-only toolbar actions)

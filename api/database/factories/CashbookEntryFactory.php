@@ -16,7 +16,7 @@ class CashbookEntryFactory extends Factory
     public function definition(): array
     {
         return [
-            'estate_id'       => null,
+            'community_id'       => null,
             'organization_id'       => null,
             'description'     => fake()->sentence(4),
             'amount'          => fake()->randomFloat(2, 500, 15000),

@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useOrganizationStore } from '@/stores/organization'
 
-const tenant = useOrganizationStore()
+const organization = useOrganizationStore()
 const visible = ref(false)
 onMounted(() => {
   requestAnimationFrame(() => {
@@ -30,7 +30,7 @@ onMounted(() => {
       :class="visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-3'"
     >
       <div class="flex items-center gap-4">
-        <img :src="tenant.logoUrl" :alt="tenant.name" class="h-8" />
+        <img :src="organization.logoUrl" :alt="organization.name" class="h-8" />
         <div class="w-px h-8 bg-white/20" />
         <div class="text-white/50 text-xs uppercase tracking-widest">Property Management</div>
       </div>
@@ -38,7 +38,7 @@ onMounted(() => {
 
     <!-- Centre content — page-specific via slot -->
     <div class="relative z-10">
-      <slot :accent-color="tenant.accentColor" :visible="visible" />
+      <slot :accent-color="organization.accentColor" :visible="visible" />
     </div>
 
     <!-- Footer -->
@@ -56,9 +56,9 @@ onMounted(() => {
         <span>Reliable</span>
       </div>
 
-      <!-- Credentials — shown only when the tenant has registrations -->
-      <div v-if="tenant.credentials.length" class="flex items-center gap-6 text-white/30 text-xs">
-        <template v-for="(cred, i) in tenant.credentials" :key="cred">
+      <!-- Credentials — shown only when the organization has registrations -->
+      <div v-if="organization.credentials.length" class="flex items-center gap-6 text-white/30 text-xs">
+        <template v-for="(cred, i) in organization.credentials" :key="cred">
           <span v-if="i > 0" class="w-px h-3 bg-white/20" />
           <span>{{ cred }}</span>
         </template>

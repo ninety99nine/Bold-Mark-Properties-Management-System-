@@ -29,7 +29,7 @@ class CashbookEntryController extends Controller
     }
 
     /**
-     * Return a paginated list of cashbook entries for the authenticated tenant.
+     * Return a paginated list of cashbook entries for the authenticated occupant.
      *
      * @param ShowCashbookEntriesRequest $request
      * @return CashbookEntryResources

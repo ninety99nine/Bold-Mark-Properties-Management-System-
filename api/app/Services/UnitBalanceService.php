@@ -67,15 +67,15 @@ class UnitBalanceService
      * Uses a single raw SQL UPDATE per unit to minimise round-trips. Called by the
      * units:recalculate-balances Artisan command to backfill after the migration.
      *
-     * @param string|null $tenantId  When provided, only units for that tenant are updated.
+     * @param string|null $organizationId  When provided, only units for that occupant are updated.
      * @return int  Number of units updated.
      */
-    public function recalculateAll(?string $tenantId = null): int
+    public function recalculateAll(?string $organizationId = null): int
     {
         $query = Unit::query();
 
-        if ($tenantId) {
-            $query->where('organization_id', $tenantId);
+        if ($organizationId) {
+            $query->where('organization_id', $organizationId);
         }
 
         $count = 0;

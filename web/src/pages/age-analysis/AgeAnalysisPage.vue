@@ -47,8 +47,8 @@ async function handleExportDownload({ format, records }) {
 
   const params = {}
   if (countryStore.activeCountry) params.country = countryStore.activeCountry
-  if (toolbarState.value.filters?.estate)       params.estate_id      = toolbarState.value.filters.estate
-  if (toolbarState.value.filters?.charge_type)  params.charge_type_id = toolbarState.value.filters.charge_type
+  if (toolbarState.value.filters?.community)       params.community_id      = toolbarState.value.filters.community
+  if (toolbarState.value.filters?.ledger)  params.ledger_id = toolbarState.value.filters.ledger
   if (toolbarState.value.filters?.billed_to)    params.billed_to_type = toolbarState.value.filters.billed_to
   params._format = format
   params._limit  = records
@@ -62,12 +62,12 @@ const error   = ref(null)
 
 // ─── API data ─────────────────────────────────────────────────────────────
 const ownersData  = ref([])
-const tenantsData = ref([])
+const occupantsData = ref([])
 const summaryData = ref(null)
 
 // ─── Filter option lists (from API) ───────────────────────────────────────
-const estateOpts     = ref([])
-const chargeTypeOpts = ref([])
+const communityOpts     = ref([])
+const ledgerOpts = ref([])
 
 // ─── Toolbar ──────────────────────────────────────────────────────────────
 const toolbarState = ref({
@@ -77,19 +77,19 @@ let searchDebounceTimer = null
 
 const BILLED_TO_OPTS = [
   { value: 'owner',  label: 'Owners'  },
-  { value: 'tenant', label: 'Tenants' },
+  { value: 'occupant', label: 'Occupants' },
 ]
 
 const FILTER_FIELDS = computed(() => [
   {
-    key:     'estate',
-    label:   'Estate',
-    options: estateOpts.value,
+    key:     'community',
+    label:   'Community',
+    options: communityOpts.value,
   },
   {
-    key:     'charge_type',
-    label:   'Charge Type',
-    options: chargeTypeOpts.value,
+    key:     'ledger',
+    label:   'Ledger',
+    options: ledgerOpts.value,
   },
   {
     key:     'billed_to',
@@ -111,40 +111,40 @@ const SORT_OPTIONS = [
 const currentPage = ref(1)
 const PER_PAGE    = 15
 
-// ─── Load estates for filter dropdown ────────────────────────────────────
-async function loadEstates() {
+// ─── Load communities for filter dropdown ────────────────────────────────────
+async function loadCommunities() {
   try {
-    const res = await api.get('/estates', { params: { _per_page: 200 } })
-    estateOpts.value = (res.data.data ?? []).map(e => ({ value: e.id, label: e.name }))
+    const res = await api.get('/communities', { params: { _per_page: 200 } })
+    communityOpts.value = (res.data.data ?? []).map(e => ({ value: e.id, label: e.name }))
   } catch { /* silently ignore — filters just won't be populated */ }
 }
 
-// ─── Load charge types for filter dropdown ────────────────────────────────
-async function loadChargeTypes() {
+// ─── Load ledgers for filter dropdown ────────────────────────────────
+async function loadLedgers() {
   try {
-    const res = await api.get('/charge-types', { params: { _per_page: 100 } })
-    chargeTypeOpts.value = (res.data.data ?? []).map(c => ({ value: c.id, label: c.name }))
+    const res = await api.get('/ledgers', { params: { _per_page: 100 } })
+    ledgerOpts.value = (res.data.data ?? []).map(c => ({ value: c.id, label: c.name }))
   } catch { /* silently ignore */ }
 }
 
-// ─── Fetch age analysis (server filters: estate_id, charge_type_id) ────────
+// ─── Fetch age analysis (server filters: community_id, ledger_id) ────────
 async function fetchAgeAnalysis() {
   loading.value = true
   error.value   = null
 
   const params = {}
   if (countryStore.activeCountry) params.country = countryStore.activeCountry
-  if (toolbarState.value.filters?.estate) {
-    params.estate_id = toolbarState.value.filters.estate
+  if (toolbarState.value.filters?.community) {
+    params.community_id = toolbarState.value.filters.community
   }
-  if (toolbarState.value.filters?.charge_type) {
-    params.charge_type_id = toolbarState.value.filters.charge_type
+  if (toolbarState.value.filters?.ledger) {
+    params.ledger_id = toolbarState.value.filters.ledger
   }
 
   try {
     const res     = await api.get('/age-analysis', { params })
     ownersData.value  = res.data.owners  ?? []
-    tenantsData.value = res.data.tenants ?? []
+    occupantsData.value = res.data.occupants ?? []
     summaryData.value = res.data.summary ?? null
   } catch (e) {
     error.value = 'Failed to load age analysis data. Please try again.'
@@ -159,10 +159,10 @@ function onToolbarUpdate(state) {
   toolbarState.value = state
   currentPage.value  = 1
 
-  // Re-fetch only when server-side filters (estate, charge_type) change
+  // Re-fetch only when server-side filters (community, ledger) change
   const serverChanged =
-    state.filters?.estate       !== prev.filters?.estate ||
-    state.filters?.charge_type  !== prev.filters?.charge_type
+    state.filters?.community       !== prev.filters?.community ||
+    state.filters?.ledger  !== prev.filters?.ledger
   if (serverChanged) {
     fetchAgeAnalysis()
     return
@@ -177,17 +177,17 @@ function onToolbarUpdate(state) {
 
 // ─── Client-side filtered + sorted rows ───────────────────────────────────
 const activeRows = computed(() => {
-  // Merge owners and tenants, tagging each with _role
+  // Merge owners and occupants, tagging each with _role
   const billedTo = toolbarState.value.filters?.billed_to
   let base
   if (billedTo === 'owner') {
     base = ownersData.value.map(r => ({ ...r, _role: 'owner' }))
-  } else if (billedTo === 'tenant') {
-    base = tenantsData.value.map(r => ({ ...r, _role: 'tenant' }))
+  } else if (billedTo === 'occupant') {
+    base = occupantsData.value.map(r => ({ ...r, _role: 'occupant' }))
   } else {
     base = [
       ...ownersData.value.map(r => ({ ...r, _role: 'owner' })),
-      ...tenantsData.value.map(r => ({ ...r, _role: 'tenant' })),
+      ...occupantsData.value.map(r => ({ ...r, _role: 'occupant' })),
     ]
   }
 
@@ -202,7 +202,7 @@ const activeRows = computed(() => {
   return base.filter(r =>
     (r.person_name ?? '').toLowerCase().includes(search) ||
     (r.unit_number ?? '').toLowerCase().includes(search) ||
-    (r.charge_type ?? '').toLowerCase().includes(search)
+    (r.ledger ?? '').toLowerCase().includes(search)
   )
 })
 
@@ -220,15 +220,15 @@ const groupedActiveRows = computed(() => {
       g['120_plus'] += row['120_plus'] ?? 0
       g.outstanding += row.outstanding ?? 0
       g.invoice_count += 1
-      if (row.charge_type) {
-        const existing = g.charge_types.find(ct => ct.name === row.charge_type)
+      if (row.ledger) {
+        const existing = g.ledgers.find(ct => ct.name === row.ledger)
         if (existing) existing.count += 1
-        else g.charge_types.push({ name: row.charge_type, count: 1 })
+        else g.ledgers.push({ name: row.ledger, count: 1 })
       }
     } else {
       map.set(key, {
         ...row,
-        charge_types:  row.charge_type ? [{ name: row.charge_type, count: 1 }] : [],
+        ledgers:  row.ledger ? [{ name: row.ledger, count: 1 }] : [],
         invoice_count: 1,
         current:       row.current     ?? 0,
         '30_days':     row['30_days']  ?? 0,
@@ -302,16 +302,16 @@ function toggleBucket(bucket) {
 
 // ─── Chart helpers ────────────────────────────────────────────────────────
 const ownersTotal  = computed(() => ownersData.value.reduce((s, r) => s + (r.outstanding ?? 0), 0))
-const tenantsTotal = computed(() => tenantsData.value.reduce((s, r) => s + (r.outstanding ?? 0), 0))
-const grandTotal   = computed(() => ownersTotal.value + tenantsTotal.value)
+const occupantsTotal = computed(() => occupantsData.value.reduce((s, r) => s + (r.outstanding ?? 0), 0))
+const grandTotal   = computed(() => ownersTotal.value + occupantsTotal.value)
 const ownersPct    = computed(() =>
   grandTotal.value > 0 ? Math.round((ownersTotal.value / grandTotal.value) * 100) : 0
 )
-const tenantsPct   = computed(() => 100 - ownersPct.value)
+const occupantsPct   = computed(() => 100 - ownersPct.value)
 
 const hasAgeData     = computed(() => summary.value.total > 0)
 const hasOwnersData  = computed(() => ownersData.value.length > 0)
-const hasTenantsData = computed(() => tenantsData.value.length > 0)
+const hasOccupantsData = computed(() => occupantsData.value.length > 0)
 
 // ─── Format helpers ───────────────────────────────────────────────────────
 function fmt(val) {
@@ -327,11 +327,11 @@ function fmtTip(val) {
   return countryStore.formatCurrency(val)
 }
 
-// ─── Selected estate label (for page subtitle) ────────────────────────────
-const selectedEstateLabel = computed(() => {
-  const estateId = toolbarState.value.filters?.estate
-  if (!estateId) return null
-  return estateOpts.value.find(e => e.value === estateId)?.label ?? null
+// ─── Selected community label (for page subtitle) ────────────────────────────
+const selectedCommunityLabel = computed(() => {
+  const communityId = toolbarState.value.filters?.community
+  if (!communityId) return null
+  return communityOpts.value.find(e => e.value === communityId)?.label ?? null
 })
 
 // ─── Navigation ───────────────────────────────────────────────────────────
@@ -341,18 +341,18 @@ function goToOwner(row) {
   }
 }
 
-function goToTenant(row) {
-  if (row.person_id && row.unit_id && row.estate_id) {
+function goToOccupant(row) {
+  if (row.person_id && row.unit_id && row.community_id) {
     router.push({
-      name: 'tenant-detail',
-      params: { estateId: row.estate_id, unitId: row.unit_id, tenantId: row.person_id },
+      name: 'occupant-detail',
+      params: { communityId: row.community_id, unitId: row.unit_id, occupantId: row.person_id },
     })
   }
 }
 
 function navigateToPerson(row) {
   if (row._role === 'owner') goToOwner(row)
-  else goToTenant(row)
+  else goToOccupant(row)
 }
 
 // ─── Chart 1: Arrears by Ageing Bucket ───────────────────────────────────
@@ -425,7 +425,7 @@ const hBarOpts = computed(() => ({
 const ownersSortedIds = ref([])
 
 const ownersBarData = computed(() => {
-  // Aggregate per person (multiple rows when filtered by charge type)
+  // Aggregate per person (multiple rows when filtered by ledger)
   const totals = new Map()   // name → { total, id }
   for (const r of ownersData.value) {
     const name = r.person_name ?? '—'
@@ -456,20 +456,20 @@ const ownersBarOpts = computed(() => ({
   },
 }))
 
-// ─── Chart 3: Tenants Outstanding ────────────────────────────────────────
-const tenantsSortedIds = ref([])
+// ─── Chart 3: Occupants Outstanding ────────────────────────────────────────
+const occupantsSortedIds = ref([])
 
-const tenantsBarData = computed(() => {
+const occupantsBarData = computed(() => {
   // Aggregate per person
   const totals = new Map()
-  for (const r of tenantsData.value) {
+  for (const r of occupantsData.value) {
     const name = r.person_name ?? '—'
     const prev = totals.get(name) ?? { total: 0, id: r.person_id }
     totals.set(name, { total: prev.total + (r.outstanding ?? 0), id: prev.id })
   }
   // Top 10 by highest outstanding, then reverse for horizontal bar (lowest at top)
   const top = [...totals.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10).reverse()
-  tenantsSortedIds.value = top.map(([, v]) => v.id)
+  occupantsSortedIds.value = top.map(([, v]) => v.id)
   return {
     labels: top.map(([name]) => name.split(' ').pop()),
     datasets: [{
@@ -481,22 +481,22 @@ const tenantsBarData = computed(() => {
   }
 })
 
-const tenantsBarOpts = computed(() => ({
+const occupantsBarOpts = computed(() => ({
   ...hBarOpts.value,
   onHover: (event) => { event.native.target.style.cursor = 'pointer' },
   onClick: (_event, elements) => {
     if (!elements.length) return
-    // Tenant detail is accessed via the unit page; use the first row's unit/estate for this person
-    const id = tenantsSortedIds.value[elements[0].index]
-    if (id) router.push({ name: 'tenant-detail', params: { tenantId: id } })
+    // Occupant detail is accessed via the unit page; use the first row's unit/community for this person
+    const id = occupantsSortedIds.value[elements[0].index]
+    if (id) router.push({ name: 'occupant-detail', params: { occupantId: id } })
   },
 }))
 
-// ─── Chart 4: Owner vs Tenant Split (donut) ───────────────────────────────
+// ─── Chart 4: Owner vs Occupant Split (donut) ───────────────────────────────
 const splitData = computed(() => ({
-  labels: [`Owners ${ownersPct.value}%`, `Tenants ${tenantsPct.value}%`],
+  labels: [`Owners ${ownersPct.value}%`, `Occupants ${occupantsPct.value}%`],
   datasets: [{
-    data: [ownersTotal.value, tenantsTotal.value],
+    data: [ownersTotal.value, occupantsTotal.value],
     backgroundColor: ['#22c55e', '#3b82f6'],
     borderWidth: 2,
     borderColor: '#fff',
@@ -509,9 +509,9 @@ const splitOpts = computed(() => ({
   maintainAspectRatio: false,
   cutout: '62%',
   plugins: {
-    centerText: ownersPct.value >= tenantsPct.value
+    centerText: ownersPct.value >= occupantsPct.value
       ? { value: `${ownersPct.value}%`, label: 'Owners' }
-      : { value: `${tenantsPct.value}%`, label: 'Tenants' },
+      : { value: `${occupantsPct.value}%`, label: 'Occupants' },
     legend: {
       position: 'bottom',
       labels: {
@@ -552,8 +552,8 @@ const centerTextPlugin = {
 
 // ─── Init ─────────────────────────────────────────────────────────────────
 onMounted(() => {
-  loadEstates()
-  loadChargeTypes()
+  loadCommunities()
+  loadLedgers()
   fetchAgeAnalysis()
 })
 
@@ -579,11 +579,11 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
       <div>
         <h1 class="font-body font-bold text-2xl text-foreground">Age Analysis</h1>
         <p class="text-sm text-muted-foreground mt-0.5">
-          <template v-if="selectedEstateLabel">
-            {{ selectedEstateLabel }} — Arrears by ageing bucket
+          <template v-if="selectedCommunityLabel">
+            {{ selectedCommunityLabel }} — Arrears by ageing bucket
           </template>
           <template v-else>
-            All Estates — Arrears by ageing bucket
+            All Communities — Arrears by ageing bucket
           </template>
         </p>
       </div>
@@ -845,7 +845,7 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
                           : 'bg-blue-50 text-blue-600 border border-blue-200',
                       ]"
                     >
-                      {{ row._role === 'owner' ? 'Owner' : 'Tenant' }}
+                      {{ row._role === 'owner' ? 'Owner' : 'Occupant' }}
                     </span>
                   </div>
                   <p v-if="row.person_email" class="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">
@@ -856,12 +856,12 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
                 <!-- Type cell: single type in detailed mode, badge list in grouped mode -->
                 <td class="py-3 px-3">
                   <template v-if="detailedView">
-                    <span class="text-muted-foreground">{{ row.charge_type ?? '—' }}</span>
+                    <span class="text-muted-foreground">{{ row.ledger ?? '—' }}</span>
                   </template>
                   <template v-else>
                     <div class="flex flex-wrap gap-1">
                       <span
-                        v-for="ct in row.charge_types"
+                        v-for="ct in row.ledgers"
                         :key="ct.name"
                         class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border leading-none"
                       >{{ ct.name }}<span v-if="ct.count > 1" class="text-[9px] font-bold text-accent">× {{ ct.count }}</span></span>
@@ -890,7 +890,7 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
                       <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
                     </svg>
                     <p class="text-sm text-muted-foreground">
-                      <template v-if="toolbarState.search || toolbarState.filters?.estate || toolbarState.filters?.charge_type">
+                      <template v-if="toolbarState.search || toolbarState.filters?.community || toolbarState.filters?.ledger">
                         No arrears match your filters.
                       </template>
                       <template v-else>
@@ -1050,10 +1050,10 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
         </div>
       </div>
 
-      <!-- Chart 3: Tenants Outstanding -->
+      <!-- Chart 3: Occupants Outstanding -->
       <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
         <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Tenants — Outstanding</h3>
+          <h3 class="font-body font-semibold text-base text-foreground">Occupants — Outstanding</h3>
         </div>
         <div class="px-6 pb-6">
           <!-- Loading skeleton -->
@@ -1061,7 +1061,7 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
             <div v-for="n in 3" :key="n" class="h-6 bg-muted rounded animate-pulse" :style="{ width: `${40 + n * 15}%` }" />
           </div>
           <!-- Ghost chart when no data -->
-          <div v-else-if="!hasTenantsData" class="h-[280px] flex flex-col items-center justify-center">
+          <div v-else-if="!hasOccupantsData" class="h-[280px] flex flex-col items-center justify-center">
             <svg width="100%" height="220" viewBox="0 0 300 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
               <!-- Y-axis -->
               <line x1="90" y1="10" x2="90" y2="178" stroke="#E8EAF0" stroke-width="1.5"/>
@@ -1075,7 +1075,7 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
               <rect x="10" y="37"  width="74" height="6" rx="3" fill="#E8EAF0"/>
               <rect x="10" y="87"  width="60" height="6" rx="3" fill="#E8EAF0"/>
               <rect x="10" y="137" width="68" height="6" rx="3" fill="#E8EAF0"/>
-              <!-- Horizontal bars (3 tenants, red ghost) -->
+              <!-- Horizontal bars (3 occupants, red ghost) -->
               <rect x="92" y="28"  height="16" width="172" rx="4" fill="#FECACA" opacity="0.8"/>
               <rect x="92" y="78"  height="16" width="120" rx="4" fill="#FECACA" opacity="0.8"/>
               <rect x="92" y="128" height="16" width="72"  rx="4" fill="#FECACA" opacity="0.75"/>
@@ -1084,18 +1084,18 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
               <rect x="192" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
               <rect x="254" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
             </svg>
-            <p class="text-xs text-muted-foreground -mt-1">No tenant arrears — data will appear here once invoices are overdue</p>
+            <p class="text-xs text-muted-foreground -mt-1">No occupant arrears — data will appear here once invoices are overdue</p>
           </div>
           <!-- Chart -->
           <div v-else class="h-[280px] relative">
-            <Bar :data="tenantsBarData" :options="tenantsBarOpts" />
+            <Bar :data="occupantsBarData" :options="occupantsBarOpts" />
           </div>
         </div>
       </div>
 
     </div>
 
-    <!-- ── Owner vs Tenant Split (donut) ──────────────────────────────────── -->
+    <!-- ── Owner vs Occupant Split (donut) ──────────────────────────────────── -->
     <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
         <div class="px-6 pt-5 pb-2">
@@ -1110,7 +1110,7 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
 
       <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
         <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Owner vs Tenant Split</h3>
+          <h3 class="font-body font-semibold text-base text-foreground">Owner vs Occupant Split</h3>
         </div>
         <div class="px-6 pb-6">
           <!-- Loading skeleton -->
@@ -1120,11 +1120,11 @@ watch(() => countryStore.activeCountry, (newVal, oldVal) => {
           <!-- Ghost chart when no data -->
           <div v-else-if="!hasAgeData" class="h-[260px] flex flex-col items-center justify-center">
             <svg width="240" height="220" viewBox="0 0 240 220" xmlns="http://www.w3.org/2000/svg">
-              <!-- Ghost donut: 2 segments (~65% green/owner, ~35% blue/tenant) -->
+              <!-- Ghost donut: 2 segments (~65% green/owner, ~35% blue/occupant) -->
               <!-- Geometry: center(120,110), outer r=80, inner r=50 — matches Occupancy Breakdown -->
               <!-- Segment 1: Owners (65% — large arc, sweep-flag=1) -->
               <path d="M 120.0 30.0 A 80 80 0 1 1 55.3 157.0 L 79.5 139.4 A 50 50 0 1 0 120.0 60.0 Z" fill="#D1EFE0" opacity="0.75"/>
-              <!-- Segment 2: Tenants (35% — small arc, sweep-flag=1) -->
+              <!-- Segment 2: Occupants (35% — small arc, sweep-flag=1) -->
               <path d="M 55.3 157.0 A 80 80 0 0 1 120.0 30.0 L 120.0 60.0 A 50 50 0 0 0 79.5 139.4 Z" fill="#CCDDF9" opacity="0.75"/>
               <!-- Center hole fill -->
               <circle cx="120" cy="110" r="42" fill="white"/>

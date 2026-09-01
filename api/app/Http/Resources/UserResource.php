@@ -33,7 +33,7 @@ class UserResource extends JsonResource
                 'id'   => $r->id,
                 'name' => $r->name,
             ])),
-            'estates' => $this->whenLoaded('estates', fn () => $this->estates->map(fn ($e) => [
+            'communities' => $this->whenLoaded('communities', fn () => $this->communities->map(fn ($e) => [
                 'id'   => $e->id,
                 'name' => $e->name,
             ])),

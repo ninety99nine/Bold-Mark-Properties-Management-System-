@@ -104,7 +104,7 @@ function countryLabel(code) {
         </button>
         <div>
           <h1 class="text-2xl font-bold text-foreground">Compliance Templates</h1>
-          <p class="text-sm text-muted-foreground mt-0.5">Manage reusable checklist templates for estates</p>
+          <p class="text-sm text-muted-foreground mt-0.5">Manage reusable checklist templates for communities</p>
         </div>
       </div>
       <AppButton variant="primary" size="sm" @click="openAdd">

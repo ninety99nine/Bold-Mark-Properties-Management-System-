@@ -62,7 +62,7 @@ class Organization extends Model
     }
 
     /**
-     * Get users belonging to this tenant.
+     * Get users belonging to this occupant.
      *
      * @return HasMany
      */
@@ -72,27 +72,27 @@ class Organization extends Model
     }
 
     /**
-     * Get charge types belonging to this tenant.
+     * Get ledgers belonging to this occupant.
      *
      * @return HasMany
      */
-    public function chargeTypes(): HasMany
+    public function ledgers(): HasMany
     {
-        return $this->hasMany(ChargeType::class);
+        return $this->hasMany(Ledger::class);
     }
 
     /**
-     * Get estates belonging to this tenant.
+     * Get communities belonging to this occupant.
      *
      * @return HasMany
      */
-    public function estates(): HasMany
+    public function communities(): HasMany
     {
-        return $this->hasMany(Estate::class);
+        return $this->hasMany(Community::class);
     }
 
     /**
-     * Get units belonging to this tenant.
+     * Get units belonging to this occupant.
      *
      * @return HasMany
      */
@@ -102,7 +102,7 @@ class Organization extends Model
     }
 
     /**
-     * Get owners belonging to this tenant.
+     * Get owners belonging to this occupant.
      *
      * @return HasMany
      */
@@ -112,17 +112,17 @@ class Organization extends Model
     }
 
     /**
-     * Get unit organizations (property occupants) belonging to this tenant.
+     * Get unit organizations (property occupants) belonging to this occupant.
      *
      * @return HasMany
      */
-    public function tenants(): HasMany
+    public function occupants(): HasMany
     {
-        return $this->hasMany(Tenant::class);
+        return $this->hasMany(Occupant::class);
     }
 
     /**
-     * Get invoices belonging to this tenant.
+     * Get invoices belonging to this occupant.
      *
      * @return HasMany
      */
@@ -132,7 +132,7 @@ class Organization extends Model
     }
 
     /**
-     * Get cashbook entries belonging to this tenant.
+     * Get cashbook entries belonging to this occupant.
      *
      * @return HasMany
      */

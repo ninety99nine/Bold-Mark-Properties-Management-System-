@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\CashbookEntry;
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\InvoiceEmailEvent;
 use App\Models\Owner;
@@ -15,14 +15,14 @@ use Resend\Laravel\Facades\Resend;
 
 /**
  * Build a fully-wired invoice billed to an owner with an email address.
- * Returns ['user', 'estate', 'unit', 'owner', 'chargeType', 'invoice'].
+ * Returns ['user', 'community', 'unit', 'owner', 'ledger', 'invoice'].
  */
 function makeInvoiceForEmail(array $ownerOverrides = [], array $invoiceOverrides = []): array
 {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create(array_merge([
         'unit_id'         => $unit->id,
         'organization_id' => $user->organization_id,
@@ -31,13 +31,13 @@ function makeInvoiceForEmail(array $ownerOverrides = [], array $invoiceOverrides
     $invoice = Invoice::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'amount'          => 1500,
     ], $invoiceOverrides));
 
-    return compact('user', 'estate', 'unit', 'owner', 'chargeType', 'invoice');
+    return compact('user', 'community', 'unit', 'owner', 'ledger', 'invoice');
 }
 
 /**
@@ -185,15 +185,15 @@ it('does not create an email event when recipient has no email', function () {
 
 it('returns 500 when the invoice has no billed-to recipient', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'organization_id' => $user->organization_id]);
-    $ct     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ct     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     // billed_to_id points to a non-existent owner UUID → billedToOwner will be null
     $invoice = Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $ct->id,
+        'ledger_id'  => $ct->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => (string) \Illuminate\Support\Str::uuid(),
     ]);

@@ -13,6 +13,7 @@ import {
   Legend,
 } from 'chart.js'
 import api from '@/composables/useApi'
+import { ENTITY_TYPE_OPTIONS, entityTypeLabel, entityTypeBadgeClass, ENTITY_TYPE_COLOR } from '@/utils/communityEntityType'
 import AppStatCard from '@/components/common/AppStatCard.vue'
 import AppTableToolbar from '@/components/common/AppTableToolbar.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
@@ -38,33 +39,22 @@ function formatCurrency(amount) {
   return countryStore.formatCurrency(amount)
 }
 
-const ESTATE_TYPE_CONFIG = {
-  sectional_title:    { label: 'Sectional Title', badgeClass: 'bg-primary/10 text-primary border-primary/20' },
-  residential_rental: { label: 'Residential',     badgeClass: 'bg-success/10 text-success border-success/20' },
-  commercial_rental:  { label: 'Commercial',      badgeClass: 'bg-warning/10 text-amber-dark border-warning/20' },
-  mixed:              { label: 'Mixed',            badgeClass: 'bg-muted text-muted-foreground border-border' },
-}
-
-function typeLabel(type) {
-  return ESTATE_TYPE_CONFIG[type]?.label || type
-}
-function typeBadgeClass(type) {
-  return ESTATE_TYPE_CONFIG[type]?.badgeClass || 'bg-muted text-muted-foreground border-border'
-}
+const typeLabel = entityTypeLabel
+const typeBadgeClass = entityTypeBadgeClass
 
 // ── State ─────────────────────────────────────────────────────────────
 const loading = ref(true)
 const vacancies = ref([])
 const summary = ref(null)
-const estates = ref([])
+const communities = ref([])
 const meta = ref({ total: 0, current_page: 1, last_page: 1, per_page: 15 })
 
-// ── Estate cards (capped at 5) ───────────────────────────────────────
-const ESTATE_CARD_LIMIT = 4
-const showAllEstatesModal = ref(false)
-const allEstateCards = computed(() => summary.value?.by_estate ?? [])
-const visibleEstateCards = computed(() => allEstateCards.value.slice(0, ESTATE_CARD_LIMIT))
-const hasMoreEstates = computed(() => allEstateCards.value.length > ESTATE_CARD_LIMIT)
+// ── Community cards (capped at 5) ───────────────────────────────────────
+const COMMUNITY_CARD_LIMIT = 4
+const showAllCommunitiesModal = ref(false)
+const allCommunityCards = computed(() => summary.value?.by_community ?? [])
+const visibleCommunityCards = computed(() => allCommunityCards.value.slice(0, COMMUNITY_CARD_LIMIT))
+const hasMoreCommunities = computed(() => allCommunityCards.value.length > COMMUNITY_CARD_LIMIT)
 
 // ── Toolbar ───────────────────────────────────────────────────────────
 const toolbarState = ref({ search: '', dateRange: 'all_time', filters: {}, sort: null })
@@ -75,28 +65,23 @@ function onToolbarUpdate(state) {
   fetchVacancies()
 }
 
-// Build filter fields dynamically from loaded estates
+// Build filter fields dynamically from loaded communities
 const filterFields = computed(() => {
-  const estateOptions = estates.value.map(e => ({
+  const communityOptions = communities.value.map(e => ({
     value: e.id,
     label: e.name,
   }))
 
   return [
     {
-      key: 'estate_id',
-      label: 'Estate',
-      options: estateOptions,
+      key: 'community_id',
+      label: 'Community',
+      options: communityOptions,
     },
     {
-      key: 'estate_type',
-      label: 'Estate Type',
-      options: [
-        { value: 'sectional_title',    label: 'Sectional Title'    },
-        { value: 'residential_rental', label: 'Residential Rental' },
-        { value: 'commercial_rental',  label: 'Commercial Rental'  },
-        { value: 'mixed',              label: 'Mixed'              },
-      ],
+      key: 'community_type',
+      label: 'Entity Type',
+      options: ENTITY_TYPE_OPTIONS,
     },
   ]
 })
@@ -106,8 +91,8 @@ const sortOptions = [
   { value: 'unit_number:desc', label: 'Unit Z–A'       },
   { value: 'owner_name:asc',  label: 'Owner A–Z'      },
   { value: 'owner_name:desc', label: 'Owner Z–A'      },
-  { value: 'estate_name:asc', label: 'Estate A–Z'     },
-  { value: 'estate_name:desc', label: 'Estate Z–A'    },
+  { value: 'community_name:asc', label: 'Community A–Z'     },
+  { value: 'community_name:desc', label: 'Community Z–A'    },
 ]
 
 // ── Fetch ─────────────────────────────────────────────────────────────
@@ -119,8 +104,8 @@ async function fetchVacancies() {
     if (countryStore.activeCountry) params.country = countryStore.activeCountry
 
     if (search?.trim())          params._search     = search.trim()
-    if (filters?.estate_id)      params.estate_id   = filters.estate_id
-    if (filters?.estate_type)    params.estate_type = filters.estate_type
+    if (filters?.community_id)      params.community_id   = filters.community_id
+    if (filters?.community_type)    params.community_type = filters.community_type
     if (sort)                    params._sort       = sort
     if (dateRange && dateRange !== 'all_time') {
       params._date_range = dateRange
@@ -133,7 +118,7 @@ async function fetchVacancies() {
     const { data } = await api.get('/vacancies', { params })
     vacancies.value = data.data ?? []
     summary.value   = data.summary ?? null
-    estates.value   = data.estates ?? []
+    communities.value   = data.communities ?? []
     meta.value      = data.meta ?? meta.value
   } catch (e) {
     console.error('Failed to load vacancies:', e)
@@ -247,25 +232,12 @@ const occupancyDonutOpts = computed(() => ({
   },
 }))
 
-// 2 — Vacancies by Estate Type (donut)
-const ESTATE_TYPE_COLORS = {
-  sectional_title: NAVY,
-  residential_rental: GREEN,
-  commercial_rental: AMBER,
-  mixed: MUTED,
-}
-const estateTypeLabels = {
-  sectional_title: 'Sectional Title',
-  residential_rental: 'Residential',
-  commercial_rental: 'Commercial',
-  mixed: 'Mixed',
-}
-
-const estateTypeDonutData = computed(() => {
-  const raw = summary.value?.by_estate_type ?? {}
-  const labels = Object.keys(raw).map(k => estateTypeLabels[k] ?? k)
+// 2 — Vacancies by Entity Type (donut)
+const communityTypeDonutData = computed(() => {
+  const raw = summary.value?.by_community_type ?? {}
+  const labels = Object.keys(raw).map(k => entityTypeLabel(k))
   const values = Object.values(raw).map(v => parseInt(v))
-  const colors = Object.keys(raw).map(k => ESTATE_TYPE_COLORS[k] ?? MUTED)
+  const colors = Object.keys(raw).map(k => ENTITY_TYPE_COLOR[k] ?? MUTED)
   return {
     labels,
     datasets: [{
@@ -278,7 +250,7 @@ const estateTypeDonutData = computed(() => {
   }
 })
 
-const estateTypeDonutOpts = computed(() => ({
+const communityTypeDonutOpts = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   cutout: '68%',
@@ -294,22 +266,22 @@ const estateTypeDonutOpts = computed(() => ({
   },
 }))
 
-// 3 — Occupancy per Estate (stacked horizontal bar)
-const reversedOccupancyEstates = computed(() => [...(summary.value?.occupancy_per_estate ?? [])].reverse())
+// 3 — Occupancy per Community (stacked horizontal bar)
+const reversedOccupancyCommunities = computed(() => [...(summary.value?.occupancy_per_community ?? [])].reverse())
 
-const occupancyPerEstateData = computed(() => ({
-  labels: reversedOccupancyEstates.value.map(e => e.name.length > 20 ? e.name.slice(0, 20) + '...' : e.name),
+const occupancyPerCommunityData = computed(() => ({
+  labels: reversedOccupancyCommunities.value.map(e => e.name.length > 20 ? e.name.slice(0, 20) + '...' : e.name),
   datasets: [
     {
       label: 'Occupied',
-      data: reversedOccupancyEstates.value.map(e => e.occupied),
+      data: reversedOccupancyCommunities.value.map(e => e.occupied),
       backgroundColor: GREEN,
       borderRadius: 4,
       borderSkipped: false,
     },
     {
       label: 'Vacant',
-      data: reversedOccupancyEstates.value.map(e => e.vacant),
+      data: reversedOccupancyCommunities.value.map(e => e.vacant),
       backgroundColor: AMBER,
       borderRadius: 4,
       borderSkipped: false,
@@ -317,15 +289,15 @@ const occupancyPerEstateData = computed(() => ({
   ],
 }))
 
-const occupancyPerEstateOpts = computed(() => ({
+const occupancyPerCommunityOpts = computed(() => ({
   indexAxis: 'y',
   responsive: true,
   maintainAspectRatio: false,
   onHover: (event) => { event.native.target.style.cursor = 'pointer' },
   onClick: (_event, elements) => {
     if (!elements.length) return
-    const estate = reversedOccupancyEstates.value[elements[0].index]
-    if (estate?.id) router.push(`/estates/${estate.id}`)
+    const community = reversedOccupancyCommunities.value[elements[0].index]
+    if (community?.id) router.push(`/communities/${community.id}`)
   },
   plugins: {
     legend: {
@@ -351,7 +323,7 @@ const occupancyPerEstateOpts = computed(() => ({
   },
 }))
 
-// 4 — Lost Revenue by Estate (horizontal bar)
+// 4 — Lost Revenue by Community (horizontal bar)
 const reversedLostRevenue = computed(() => [...(summary.value?.lost_revenue ?? [])].reverse())
 
 const lostRevenueData = computed(() => ({
@@ -371,8 +343,8 @@ const lostRevenueOpts = computed(() => ({
   onHover: (event) => { event.native.target.style.cursor = 'pointer' },
   onClick: (_event, elements) => {
     if (!elements.length) return
-    const estate = reversedLostRevenue.value[elements[0].index]
-    if (estate?.id) router.push(`/estates/${estate.id}`)
+    const community = reversedLostRevenue.value[elements[0].index]
+    if (community?.id) router.push(`/communities/${community.id}`)
   },
   plugins: {
     legend: { display: false },
@@ -472,9 +444,9 @@ const durationOpts = {
         </AppStatCard>
 
         <AppStatCard
-          label="Estates Affected"
-          :value="summary?.estates_affected ?? 0"
-          :subtitle="`of ${estates.length} total estates`"
+          label="Communities Affected"
+          :value="summary?.communities_affected ?? 0"
+          :subtitle="`of ${communities.length} total communities`"
         >
           <template #icon>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-primary">
@@ -491,7 +463,7 @@ const durationOpts = {
         <AppStatCard
           label="Occupancy Rate"
           :value="`${summary?.total_units ? (100 - (summary?.vacancy_rate ?? 0)).toFixed(1) : 0}%`"
-          subtitle="across all estates"
+          subtitle="across all communities"
         >
           <template #icon>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-success">
@@ -505,27 +477,27 @@ const durationOpts = {
       </template>
     </div>
 
-    <!-- ── Vacancies by Estate (capped at 5) ─────────────────────────── -->
-    <div v-if="allEstateCards.length" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+    <!-- ── Vacancies by Community (capped at 5) ─────────────────────────── -->
+    <div v-if="allCommunityCards.length" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
       <div
-        v-for="estate in visibleEstateCards"
-        :key="estate.id"
-        @click="router.push(`/estates/${estate.id}`)"
+        v-for="community in visibleCommunityCards"
+        :key="community.id"
+        @click="router.push(`/communities/${community.id}`)"
         class="rounded-lg border bg-card p-4 cursor-pointer hover:border-accent/40 hover:shadow-sm transition-all group relative"
       >
-        <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">View estate</span>
+        <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">View community</span>
         <div class="flex items-center justify-between mb-1">
-          <p class="text-sm font-medium text-foreground truncate">{{ estate.name }}</p>
+          <p class="text-sm font-medium text-foreground truncate">{{ community.name }}</p>
         </div>
-        <p class="text-2xl font-bold font-body text-foreground">{{ estate.vacant_count }}</p>
+        <p class="text-2xl font-bold font-body text-foreground">{{ community.vacant_count }}</p>
         <p class="text-xs text-muted-foreground">vacant units</p>
       </div>
       <button
-        v-if="hasMoreEstates"
-        @click="showAllEstatesModal = true"
+        v-if="hasMoreCommunities"
+        @click="showAllCommunitiesModal = true"
         class="rounded-lg border border-dashed border-border p-4 flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-accent/40 hover:bg-muted/50 transition-all"
       >
-        <span class="text-lg font-bold font-body text-muted-foreground">+{{ allEstateCards.length - ESTATE_CARD_LIMIT }}</span>
+        <span class="text-lg font-bold font-body text-muted-foreground">+{{ allCommunityCards.length - COMMUNITY_CARD_LIMIT }}</span>
         <span class="text-xs text-muted-foreground">View all</span>
       </button>
     </div>
@@ -550,7 +522,7 @@ const durationOpts = {
           <thead>
             <tr class="border-b border-border">
               <th class="text-left font-medium text-muted-foreground px-4 py-3 text-xs uppercase tracking-wider">Unit</th>
-              <th class="text-left font-medium text-muted-foreground px-4 py-3 text-xs uppercase tracking-wider">Estate</th>
+              <th class="text-left font-medium text-muted-foreground px-4 py-3 text-xs uppercase tracking-wider">Community</th>
               <th class="text-left font-medium text-muted-foreground px-4 py-3 text-xs uppercase tracking-wider">Type</th>
               <th class="text-left font-medium text-muted-foreground px-4 py-3 text-xs uppercase tracking-wider">Owner</th>
               <th class="text-right font-medium text-muted-foreground px-4 py-3 text-xs uppercase tracking-wider">Levy</th>
@@ -580,21 +552,21 @@ const durationOpts = {
               <tr
                 v-for="unit in vacancies"
                 :key="unit.id"
-                @click="router.push(`/estates/${unit.estate_id}/units/${unit.id}`)"
+                @click="router.push(`/communities/${unit.community_id}/units/${unit.id}`)"
                 class="border-b border-border hover:bg-muted/50 cursor-pointer transition-colors"
               >
                 <td class="px-4 py-3">
                   <span class="font-medium text-foreground">{{ unit.unit_number }}</span>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="text-foreground">{{ unit.estate?.name ?? '—' }}</span>
+                  <span class="text-foreground">{{ unit.community?.name ?? '—' }}</span>
                 </td>
                 <td class="px-4 py-3">
                   <span
-                    v-if="unit.estate?.type"
-                    :class="['inline-flex items-center rounded-full px-2 py-px text-[10px] font-medium border gap-1 leading-tight', typeBadgeClass(unit.estate.type)]"
+                    v-if="unit.community?.entity_type"
+                    :class="['inline-flex items-center rounded-full px-2 py-px text-[10px] font-medium border gap-1 leading-tight', typeBadgeClass(unit.community.entity_type)]"
                   >
-                    {{ typeLabel(unit.estate.type) }}
+                    {{ typeLabel(unit.community.entity_type) }}
                   </span>
                 </td>
                 <td class="px-4 py-3">
@@ -699,13 +671,13 @@ const durationOpts = {
 
     <template v-else-if="hasChartData">
 
-      <!-- Row 1: Occupancy Split donut + Vacancies by Estate Type donut -->
+      <!-- Row 1: Occupancy Split donut + Vacancies by Community Type donut -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         <div class="rounded-lg border bg-card shadow-sm">
           <div class="px-6 pt-5 pb-2">
             <h3 class="font-body font-semibold text-base text-foreground">Portfolio Occupancy</h3>
-            <p class="text-xs text-muted-foreground mt-0.5">Occupied vs vacant units across all estates</p>
+            <p class="text-xs text-muted-foreground mt-0.5">Occupied vs vacant units across all communities</p>
           </div>
           <div class="px-6 pb-6">
             <div class="h-[260px]">
@@ -716,29 +688,29 @@ const durationOpts = {
 
         <div class="rounded-lg border bg-card shadow-sm">
           <div class="px-6 pt-5 pb-2">
-            <h3 class="font-body font-semibold text-base text-foreground">Vacancies by Estate Type</h3>
+            <h3 class="font-body font-semibold text-base text-foreground">Vacancies by Community Type</h3>
             <p class="text-xs text-muted-foreground mt-0.5">Which property types have the most empty units</p>
           </div>
           <div class="px-6 pb-6">
             <div class="h-[260px]">
-              <Doughnut :data="estateTypeDonutData" :options="estateTypeDonutOpts" :plugins="[centerTextPlugin]" />
+              <Doughnut :data="communityTypeDonutData" :options="communityTypeDonutOpts" :plugins="[centerTextPlugin]" />
             </div>
           </div>
         </div>
 
       </div>
 
-      <!-- Row 2: Occupancy per Estate (stacked) + Lost Revenue -->
+      <!-- Row 2: Occupancy per Community (stacked) + Lost Revenue -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         <div class="rounded-lg border bg-card shadow-sm">
           <div class="px-6 pt-5 pb-2">
-            <h3 class="font-body font-semibold text-base text-foreground">Occupancy per Estate</h3>
-            <p class="text-xs text-muted-foreground mt-0.5">Occupied and vacant units side by side for each estate</p>
+            <h3 class="font-body font-semibold text-base text-foreground">Occupancy per Community</h3>
+            <p class="text-xs text-muted-foreground mt-0.5">Occupied and vacant units side by side for each community</p>
           </div>
           <div class="px-6 pb-6">
             <div class="h-[280px]">
-              <Bar :data="occupancyPerEstateData" :options="occupancyPerEstateOpts" />
+              <Bar :data="occupancyPerCommunityData" :options="occupancyPerCommunityOpts" />
             </div>
           </div>
         </div>
@@ -746,7 +718,7 @@ const durationOpts = {
         <div class="rounded-lg border bg-card shadow-sm">
           <div class="px-6 pt-5 pb-2">
             <h3 class="font-body font-semibold text-base text-foreground">Lost Revenue</h3>
-            <p class="text-xs text-muted-foreground mt-0.5">Estimated monthly revenue lost to vacancies per estate</p>
+            <p class="text-xs text-muted-foreground mt-0.5">Estimated monthly revenue lost to vacancies per community</p>
           </div>
           <div class="px-6 pb-6">
             <div class="h-[280px]">
@@ -772,20 +744,20 @@ const durationOpts = {
 
     </template>
 
-    <!-- ── All Estates Modal ──────────────────────────────────────────── -->
-    <AppModal :show="showAllEstatesModal" title="Vacancies by Estate" size="md" @close="showAllEstatesModal = false">
+    <!-- ── All Communities Modal ──────────────────────────────────────────── -->
+    <AppModal :show="showAllCommunitiesModal" title="Vacancies by Community" size="md" @close="showAllCommunitiesModal = false">
       <div class="space-y-2 -mx-2">
         <div
-          v-for="estate in allEstateCards"
-          :key="estate.id"
-          @click="showAllEstatesModal = false; router.push(`/estates/${estate.id}`)"
+          v-for="community in allCommunityCards"
+          :key="community.id"
+          @click="showAllCommunitiesModal = false; router.push(`/communities/${community.id}`)"
           class="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
         >
           <div class="min-w-0">
-            <p class="text-sm font-medium text-foreground truncate">{{ estate.name }}</p>
+            <p class="text-sm font-medium text-foreground truncate">{{ community.name }}</p>
           </div>
           <div class="flex items-center gap-3 ml-4">
-            <p class="text-lg font-bold font-body text-foreground whitespace-nowrap">{{ estate.vacant_count }}</p>
+            <p class="text-lg font-bold font-body text-foreground whitespace-nowrap">{{ community.vacant_count }}</p>
             <span class="text-xs text-muted-foreground whitespace-nowrap">vacant</span>
           </div>
         </div>

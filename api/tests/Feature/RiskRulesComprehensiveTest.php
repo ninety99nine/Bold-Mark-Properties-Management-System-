@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
 use App\Models\RiskRule;
@@ -27,17 +27,17 @@ function makeRiskRule(array $overrides = []): array
 
 /**
  * Wire up a unit with at least one overdue invoice ready for evaluate.
- * Returns ['user', 'estate', 'unit', 'chargeType', 'owner', 'invoice'].
+ * Returns ['user', 'community', 'unit', 'ledger', 'owner', 'invoice'].
  */
 function makeOverdueUnitForEval(array $invoiceOverrides = [], array $unitOverrides = []): array
 {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['organization_id' => $user->organization_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(array_merge(
-        ['estate_id' => $estate->id, 'organization_id' => $user->organization_id],
+        ['community_id' => $community->id, 'organization_id' => $user->organization_id],
         $unitOverrides
     ));
-    $chargeType = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $owner      = Owner::factory()->create([
         'unit_id'         => $unit->id,
         'organization_id' => $user->organization_id,
@@ -46,7 +46,7 @@ function makeOverdueUnitForEval(array $invoiceOverrides = [], array $unitOverrid
     $invoice = Invoice::factory()->create(array_merge([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'billing_period'  => '2026-01-01',
@@ -55,7 +55,7 @@ function makeOverdueUnitForEval(array $invoiceOverrides = [], array $unitOverrid
         'due_date'        => now()->subDays(30)->format('Y-m-d'),
     ], $invoiceOverrides));
 
-    return compact('user', 'estate', 'unit', 'chargeType', 'owner', 'invoice');
+    return compact('user', 'community', 'unit', 'ledger', 'owner', 'invoice');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ it('show risk rules conditions is returned as an array', function () {
     expect($conditions[0])->toHaveKeys(['type', 'operator', 'value']);
 });
 
-it('show risk rules only returns the authenticated tenants rules', function () {
+it('show risk rules only returns the authenticated occupants rules', function () {
     ['rule' => $otherRule] = makeRiskRule(); // different org
     ['user' => $myUser]    = makeRiskRule(); // my org (has 1 rule)
 
@@ -447,7 +447,7 @@ it('update risk rule returns 404 for a non-existent rule', function () {
         ->assertNotFound();
 });
 
-it('update risk rule cross-tenant returns 404', function () {
+it('update risk rule cross-occupant returns 404', function () {
     ['rule' => $otherRule] = makeRiskRule(['name' => 'Other Org Rule']);
     $myUser = adminUser();
 
@@ -551,7 +551,7 @@ it('reorder updates sort_order for each rule based on its position', function ()
     expect($ruleA->fresh()->sort_order)->toBe(2);
 });
 
-it('reorder silently ignores rule ids belonging to another tenant', function () {
+it('reorder silently ignores rule ids belonging to another occupant', function () {
     ['rule' => $otherRule] = makeRiskRule(['sort_order' => 99]);
     ['user' => $myUser, 'rule' => $myRule] = makeRiskRule(['sort_order' => 0]);
 
@@ -585,7 +585,7 @@ it('evaluate returns rules, flagged_units, and total_flagged keys', function () 
         ->assertJsonStructure(['rules', 'flagged_units', 'total_flagged']);
 });
 
-it('evaluate returns an empty response when the tenant has no rules', function () {
+it('evaluate returns an empty response when the occupant has no rules', function () {
     $user = adminUser();
 
     $response = $this->actingAs($user, 'api')
@@ -655,13 +655,13 @@ it('evaluate does not flag a unit whose overdue_amount is below the threshold', 
 });
 
 it('evaluate flags a unit matched by an overdue_invoice_count condition', function () {
-    ['user' => $user, 'unit' => $unit, 'chargeType' => $chargeType, 'owner' => $owner] = makeOverdueUnitForEval();
+    ['user' => $user, 'unit' => $unit, 'ledger' => $ledger, 'owner' => $owner] = makeOverdueUnitForEval();
 
     // Add a second overdue invoice on the same unit (different billing period)
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'billing_period'  => '2026-02-01',
@@ -700,13 +700,13 @@ it('evaluate flags a unit matched by an arrears_rate condition', function () {
 
 it('evaluate does not flag a unit whose arrears_rate is below the threshold', function () {
     // 1 overdue out of 2 total = 50%
-    ['user' => $user, 'unit' => $unit, 'chargeType' => $chargeType, 'owner' => $owner] = makeOverdueUnitForEval();
+    ['user' => $user, 'unit' => $unit, 'ledger' => $ledger, 'owner' => $owner] = makeOverdueUnitForEval();
 
     // Add a paid invoice so arrears_rate = 50%
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $unit->id,
-        'charge_type_id'  => $chargeType->id,
+        'ledger_id'  => $ledger->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $owner->id,
         'billing_period'  => '2026-02-01',
@@ -834,7 +834,7 @@ it('evaluate flagged unit payload has all expected fields', function () {
         ->json('flagged_units.0');
 
     expect($flagged)->toHaveKeys([
-        'unit_id', 'unit_number', 'estate_id', 'estate_name',
+        'unit_id', 'unit_number', 'community_id', 'community_name',
         'owner_name', 'owner_email',
         'overdue_amount', 'days_overdue', 'overdue_count', 'arrears_rate',
         'matched_rules', 'severity',
@@ -902,14 +902,14 @@ it('evaluate sorts critical units before warning units', function () {
     $user = adminUser();
 
     // Warning unit
-    $warningEstate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $warningUnit   = Unit::factory()->create(['estate_id' => $warningEstate->id, 'organization_id' => $user->organization_id]);
-    $warningCT     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $warningCommunity = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $warningUnit   = Unit::factory()->create(['community_id' => $warningCommunity->id, 'organization_id' => $user->organization_id]);
+    $warningCT     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $warningOwner  = Owner::factory()->create(['unit_id' => $warningUnit->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $warningUnit->id,
-        'charge_type_id'  => $warningCT->id,
+        'ledger_id'  => $warningCT->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $warningOwner->id,
         'billing_period'  => '2026-01-01',
@@ -919,14 +919,14 @@ it('evaluate sorts critical units before warning units', function () {
     ]);
 
     // Critical unit
-    $criticalEstate = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $criticalUnit   = Unit::factory()->create(['estate_id' => $criticalEstate->id, 'organization_id' => $user->organization_id]);
-    $criticalCT     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $criticalCommunity = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $criticalUnit   = Unit::factory()->create(['community_id' => $criticalCommunity->id, 'organization_id' => $user->organization_id]);
+    $criticalCT     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $criticalOwner  = Owner::factory()->create(['unit_id' => $criticalUnit->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id,
         'unit_id'         => $criticalUnit->id,
-        'charge_type_id'  => $criticalCT->id,
+        'ledger_id'  => $criticalCT->id,
         'billed_to_type'  => 'owner',
         'billed_to_id'    => $criticalOwner->id,
         'billing_period'  => '2026-01-01',
@@ -959,25 +959,25 @@ it('evaluate within same severity sorts by overdue_amount descending', function 
     $user = adminUser();
 
     // Unit A: 3000 overdue
-    $estateA = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unitA   = Unit::factory()->create(['estate_id' => $estateA->id, 'organization_id' => $user->organization_id]);
-    $ctA     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $communityA = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unitA   = Unit::factory()->create(['community_id' => $communityA->id, 'organization_id' => $user->organization_id]);
+    $ctA     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $ownerA  = Owner::factory()->create(['unit_id' => $unitA->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unitA->id,
-        'charge_type_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerA->id,
+        'ledger_id' => $ctA->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerA->id,
         'billing_period' => '2026-01-01', 'status' => 'overdue', 'amount' => 3000,
         'due_date' => now()->subDays(10)->format('Y-m-d'),
     ]);
 
     // Unit B: 1000 overdue
-    $estateB = Estate::factory()->create(['organization_id' => $user->organization_id]);
-    $unitB   = Unit::factory()->create(['estate_id' => $estateB->id, 'organization_id' => $user->organization_id]);
-    $ctB     = ChargeType::factory()->create(['organization_id' => $user->organization_id]);
+    $communityB = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unitB   = Unit::factory()->create(['community_id' => $communityB->id, 'organization_id' => $user->organization_id]);
+    $ctB     = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $ownerB  = Owner::factory()->create(['unit_id' => $unitB->id, 'organization_id' => $user->organization_id]);
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unitB->id,
-        'charge_type_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerB->id,
+        'ledger_id' => $ctB->id, 'billed_to_type' => 'owner', 'billed_to_id' => $ownerB->id,
         'billing_period' => '2026-01-01', 'status' => 'overdue', 'amount' => 1000,
         'due_date' => now()->subDays(10)->format('Y-m-d'),
     ]);
@@ -1013,7 +1013,7 @@ it('evaluate total_flagged equals the count of flagged_units', function () {
         ->toBe(count($response->json('flagged_units')));
 });
 
-it('evaluate is scoped to the authenticated tenant — other orgs units are not evaluated', function () {
+it('evaluate is scoped to the authenticated occupant — other orgs units are not evaluated', function () {
     // Other org has an overdue unit and a matching rule
     ['user' => $otherUser, 'unit' => $otherUnit] = makeOverdueUnitForEval(['amount' => 5000]);
     RiskRule::factory()->warning()->create([
