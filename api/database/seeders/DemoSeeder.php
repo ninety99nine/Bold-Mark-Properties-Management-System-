@@ -208,7 +208,7 @@ class DemoSeeder extends Seeder
             ['email' => 'super@optimumquality.co.za'],
             [
                 'name'     => 'Optimum Quality Admin',
-                'password' => Hash::make(env('SUPER_ADMIN_PASSWORD', 'changeme-in-production')),
+                'password' => Hash::make(env('SUPER_ADMIN_PASSWORD', 'password')),
             ]
         );
         $superAdmin->assignRole(Role::findByName('super-admin', 'api'));
@@ -262,13 +262,14 @@ class DemoSeeder extends Seeder
     {
         $this->command?->info('Seeding demo users...');
         $organization  = Organization::where('slug', 'boldmark')->firstOrFail();
-        $boldPwd = Hash::make('BoldMark@2026!');
+        $boldPwd = Hash::make(env('BOLDMARK_ADMIN_PASSWORD', 'password'));
 
         $users = [
-            ['name'=>'Julian Tabona',  'email'=>'julian@boldmarkprop.co.za', 'password'=>$boldPwd,              'phone'=>'+27 82 555 0000',  'organization_id'=>$organization->id, 'role'=>'company-admin'],
-            ['name'=>'Justin Justin',  'email'=>'justin@boldmarkprop.co.za', 'password'=>$boldPwd,              'phone'=>'+267 72 555 0001', 'organization_id'=>$organization->id, 'role'=>'company-admin'],
-            ['name'=>'Ayanda Dlamini', 'email'=>'ayanda@boldmarkprop.co.za', 'password'=>$boldPwd,              'phone'=>'+267 72 555 0005', 'organization_id'=>$organization->id, 'role'=>'company-admin'],
-            ['name'=>'Julian Tabona',  'email'=>'brandontabona@gmail.com',   'password'=>$boldPwd,              'phone'=>'+27 82 555 0000',  'organization_id'=>$organization->id, 'role'=>'company-admin'],
+            ['name'=>'Julian Tabona',   'email'=>'julian@boldmarkprop.co.za',  'password'=>$boldPwd,              'phone'=>'+27 82 555 0000',  'organization_id'=>$organization->id, 'role'=>'company-admin'],
+            ['name'=>'Justin Justin',   'email'=>'justin@boldmarkprop.co.za',  'password'=>$boldPwd,              'phone'=>'+267 72 555 0001', 'organization_id'=>$organization->id, 'role'=>'company-admin'],
+            ['name'=>'Ayanda Dlamini',  'email'=>'ayanda@boldmarkprop.co.za',  'password'=>$boldPwd,              'phone'=>'+267 72 555 0005', 'organization_id'=>$organization->id, 'role'=>'company-admin'],
+            ['name'=>'Mduduzi Mhlanga', 'email'=>'mduduzi@boldmarkprop.co.za', 'password'=>$boldPwd,              'phone'=>'+27 79 917 8596',  'organization_id'=>$organization->id, 'role'=>'company-admin'],
+            ['name'=>'Brandon Tabona',  'email'=>'brandontabona@gmail.com',    'password'=>$boldPwd,              'phone'=>'+27 82 555 0003',  'organization_id'=>$organization->id, 'role'=>'company-admin'],
             ['name'=>'Thabo Ndlovu',   'email'=>'pm@demo.boldmark.test',     'password'=>Hash::make('password'), 'phone'=>'+267 72 555 0002', 'organization_id'=>$organization->id, 'role'=>'portfolio-manager'],
             ['name'=>'Lerato Pillay',  'email'=>'fc@demo.boldmark.test',     'password'=>Hash::make('password'), 'phone'=>'+267 72 555 0003', 'organization_id'=>$organization->id, 'role'=>'financial-controller'],
             ['name'=>'Naledi Khumalo', 'email'=>'pa@demo.boldmark.test',     'password'=>Hash::make('password'), 'phone'=>'+267 72 555 0004', 'organization_id'=>$organization->id, 'role'=>'portfolio-assistant'],
