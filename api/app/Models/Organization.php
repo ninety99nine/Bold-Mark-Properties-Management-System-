@@ -19,8 +19,9 @@ class Organization extends Model
      * @var array
      */
     protected $casts = [
-        'is_active'   => 'boolean',
-        'credentials' => 'array',
+        'is_active'              => 'boolean',
+        'credentials'            => 'array',
+        'transfer_clearance_fee' => 'decimal:2',
     ];
 
     /**
@@ -33,13 +34,25 @@ class Organization extends Model
         'slug',
         'company_name',
         'company_slogan',
+        'company_reg_no',
+        'transfer_clearance_fee',
         'logo_url',
+        'icon_url',
+        'email_header_url',
+        'email_footer_url',
         'is_active',
         'contact_email',
+        'outgoing_email',
         'contact_phone',
         'address',
         'country',
         'currency',
+        'bank_account_holder',
+        'bank_name',
+        'bank_account_type',
+        'bank_account_number',
+        'bank_branch_code',
+        'bank_branch_name',
         'primary_color',
         'secondary_color',
         'copyright_name',
@@ -149,6 +162,25 @@ class Organization extends Model
     public function getDisplayNameAttribute(): string
     {
         return $this->company_name ?? $this->name;
+    }
+
+    /**
+     * Resolve the header logo to a local filesystem path for PDF rendering
+     * (DomPDF reads local files reliably). Returns null when no logo is set or
+     * the file is missing — callers should then fall back to the company name.
+     *
+     * @return string|null
+     */
+    public function logoFilePath(): ?string
+    {
+        if (! $this->logo_url) {
+            return null;
+        }
+
+        $relative = ltrim(str_replace(\Illuminate\Support\Facades\Storage::disk('public')->url(''), '', $this->logo_url), '/');
+        $absolute = storage_path('app/public/' . $relative);
+
+        return is_file($absolute) ? $absolute : null;
     }
 
     /**

@@ -66,6 +66,11 @@ const routes = [
         component: () => import('@/pages/communities/CommunityDetailPage.vue'),
       },
       {
+        path: 'communities/:communityId/take-on',
+        name: 'community-take-on',
+        component: () => import('@/pages/communities/CommunityTakeOnPage.vue'),
+      },
+      {
         path: 'communities/:communityId/units/:unitId',
         name: 'unit-detail',
         component: () => import('@/pages/communities/UnitDetailPage.vue'),
@@ -133,9 +138,59 @@ const routes = [
         component: () => import('@/pages/customer-management/CustomerInvoicePage.vue'),
       },
       {
+        path: 'customers/credit-note',
+        name: 'credit-note',
+        component: () => import('@/pages/customer-management/CreditNotePage.vue'),
+      },
+      {
+        path: 'customers/manage',
+        name: 'manage-customers',
+        component: () => import('@/pages/customer-management/ManageCustomersPage.vue'),
+      },
+      {
+        path: 'customers/manage/:ownerId',
+        name: 'customer-detail',
+        component: () => import('@/pages/customer-management/CustomerDetailPage.vue'),
+      },
+      {
+        path: 'customers/status',
+        name: 'customer-status',
+        component: () => import('@/pages/customer-management/CustomerStatusPage.vue'),
+      },
+      {
+        path: 'customers/status/batches',
+        name: 'status-batches',
+        component: () => import('@/pages/customer-management/StatusBatchesPage.vue'),
+      },
+      {
+        path: 'customers/status/automatic',
+        name: 'automatic-status-changes',
+        component: () => import('@/pages/customer-management/AutomaticStatusChangesPage.vue'),
+      },
+      {
+        path: 'customers/statements',
+        name: 'customer-statements',
+        component: () => import('@/pages/customer-management/CustomerStatementsPage.vue'),
+      },
+      {
+        path: 'customers/ledger',
+        name: 'detailed-customer-ledger',
+        component: () => import('@/pages/customer-management/DetailedCustomerLedgerPage.vue'),
+      },
+      {
         path: 'age-analysis',
         name: 'age-analysis',
         component: () => import('@/pages/age-analysis/AgeAnalysisPage.vue'),
+      },
+      {
+        path: 'age-analysis/notices',
+        name: 'legal-notices',
+        component: () => import('@/pages/age-analysis/LegalNoticesPage.vue'),
+      },
+      {
+        path: 'age-analysis/customer-notices',
+        name: 'customer-notices',
+        component: () => import('@/pages/age-analysis/CustomerNoticesPage.vue'),
       },
       {
         path: 'owners/:ownerId',
@@ -167,6 +222,11 @@ const routes = [
         component: () => import('@/pages/settings/CommunityAddressContactPage.vue'),
       },
       {
+        path: 'settings/charges',
+        name: 'community-charges',
+        component: () => import('@/pages/settings/CommunityChargesSettingsPage.vue'),
+      },
+      {
         path: 'settings/default-billing-setup',
         name: 'default-billing-setup',
         component: () => import('@/pages/settings/DefaultBillingSetupPage.vue'),
@@ -175,6 +235,11 @@ const routes = [
         path: 'settings/users',
         name: 'community-users',
         component: () => import('@/pages/settings/CommunityUsersPage.vue'),
+      },
+      {
+        path: 'settings/company',
+        name: 'company-details',
+        component: () => import('@/pages/settings/CompanyDetailsPage.vue'),
       },
       {
         path: 'settings/:tab',

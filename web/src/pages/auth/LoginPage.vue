@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
@@ -21,7 +21,14 @@ const loading     = ref(false)
 const mounted     = ref(false)
 
 // Set when the user was bounced here by an expired/invalid session (BM-006).
+// Only a genuine inactivity timeout carries reason=inactivity; every other 401
+// (revoked/invalid token, etc.) gets neutral wording so it isn't mislabelled.
 const sessionExpired = ref(route.query.expired === '1')
+const expiredMessage = computed(() =>
+  route.query.reason === 'inactivity'
+    ? 'Your session expired due to inactivity. Sign in again to pick up where you left off.'
+    : 'Your session ended. Please sign in again to continue.'
+)
 
 // Where to land once authentication (incl. 2FA) completes.
 //
@@ -311,7 +318,7 @@ function cancelTwoFactor() {
           style="background-color:#FFFBEB;border-color:#F59E0B;color:#92400E;"
         >
           <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L11 9.586V6z" clip-rule="evenodd" /></svg>
-          Your session expired due to inactivity. Sign in again to pick up where you left off.
+          {{ expiredMessage }}
         </div>
 
         <!-- Form -->

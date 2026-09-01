@@ -22,7 +22,9 @@ use App\Models\UserLoginLog;
 use App\Models\TableView;
 use App\Http\Resources\OrganizationResource;
 use App\Http\Resources\OccupantResources;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class OrganizationService extends BaseService
 {
@@ -52,11 +54,20 @@ class OrganizationService extends BaseService
             ->only([
                 'company_name',
                 'company_slogan',
+                'company_reg_no',
+                'transfer_clearance_fee',
                 'contact_email',
+                'outgoing_email',
                 'contact_phone',
                 'address',
                 'country',
                 'currency',
+                'bank_account_holder',
+                'bank_name',
+                'bank_account_type',
+                'bank_account_number',
+                'bank_branch_code',
+                'bank_branch_name',
                 'primary_color',
                 'secondary_color',
                 'copyright_name',
@@ -64,9 +75,55 @@ class OrganizationService extends BaseService
             ->filter(fn($v) => !is_null($v))
             ->toArray();
 
+        // Image uploads (Company Details logos + default email header/footer).
+        $uploads = [
+            'logo'         => 'logo_url',
+            'icon'         => 'icon_url',
+            'email_header' => 'email_header_url',
+            'email_footer' => 'email_footer_url',
+        ];
+        foreach ($uploads as $field => $column) {
+            $file = $this->request->file($field);
+            if ($file instanceof UploadedFile) {
+                $this->deleteStoredImage($organization->{$column});
+                $path = $file->store("organization/{$organization->id}", 'public');
+                $updateData[$column] = Storage::disk('public')->url($path);
+            }
+        }
+
+        // Explicit removals.
+        $removals = [
+            'remove_logo'         => 'logo_url',
+            'remove_icon'         => 'icon_url',
+            'remove_email_header' => 'email_header_url',
+            'remove_email_footer' => 'email_footer_url',
+        ];
+        foreach ($removals as $flag => $column) {
+            if ($this->request->boolean($flag)) {
+                $this->deleteStoredImage($organization->{$column});
+                $updateData[$column] = null;
+            }
+        }
+
         $organization->update($updateData);
 
         return $this->showUpdatedResource($organization);
+    }
+
+    /**
+     * Delete a previously-stored public image given its full URL.
+     *
+     * @param string|null $url
+     * @return void
+     */
+    private function deleteStoredImage(?string $url): void
+    {
+        if (! $url) {
+            return;
+        }
+
+        $path = str_replace(Storage::disk('public')->url(''), '', $url);
+        Storage::disk('public')->delete($path);
     }
 
     /**

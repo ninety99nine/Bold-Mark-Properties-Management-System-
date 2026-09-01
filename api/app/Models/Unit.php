@@ -33,13 +33,18 @@ class Unit extends Model
         'ratio_4'         => 'float',
         'ratio_5'         => 'float',
         'unit_size'       => 'float',
+        'garage_size'     => 'float',
+        'carport_size'    => 'float',
+        'parking_size'    => 'float',
         'levy_override'   => 'float',
         'rent_amount'     => 'float',
         'balance'         => 'float',
         'billing_pdf'     => 'boolean',
         'is_development'   => 'boolean',
         'debit_order'      => 'boolean',
+        'transfer_active'  => 'boolean',
         'collection_status' => CollectionStatus::class,
+        'interest_exempt'  => 'boolean',
     ];
 
     /**
@@ -65,6 +70,9 @@ class Unit extends Model
         'ratio_4',
         'ratio_5',
         'unit_size',
+        'garage_size',
+        'carport_size',
+        'parking_size',
         'occupancy_type',
         'status',
         'levy_override',
@@ -72,7 +80,9 @@ class Unit extends Model
         'billing_pdf',
         'is_development',
         'collection_status',
+        'interest_exempt',
         'debit_order',
+        'transfer_active',
         'balance',
         'community_id',
         'organization_id',
@@ -198,6 +208,16 @@ class Unit extends Model
     public function collectionNotes(): HasMany
     {
         return $this->hasMany(UnitCollectionNote::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * Get the unit's collection-status history (Status Management), newest first.
+     *
+     * @return HasMany
+     */
+    public function statusHistories(): HasMany
+    {
+        return $this->hasMany(UnitStatusHistory::class)->orderByDesc('status_date');
     }
 
     /**

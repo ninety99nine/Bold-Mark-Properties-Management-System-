@@ -9,13 +9,12 @@ import AppModal from '@/components/common/AppModal.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppDropdown from '@/components/common/AppDropdown.vue'
 import AppDropdownItem from '@/components/common/AppDropdownItem.vue'
-import { useCountryStore } from '@/stores/country'
 import { useAuthStore } from '@/stores/auth'
+import CommunicationSettings from '@/components/settings/CommunicationSettings.vue'
 import api from '@/composables/useApi'
 
 const route        = useRoute()
 const router       = useRouter()
-const countryStore = useCountryStore()
 const authStore    = useAuthStore()
 const { success: toastSuccess, error: toastError } = useToast()
 
@@ -34,10 +33,11 @@ const NAV = [
   {
     group: 'General Settings',
     items: [
-      { id: 'general',  label: 'Company',  icon: 'building' },
+      { id: 'company',  label: 'Company Details', icon: 'building', route: '/settings/company' },
       { id: 'users',    label: 'Users',    icon: 'users', route: '/users' },
       { id: 'branding', label: 'Branding', icon: 'palette'  },
       { id: 'ledgers',  label: 'Default Ledgers', icon: 'tag' },
+      { id: 'communication', label: 'Communication', icon: 'mail' },
     ],
   },
   {
@@ -53,8 +53,10 @@ const SECTION_META = {
   'password':     { title: 'Password',      subtitle: 'Change your account password' },
   'security':     { title: 'Security',      subtitle: 'Manage two-factor authentication and active sessions' },
   'general':      { title: 'Company',       subtitle: 'Configure company name, contact info, and regional settings' },
+  'company':      { title: 'Company Details', subtitle: 'Company information, banking details and logos used across the app and communications' },
   'branding':     { title: 'Branding',      subtitle: 'Customise your company colours and visual identity' },
   'ledgers': { title: 'Default Ledgers',  subtitle: 'Define the billing categories used across your communities' },
+  'communication': { title: 'Communication', subtitle: 'Default email header/footer and the message templates used across communities' },
   'login-audit':  { title: 'Login Audit',   subtitle: 'Audit log of all login attempts across the platform' },
   'danger-zone':  { title: 'Danger Zone',   subtitle: 'Irreversible data operations — proceed with extreme caution' },
 }
@@ -350,41 +352,6 @@ async function loadAuditLogs(page = 1) {
 
 watch(activeSection, (section) => { if (section === 'login-audit') loadAuditLogs(1) }, { immediate: true })
 
-// ─── Company — General ────────────────────────────────────────────────────────
-const company        = ref({ name: '', slogan: '', email: '', phone: '', country: 'ZA' })
-const companyLoading = ref(false)
-
-async function saveCompany() {
-  if (companyLoading.value) return
-  companyLoading.value = true
-  try {
-    await api.put('/organization', {
-      company_name:   company.value.name,
-      company_slogan: company.value.slogan || null,
-      contact_email:  company.value.email,
-      contact_phone:  company.value.phone || null,
-      country:        company.value.country,
-    })
-    toastSuccess('Company settings saved.')
-  } catch (err) {
-    toastError(err?.response?.data?.message ?? 'Something went wrong. Please try again.')
-  } finally {
-    companyLoading.value = false
-  }
-}
-
-const companyCurrencyLabel = computed(() => {
-  const info = countryStore.COUNTRY_MAP[company.value.country]
-  return info ? `${info.symbol} — ${info.currencyCode}` : '—'
-})
-
-const COUNTRY_OPTS = countryStore.COUNTRY_MAP
-  ? Object.entries(countryStore.COUNTRY_MAP).map(([code, info]) => ({
-      value: code,
-      label: `${info.flag} ${info.name} (${code})`,
-    }))
-  : []
-
 // ─── Company — Branding ───────────────────────────────────────────────────────
 const DEFAULT_PRIMARY   = '#1F3A5C'
 const DEFAULT_SECONDARY = '#D89B4B'
@@ -422,13 +389,6 @@ onMounted(async () => {
   await Promise.all([
     api.get('/organization').then(({ data }) => {
       const o = data.data ?? data
-      company.value  = {
-        name:    o.company_name    ?? '',
-        slogan:  o.company_slogan  ?? '',
-        email:   o.contact_email   ?? '',
-        phone:   o.contact_phone   ?? '',
-        country: o.country         ?? 'ZA',
-      }
       branding.value = {
         primaryColor:   o.primary_color   ?? DEFAULT_PRIMARY,
         secondaryColor: o.secondary_color ?? DEFAULT_SECONDARY,
@@ -971,6 +931,12 @@ async function executeFlush() {
                   <path d="M12 9v4"/><path d="M12 17h.01"/>
                 </svg>
               </template>
+              <!-- mail icon -->
+              <template v-else-if="item.icon === 'mail'">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+              </template>
 
               {{ item.label }}
             </button>
@@ -1162,51 +1128,8 @@ async function executeFlush() {
         </div>
       </div>
 
-      <!-- ───── GENERAL ───── -->
-      <div v-if="activeSection === 'general'" class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <AppInput
-            v-model="company.name"
-            label="Company Name"
-            placeholder="e.g. Bold Mark Properties"
-            hint="Used as the company name in the sidebar for all users."
-          />
-          <AppInput
-            v-model="company.slogan"
-            label="Company Slogan"
-            placeholder="e.g. Moving People Forward"
-            hint="Shown below the company name in the sidebar."
-          />
-          <AppInput v-model="company.email" type="email" label="Contact Email" placeholder="info@company.co.za" />
-          <AppInput v-model="company.phone" type="tel"   label="Phone"         placeholder="+27 10 000 0000" />
-
-          <!-- Country -->
-          <div class="flex flex-col gap-1.5">
-            <label class="text-sm font-medium text-fg">Country</label>
-            <AppSelect v-model="company.country" :options="COUNTRY_OPTS" />
-            <p class="text-xs text-muted-foreground">Default country for new communities.</p>
-          </div>
-
-          <!-- Currency (derived) -->
-          <div class="flex flex-col gap-1.5">
-            <label class="text-sm font-medium text-fg flex items-center gap-1.5">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
-                <path d="M2 12h20"/>
-              </svg>
-              Currency
-            </label>
-            <div class="flex items-center h-9 px-3 rounded-md border border-border bg-muted/50 text-sm text-foreground">
-              {{ companyCurrencyLabel }}
-            </div>
-            <p class="text-xs text-muted-foreground">Automatically determined by the selected country.</p>
-          </div>
-        </div>
-        <div class="flex justify-end pt-2">
-          <AppButton variant="primary" :loading="companyLoading" @click="saveCompany">Save Settings</AppButton>
-        </div>
-      </div>
+      <!-- ───── COMMUNICATION ───── -->
+      <CommunicationSettings v-if="activeSection === 'communication'" />
 
       <!-- ───── BRANDING ───── -->
       <div v-if="activeSection === 'branding'" class="space-y-6 max-w-lg">

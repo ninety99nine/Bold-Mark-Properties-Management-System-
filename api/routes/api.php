@@ -43,6 +43,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     // Authenticated — me, logout, 2FA management, sessions
     Route::middleware('auth:api')->prefix('auth')->name('auth.')->group(function () {
         Route::get('/me', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'me'])->name('me');
+        Route::post('/heartbeat', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'heartbeat'])->name('heartbeat');
         Route::post('/logout', [\App\Http\Controllers\Api\V1\Auth\AuthController::class, 'logout'])->name('logout');
 
         // 2FA is mandatory and can never be disabled by a user (BUG-003), so no

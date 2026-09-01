@@ -2,25 +2,32 @@
 
 namespace App\Services;
 
-use App\Models\Invoice;
-use App\Models\Unit;
-use App\Models\CashbookEntry;
 use App\Enums\CashbookEntryType;
 use App\Enums\CollectionStatus;
 use App\Enums\InvoiceStatus;
+use App\Enums\UnitStatus;
+use App\Models\CashbookEntry;
+use App\Models\Community;
+use App\Models\Invoice;
+use App\Models\Ledger;
+use App\Models\Unit;
+use App\Exports\AgeAnalysisExport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * WeConnectU-style Age Analysis.
+ * WeConnectU-style Customer Age Analysis (per community).
  *
  * Produces one row per customer (unit): the aged-arrears breakdown across the
  * buckets 120+ / 90 / 60 / 30 / Current, the net Balance, and the customer's
  * collection status / debit-order flag / notes count — exactly like the
- * WeConnectU "Age Analysis" table. A totals row sums every column.
+ * WeConnectU "Customer Age Analysis" table. A totals row sums every column.
  *
- * Ageing is by invoice due_date:
- *   current  → not yet due (or due today)
+ * Ageing is computed "as at" an Ageing Date (defaults to today): only invoices
+ * raised on/before that date and payments received on/before that date are
+ * considered, so a past period reflects the balances as they were then. Each
+ * invoice is aged by its due_date relative to the Ageing Date:
+ *   current  → not yet due (or due on the ageing date)
  *   30_days  → 1–30 days overdue
  *   60_days  → 31–60 days overdue
  *   90_days  → 61–90 days overdue
@@ -32,40 +39,27 @@ class AgeAnalysisService extends BaseService
     /** Bucket keys, oldest → newest (credits net oldest-first). */
     private const BUCKETS = ['120_plus', '90_days', '60_days', '30_days', 'current'];
 
-    public function __construct()
-    {
-        parent::__construct();
-    }
+    /** Ledger name/category keywords excluded by "Exclude Debit/Arrear charges". */
+    private const DEBIT_ARREAR_KEYWORDS = ['interest', 'arrear', 'penalty', 'debit order'];
 
     /**
-     * Build the age-analysis table for the authenticated user's organization.
+     * Build the age-analysis table for a community.
      *
-     * Filters: community_id, country, ledger_id, _search, debt_status, debit_order.
+     * Filters: ageing_date, ledger_id, exclude_debit_arrear, hide_zero,
+     * hide_negative, filter_type, debt_status, customer_group_id, debit_order,
+     * _search.
      *
+     * @param Community $community
      * @param array $data
-     * @return array{rows: array, totals: array}
+     * @return array{rows: array, totals: array, ageing_date: string}
      */
-    public function getAgeAnalysis(array $data): array
+    public function getAgeAnalysis(Community $community, array $data): array
     {
-        $rows = $this->buildRows($data);
+        $ageingDate = $this->resolveAgeingDate($data);
+        $rows       = $this->buildRows($community, $data, $ageingDate);
 
-        // ── Filters that apply to the assembled rows ─────────────────────
-        if (!empty($data['debt_status']) && $data['debt_status'] !== 'all') {
-            $rows = array_values(array_filter($rows, fn ($r) => $r['collection_status'] === $data['debt_status']));
-        }
-
-        if (!empty($data['debit_order']) && filter_var($data['debit_order'], FILTER_VALIDATE_BOOLEAN)) {
-            $rows = array_values(array_filter($rows, fn ($r) => $r['debit_order']));
-        }
-
-        if (!empty($data['_search'])) {
-            $term = mb_strtolower(trim($data['_search']));
-            $rows = array_values(array_filter($rows, function ($r) use ($term) {
-                return str_contains(mb_strtolower($r['customer_name'] ?? ''), $term)
-                    || str_contains(mb_strtolower($r['unit_number'] ?? ''), $term)
-                    || str_contains(mb_strtolower($r['customer_code'] ?? ''), $term);
-            }));
-        }
+        // ── Row-level filters (WeConnectU toolbar) ───────────────────────
+        $rows = $this->applyRowFilters($rows, $data);
 
         // ── Totals ───────────────────────────────────────────────────────
         $totals = [
@@ -89,56 +83,83 @@ class AgeAnalysisService extends BaseService
             }
         }
 
-        return ['rows' => $rows, 'totals' => $totals];
+        return [
+            'rows'        => $rows,
+            'totals'      => $totals,
+            'ageing_date' => $ageingDate->toDateString(),
+        ];
     }
 
     /**
-     * Assemble one row per unit (customer) with aged buckets + net balance.
+     * Assemble one row per unit (customer) with aged buckets + net balance,
+     * reconstructed as at the ageing date.
      *
+     * @param Community $community
      * @param array $data
+     * @param Carbon $ageingDate
      * @return array
      */
-    private function buildRows(array $data): array
+    private function buildRows(Community $community, array $data, Carbon $ageingDate): array
     {
         $organizationId = Auth::user()->organization_id;
-        $today          = Carbon::today();
+        $unitIds        = Unit::where('community_id', $community->id)->pluck('id');
 
-        // ── Outstanding invoices → per-unit bucket sums ──────────────────
-        $invoiceQuery = Invoice::where('organization_id', $organizationId)
+        if ($unitIds->isEmpty()) {
+            return [];
+        }
+
+        // Ledgers excluded by "Exclude Debit/Arrear charges".
+        $excludeLedgerIds = $this->excludedLedgerIds($organizationId, $data);
+
+        // ── Outstanding invoices that existed as at the ageing date ──────
+        $invoiceQuery = Invoice::whereIn('unit_id', $unitIds)
+            ->where('organization_id', $organizationId)
             ->whereIn('status', [
                 InvoiceStatus::UNPAID->value,
                 InvoiceStatus::OVERDUE->value,
                 InvoiceStatus::PARTIALLY_PAID->value,
-            ]);
+            ])
+            ->whereRaw('DATE(COALESCE(invoice_date, created_at)) <= ?', [$ageingDate->toDateString()]);
 
-        $this->applyScopeFilters($invoiceQuery, $data, 'unit_id');
         if (!empty($data['ledger_id'])) {
             $invoiceQuery->where('ledger_id', $data['ledger_id']);
         }
+        if (!empty($excludeLedgerIds)) {
+            $invoiceQuery->whereNotIn('ledger_id', $excludeLedgerIds);
+        }
+
+        $invoices   = $invoiceQuery->get(['id', 'unit_id', 'due_date', 'amount', 'status']);
+        $invoiceIds = $invoices->pluck('id');
+
+        // Payments allocated to those invoices, received on/before the ageing date.
+        $paidByInvoice = $invoiceIds->isEmpty()
+            ? collect()
+            : CashbookEntry::whereIn('invoice_id', $invoiceIds)
+                ->where('type', CashbookEntryType::CREDIT->value)
+                ->whereRaw('DATE(COALESCE(date, created_at)) <= ?', [$ageingDate->toDateString()])
+                ->selectRaw('invoice_id, SUM(amount) as total')
+                ->groupBy('invoice_id')
+                ->pluck('total', 'invoice_id');
 
         $bucketsByUnit = [];
-        foreach ($invoiceQuery->get(['id', 'unit_id', 'due_date', 'amount', 'status']) as $invoice) {
-            $outstanding = (float) $invoice->outstanding;
+        foreach ($invoices as $invoice) {
+            $outstanding = round((float) $invoice->amount - (float) ($paidByInvoice[$invoice->id] ?? 0), 2);
             if ($outstanding <= 0) {
                 continue;
             }
 
-            $bucket = $this->bucketFor($invoice->due_date, $today);
-            $unitId = $invoice->unit_id;
-
-            if (!isset($bucketsByUnit[$unitId])) {
-                $bucketsByUnit[$unitId] = array_fill_keys(self::BUCKETS, 0.0);
+            $bucket = $this->bucketFor($invoice->due_date, $ageingDate);
+            if (!isset($bucketsByUnit[$invoice->unit_id])) {
+                $bucketsByUnit[$invoice->unit_id] = array_fill_keys(self::BUCKETS, 0.0);
             }
-            $bucketsByUnit[$unitId][$bucket] += $outstanding;
+            $bucketsByUnit[$invoice->unit_id][$bucket] += $outstanding;
         }
 
-        // ── Unallocated credits per unit ─────────────────────────────────
-        $creditQuery = CashbookEntry::where('organization_id', $organizationId)
+        // ── Unallocated credits per unit, received on/before the ageing date ──
+        $creditsByUnit = CashbookEntry::whereIn('unit_id', $unitIds)
             ->whereNull('invoice_id')
-            ->where('type', CashbookEntryType::CREDIT->value);
-        $this->applyScopeFilters($creditQuery, $data, 'unit_id');
-
-        $creditsByUnit = $creditQuery
+            ->where('type', CashbookEntryType::CREDIT->value)
+            ->whereRaw('DATE(COALESCE(date, created_at)) <= ?', [$ageingDate->toDateString()])
             ->selectRaw('unit_id, SUM(amount) as total')
             ->groupBy('unit_id')
             ->pluck('total', 'unit_id')
@@ -146,23 +167,34 @@ class AgeAnalysisService extends BaseService
             ->toArray();
 
         // ── Load the units that have arrears or credits ──────────────────
-        $unitIds = array_values(array_unique(array_merge(
+        $affectedUnitIds = array_values(array_unique(array_merge(
             array_keys($bucketsByUnit),
             array_keys($creditsByUnit),
         )));
 
-        if (empty($unitIds)) {
+        if (empty($affectedUnitIds)) {
             return [];
         }
 
-        $units = Unit::whereIn('id', $unitIds)
-            ->with(['owner', 'currentOccupant', 'community'])
+        $units = Unit::whereIn('id', $affectedUnitIds)
+            ->with(['owner.customerGroups', 'currentOccupant', 'community'])
             ->withCount('collectionNotes')
             ->get();
+
+        $customerGroupId = $data['customer_group_id'] ?? null;
 
         // ── Build a row per unit ─────────────────────────────────────────
         $rows = [];
         foreach ($units as $unit) {
+            // Customer-group filter (owner belongs to the selected group).
+            if (!empty($customerGroupId)) {
+                $inGroup = $unit->owner
+                    && $unit->owner->customerGroups->contains('id', $customerGroupId);
+                if (!$inGroup) {
+                    continue;
+                }
+            }
+
             $buckets = $bucketsByUnit[$unit->id] ?? array_fill_keys(self::BUCKETS, 0.0);
             $credit  = (float) ($creditsByUnit[$unit->id] ?? 0);
 
@@ -171,7 +203,7 @@ class AgeAnalysisService extends BaseService
                 if ($credit <= 0) {
                     break;
                 }
-                $reduce = min($credit, $buckets[$b]);
+                $reduce       = min($credit, $buckets[$b]);
                 $buckets[$b] -= $reduce;
                 $credit      -= $reduce;
             }
@@ -188,60 +220,163 @@ class AgeAnalysisService extends BaseService
                 ? $unit->collection_status
                 : CollectionStatus::from($unit->collection_status ?? 'none');
 
+            $isSold = $unit->status === UnitStatus::VACATED
+                || ($unit->status instanceof UnitStatus ? false : ($unit->status === 'vacated'));
+
             $rows[] = [
-                'unit_id'          => $unit->id,
-                'unit_number'      => $unit->unit_number,
-                'community_id'     => $unit->community_id,
-                'community_name'   => $unit->community?->name,
-                'customer_code'    => $unit->customer_code,
-                'customer_name'    => $person?->full_name ?? '—',
-                'customer_email'   => $person?->email,
-                'person_id'        => $person?->id,
-                'person_role'      => $unit->owner ? 'owner' : ($unit->currentOccupant ? 'occupant' : null),
+                'unit_id'                 => $unit->id,
+                'unit_number'             => $unit->unit_number,
+                'unit_no'                 => $isSold ? '_' : $this->unitSortKey($unit->unit_number),
+                'community_id'            => $unit->community_id,
+                'community_name'          => $unit->community?->name,
+                'customer_code'           => $unit->customer_code,
+                'customer_name'           => $person?->full_name ?? '—',
+                'customer_email'          => $person?->email,
+                'person_id'               => $person?->id,
+                'person_role'             => $unit->owner ? 'owner' : ($unit->currentOccupant ? 'occupant' : null),
                 'collection_status'       => $status->value,
                 'collection_status_label' => $status->label(),
-                'debit_order'      => (bool) $unit->debit_order,
-                'is_sold'          => false,
-                'notes_count'      => (int) ($unit->collection_notes_count ?? 0),
-                '120_plus'         => round($buckets['120_plus'], 2),
-                '90_days'          => round($buckets['90_days'], 2),
-                '60_days'          => round($buckets['60_days'], 2),
-                '30_days'          => round($buckets['30_days'], 2),
-                'current'          => round($buckets['current'], 2),
-                'balance'          => $balance,
+                'debit_order'             => (bool) $unit->debit_order,
+                'transfer_active'         => (bool) $unit->transfer_active,
+                'is_sold'                 => $isSold,
+                'notes_count'             => (int) ($unit->collection_notes_count ?? 0),
+                '120_plus'                => round($buckets['120_plus'], 2),
+                '90_days'                 => round($buckets['90_days'], 2),
+                '60_days'                 => round($buckets['60_days'], 2),
+                '30_days'                 => round($buckets['30_days'], 2),
+                'current'                 => round($buckets['current'], 2),
+                'balance'                 => $balance,
             ];
         }
 
-        // Sort by unit number ascending (natural), like WeConnectU.
-        usort($rows, fn ($a, $b) => $this->unitSortKey($a['unit_number']) <=> $this->unitSortKey($b['unit_number'])
-            ?: strcmp((string) $a['unit_number'], (string) $b['unit_number']));
+        // Active units first (natural unit-number order); sold units to the bottom.
+        usort($rows, function ($a, $b) {
+            if ($a['is_sold'] !== $b['is_sold']) {
+                return $a['is_sold'] <=> $b['is_sold'];
+            }
+            return $this->unitSortKey($a['unit_number']) <=> $this->unitSortKey($b['unit_number'])
+                ?: strcmp((string) $a['unit_number'], (string) $b['unit_number']);
+        });
 
         return $rows;
     }
 
     /**
-     * Apply org-consistent community/country scope to an invoice or cashbook query.
+     * Apply the WeConnectU toolbar filters to the assembled rows.
+     *
+     * @param array $rows
+     * @param array $data
+     * @return array
      */
-    private function applyScopeFilters($query, array $data, string $unitColumn): void
+    private function applyRowFilters(array $rows, array $data): array
     {
-        if (!empty($data['community_id'])) {
-            $unitIds = Unit::where('community_id', $data['community_id'])->pluck('id');
-            $query->whereIn($unitColumn, $unitIds);
+        // Filter Type: No Status / Handed Over / Payment Arrangement.
+        if (!empty($data['filter_type']) && $data['filter_type'] !== 'all') {
+            $type = $data['filter_type'] === 'no_status' ? 'none' : $data['filter_type'];
+            $rows = array_filter($rows, fn ($r) => $r['collection_status'] === $type);
         }
 
-        if (!empty($data['country'])) {
-            $unitIds = Unit::whereHas('community', fn ($c) => $c->where('country', $data['country']))->pluck('id');
-            $query->whereIn($unitColumn, $unitIds);
+        // Filter Debt Status: exact collection status.
+        if (!empty($data['debt_status']) && $data['debt_status'] !== 'all') {
+            $rows = array_filter($rows, fn ($r) => $r['collection_status'] === $data['debt_status']);
         }
+
+        // Debit Order Customers.
+        if (!empty($data['debit_order']) && filter_var($data['debit_order'], FILTER_VALIDATE_BOOLEAN)) {
+            $rows = array_filter($rows, fn ($r) => $r['debit_order']);
+        }
+
+        // Hide Zero Values.
+        if (!empty($data['hide_zero']) && filter_var($data['hide_zero'], FILTER_VALIDATE_BOOLEAN)) {
+            $rows = array_filter($rows, fn ($r) => abs($r['balance']) >= 0.005);
+        }
+
+        // Hide Negative Values.
+        if (!empty($data['hide_negative']) && filter_var($data['hide_negative'], FILTER_VALIDATE_BOOLEAN)) {
+            $rows = array_filter($rows, fn ($r) => $r['balance'] >= -0.005);
+        }
+
+        // Free-text search (name / unit number / customer code).
+        if (!empty($data['_search'])) {
+            $term = mb_strtolower(trim($data['_search']));
+            $rows = array_filter($rows, function ($r) use ($term) {
+                return str_contains(mb_strtolower($r['customer_name'] ?? ''), $term)
+                    || str_contains(mb_strtolower((string) $r['unit_number'] ?? ''), $term)
+                    || str_contains(mb_strtolower($r['customer_code'] ?? ''), $term);
+            });
+        }
+
+        return array_values($rows);
     }
 
     /**
-     * Resolve the ageing bucket for an invoice due date.
+     * Export the age analysis as a WeConnectU-faithful Excel workbook.
+     *
+     * @param Community $community
+     * @param array $data
+     * @return \Symfony\Component\HttpFoundation\Response
      */
-    private function bucketFor($dueDate, Carbon $today): string
+    public function exportAgeAnalysis(Community $community, array $data): \Symfony\Component\HttpFoundation\Response
+    {
+        $result   = $this->getAgeAnalysis($community, $data);
+        $filename = 'customer age analysis-' . mb_strtolower($community->name) . '-' . $result['ageing_date'] . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new AgeAnalysisExport($community->name, $result['ageing_date'], $result['rows'], $result['totals']),
+            $filename
+        );
+    }
+
+    /**
+     * Resolve the ledger ids excluded by "Exclude Debit/Arrear charges".
+     *
+     * @param string $organizationId
+     * @param array $data
+     * @return array
+     */
+    private function excludedLedgerIds(string $organizationId, array $data): array
+    {
+        if (empty($data['exclude_debit_arrear']) || !filter_var($data['exclude_debit_arrear'], FILTER_VALIDATE_BOOLEAN)) {
+            return [];
+        }
+
+        return Ledger::where('organization_id', $organizationId)
+            ->where(function ($q) {
+                foreach (self::DEBIT_ARREAR_KEYWORDS as $kw) {
+                    $q->orWhere('name', 'like', "%{$kw}%")
+                      ->orWhere('category', 'like', "%{$kw}%");
+                }
+            })
+            ->pluck('id')
+            ->all();
+    }
+
+    /**
+     * Resolve the ageing "as at" date from the request (defaults to today).
+     *
+     * @param array $data
+     * @return Carbon
+     */
+    private function resolveAgeingDate(array $data): Carbon
+    {
+        if (!empty($data['ageing_date'])) {
+            return Carbon::parse($data['ageing_date'])->startOfDay();
+        }
+
+        return Carbon::today();
+    }
+
+    /**
+     * Resolve the ageing bucket for an invoice due date relative to the ageing date.
+     *
+     * @param mixed $dueDate
+     * @param Carbon $ageingDate
+     * @return string
+     */
+    private function bucketFor($dueDate, Carbon $ageingDate): string
     {
         $due      = $dueDate instanceof Carbon ? $dueDate : Carbon::parse($dueDate);
-        $daysLate = $today->diffInDays($due, false); // negative = overdue
+        $daysLate = $ageingDate->diffInDays($due, false); // negative = overdue
 
         return match (true) {
             $daysLate >= 0   => 'current',
@@ -254,6 +389,9 @@ class AgeAnalysisService extends BaseService
 
     /**
      * Numeric sort key from a unit number (e.g. "U12" → 12, "MML-A09" → 9).
+     *
+     * @param string|null $unitNumber
+     * @return int
      */
     private function unitSortKey(?string $unitNumber): int
     {
@@ -262,94 +400,5 @@ class AgeAnalysisService extends BaseService
         }
         preg_match('/(\d+)(?!.*\d)/', $unitNumber, $m); // last run of digits
         return isset($m[1]) ? (int) $m[1] : PHP_INT_MAX;
-    }
-
-    /**
-     * Export the age analysis as CSV / Excel / PDF, matching the on-screen columns.
-     *
-     * @param array $data
-     * @return \Symfony\Component\HttpFoundation\Response
-     */
-    public function exportAgeAnalysis(array $data): \Symfony\Component\HttpFoundation\Response
-    {
-        $result = $this->getAgeAnalysis($data);
-
-        $headings = ['Unit No', 'Customer', 'Status', '120+ Days', '90 Days', '60 Days', '30 Days', 'Current', 'Balance'];
-
-        $rows = [];
-        foreach ($result['rows'] as $row) {
-            $rows[] = [
-                $row['unit_number'] ?? '—',
-                trim(($row['customer_code'] ? $row['customer_code'] . ': ' : '') . ($row['customer_name'] ?? '—')),
-                $row['collection_status_label'] ?: '—',
-                number_format((float) $row['120_plus'], 2),
-                number_format((float) $row['90_days'], 2),
-                number_format((float) $row['60_days'], 2),
-                number_format((float) $row['30_days'], 2),
-                number_format((float) $row['current'], 2),
-                number_format((float) $row['balance'], 2),
-            ];
-        }
-
-        return $this->buildFileResponse(
-            $rows,
-            $headings,
-            'age-analysis-' . now()->format('Y-m-d'),
-            $data['_format'] ?? 'xlsx',
-            'Age Analysis Export',
-            [
-                'Generated'  => now()->format('d M Y'),
-                'Balance'    => number_format((float) ($result['totals']['balance'] ?? 0), 2),
-                'Customers'  => $result['totals']['customer_count'] ?? 0,
-            ]
-        );
-    }
-
-    /**
-     * Bulk "Send Notices": advance the collection status of the arrears customers
-     * in scope to the next escalation step and log a collection note per unit.
-     *
-     * @param array $data
-     * @return array
-     */
-    public function sendNotices(array $data): array
-    {
-        $result = $this->getAgeAnalysis($data);
-        $userName = Auth::user()?->name ?? 'System';
-        $userId   = Auth::user()?->id;
-
-        $sent = 0;
-        foreach ($result['rows'] as $row) {
-            if ($row['balance'] <= 0) {
-                continue; // only chase real arrears
-            }
-
-            $unit = Unit::find($row['unit_id']);
-            if (!$unit) {
-                continue;
-            }
-
-            $current = $unit->collection_status instanceof CollectionStatus
-                ? $unit->collection_status
-                : CollectionStatus::from($unit->collection_status ?? 'none');
-            $next = $current->next();
-
-            $unit->update(['collection_status' => $next->value]);
-
-            \App\Models\UnitCollectionNote::create([
-                'unit_id'         => $unit->id,
-                'organization_id' => $unit->organization_id,
-                'note'            => $next->label() . ' sent',
-                'created_by_name' => $userName,
-                'user_id'         => $userId,
-            ]);
-
-            $sent++;
-        }
-
-        return [
-            'sent'    => $sent,
-            'message' => "{$sent} notice(s) sent.",
-        ];
     }
 }

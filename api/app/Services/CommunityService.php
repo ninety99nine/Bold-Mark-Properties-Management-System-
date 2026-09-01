@@ -26,6 +26,7 @@ class CommunityService extends BaseService
     {
         $user  = Auth::user();
         $query = Community::where('organization_id', $user->organization_id)
+            ->with('communityManager:id,name,email')
             ->withCount([
                 'units',
                 'units as occupied_units_count' => fn ($q) => $q->whereIn('occupancy_type', ['owner_occupied', 'occupant_occupied']),
@@ -128,12 +129,17 @@ class CommunityService extends BaseService
         $user = Auth::user();
 
         $communityData = collect($data)
-            ->only(['name', 'code', 'address', 'entity_type', 'financial_year_end_month', 'admin_fund_amount', 'reserve_fund_amount', 'csos_levy_amount', 'default_rent_amount', 'billing_day', 'payment_terms_days', 'country', 'currency'])
+            ->only(['name', 'code', 'address', 'entity_type', 'financial_year_end_month', 'merchant_number', 'pdf_passwords', 'previous_managing_agent', 'opening_balance_date', 'admin_fund_amount', 'reserve_fund_amount', 'csos_levy_amount', 'default_rent_amount', 'billing_day', 'payment_terms_days', 'country', 'currency'])
             ->toArray();
 
+        // Community Manager must be a same-organization user (or none).
+        $communityData['community_manager_id'] = $this->scopedManagerId($data['community_manager_id'] ?? null, $user->organization_id);
+
+        // New communities start life in "Take-on" until they are fully onboarded.
         $community = Community::create(array_merge($communityData, [
             'organization_id' => $user->organization_id,
             'is_active' => true,
+            'status'    => CommunityStatus::TAKE_ON->value,
         ]));
 
         // Assign staff users to the community. The creator is always included so
@@ -193,6 +199,17 @@ class CommunityService extends BaseService
             'units as occupant_occupied_count' => fn($q) => $q->where('occupancy_type', 'occupant_occupied'),
             'units as vacant_count'          => fn($q) => $q->where('occupancy_type', 'vacant'),
             'units as total_units_count',
+        ]);
+
+        // Assigned staff users (WeConnectU "Select Users") + the community manager
+        // — used to prefill the Edit Community modal's pickers. Bank accounts and
+        // members back the community-info modal's Bank Details / Trustees tabs.
+        $community->load([
+            'assignedUsers:id',
+            'communityManager:id,name,email',
+            'bankAccounts',
+            'members',
+            'billingSetup',
         ]);
 
         $invoiceStatusCounts = Invoice::whereHas('unit', fn($q) => $q->where('community_id', $community->id))
@@ -297,15 +314,79 @@ class CommunityService extends BaseService
                 'billing_day', 'payment_terms_days', 'payment_reminder_days', 'billing_paused', 'is_active',
                 'country', 'currency',
                 'registration_number', 'csos_registration_number', 'income_tax_number',
+                'merchant_number', 'pdf_passwords',
+                'previous_managing_agent', 'opening_balance_date',
                 'financial_year_end_month', 'is_vat_registered', 'vat_number',
                 'interest_rate', 'interest_exempt_threshold', 'ageing_type',
+                // Settings → Charges
+                'penalty_admin_fee', 'warning_admin_fee', 'transfer_clearance_fee', 'phonecall_fee',
+                'handed_over_fee', 'notice_threshold_amount', 'apply_debt_collection_fee',
+                'notice_charges', 'notices_exemption',
             ])
             ->filter(fn($v) => !is_null($v))
             ->toArray();
 
         $community->update($fillable);
 
+        // Community Manager is handled separately so it can be cleared (null) —
+        // the null-filter above would otherwise drop it. Scoped to the org.
+        if (array_key_exists('community_manager_id', $data)) {
+            $community->update([
+                'community_manager_id' => $this->scopedManagerId($data['community_manager_id'], $community->organization_id),
+            ]);
+        }
+
+        // Re-sync assigned users (WeConnectU "Select Users") when provided. Scoped
+        // to same-organization users so a stray id can't grant cross-org access.
+        if (array_key_exists('user_ids', $data)) {
+            $assignedIds = User::where('organization_id', $community->organization_id)
+                ->whereIn('id', collect($data['user_ids'] ?? [])->unique()->all())
+                ->pluck('id')
+                ->all();
+            $community->assignedUsers()->sync($assignedIds);
+        }
+
         return $this->showUpdatedResource($community);
+    }
+
+    /**
+     * Submit a community's take-on, transitioning it from "Take-on" to "Active".
+     * Mirrors WeConnectU's "Submit Take-on" action.
+     *
+     * @param Community $community
+     * @return array
+     */
+    public function submitTakeOn(Community $community): array
+    {
+        $alreadyActive = $community->status === CommunityStatus::ACTIVE;
+
+        if (!$alreadyActive) {
+            $community->update(['status' => CommunityStatus::ACTIVE->value]);
+        }
+
+        return [
+            'status'  => CommunityStatus::ACTIVE->value,
+            'message' => $alreadyActive ? 'Community is already active.' : 'Take-on submitted. Community is now active.',
+        ];
+    }
+
+    /**
+     * Resolve a requested community-manager id to a valid same-organization user
+     * id, or null. Prevents assigning a manager from another organization.
+     *
+     * @param mixed $managerId
+     * @param string $organizationId
+     * @return int|null
+     */
+    private function scopedManagerId($managerId, string $organizationId): ?int
+    {
+        if (empty($managerId)) {
+            return null;
+        }
+
+        return User::where('organization_id', $organizationId)
+            ->whereKey($managerId)
+            ->value('id');
     }
 
     /**

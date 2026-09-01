@@ -20,7 +20,7 @@
       label="Select Users" placeholder="Select users..." />
 -->
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
 const props = defineProps({
   modelValue:  { type: Array, default: () => [] },
@@ -51,32 +51,40 @@ const normalised = computed(() =>
 
 const isSelected = (value) => props.modelValue.includes(value)
 
-// Trigger text: comma-joined labels of the selected values, else placeholder.
-const selectedText = computed(() => {
-  if (!props.modelValue.length) return null
-  return normalised.value
-    .filter(o => props.modelValue.includes(o.value))
-    .map(o => o.label)
-    .join(', ')
-})
+// Selected options (in the order they appear in the option list), rendered as
+// removable chips in the trigger.
+const selectedOptions = computed(() =>
+  normalised.value.filter(o => props.modelValue.includes(o.value))
+)
+
+const hasSelection = computed(() => selectedOptions.value.length > 0)
+
+function removeOption(value) {
+  emit('update:modelValue', props.modelValue.filter(v => v !== value))
+}
+
+// Recompute the (fixed-positioned) dropdown's placement from the trigger's
+// current rect. Called on open AND whenever the trigger's height changes — e.g.
+// selecting an item wraps the chips onto another row, growing the trigger, so
+// the panel must follow rect.bottom instead of overlapping the new chip row.
+function updatePosition() {
+  const rect = (triggerRef.value ?? containerRef.value)?.getBoundingClientRect()
+  if (!rect) return
+  const dropdownHeight = Math.min(normalised.value.length * 42 + 40, 288)
+  openUpward.value = rect.bottom + dropdownHeight > window.innerHeight
+  // Fixed positioning escapes any overflow-hidden ancestor (e.g. modal body)
+  dropdownStyle.value = {
+    left:  rect.left + 'px',
+    width: rect.width + 'px',
+    ...(openUpward.value
+      ? { bottom: window.innerHeight - rect.top + 4 + 'px', top: 'auto' }
+      : { top: rect.bottom + 4 + 'px', bottom: 'auto' }),
+  }
+}
 
 function toggle() {
   if (props.disabled) return
-  if (!isOpen.value) {
-    const rect = (triggerRef.value ?? containerRef.value)?.getBoundingClientRect()
-    if (rect) {
-      const dropdownHeight = Math.min(normalised.value.length * 42 + 40, 288)
-      openUpward.value = rect.bottom + dropdownHeight > window.innerHeight
-      // Fixed positioning escapes any overflow-hidden ancestor (e.g. modal body)
-      dropdownStyle.value = {
-        left:  rect.left + 'px',
-        width: rect.width + 'px',
-        ...(openUpward.value
-          ? { bottom: window.innerHeight - rect.top + 4 + 'px', top: 'auto' }
-          : { top: rect.bottom + 4 + 'px', bottom: 'auto' }),
-      }
-    }
-  }
+  if (!isOpen.value) updatePosition()
   isOpen.value = !isOpen.value
 }
 
@@ -85,6 +93,12 @@ function toggleOption(opt) {
     ? props.modelValue.filter(v => v !== opt.value)
     : [...props.modelValue, opt.value]
   emit('update:modelValue', next)
+  // The chip row count (and trigger height) changes — reposition the panel.
+  if (isOpen.value) nextTick(updatePosition)
+}
+
+function onReposition() {
+  if (isOpen.value) updatePosition()
 }
 
 function onClickOutside(e) {
@@ -93,14 +107,22 @@ function onClickOutside(e) {
   }
 }
 
-onMounted(()  => document.addEventListener('mousedown', onClickOutside))
-onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
+onMounted(() => {
+  document.addEventListener('mousedown', onClickOutside)
+  window.addEventListener('resize', onReposition)
+  window.addEventListener('scroll', onReposition, true)
+})
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onClickOutside)
+  window.removeEventListener('resize', onReposition)
+  window.removeEventListener('scroll', onReposition, true)
+})
 </script>
 
 <template>
   <div
     ref="containerRef"
-    class="flex flex-col gap-1.5"
+    class="flex flex-col gap-1.5 min-w-0"
     :class="disabled && 'opacity-50 pointer-events-none'"
   >
     <label v-if="label" :for="id" class="text-sm font-medium text-fg">
@@ -108,17 +130,41 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
     </label>
 
     <div class="relative">
-      <button
+      <div
         ref="triggerRef"
-        type="button"
+        role="button"
+        tabindex="0"
         :id="id"
         @click="toggle"
-        class="w-full min-h-11 flex items-center justify-between gap-2 px-4 py-2 text-sm rounded border bg-white outline-none select-none cursor-pointer border-border"
-        :class="selectedText ? 'text-foreground' : 'text-muted-foreground'"
+        @keydown.enter.prevent="toggle"
+        @keydown.space.prevent="toggle"
+        class="w-full min-h-11 flex items-start justify-between gap-2 px-3 py-1.5 text-sm rounded border bg-white outline-none select-none cursor-pointer border-border"
+        :class="hasSelection ? 'text-foreground' : 'text-muted-foreground'"
       >
-        <span class="truncate text-left">{{ selectedText ?? placeholder }}</span>
+        <!-- Chips wrap to as many rows as needed -->
+        <div v-if="hasSelection" class="flex flex-wrap gap-1.5 py-0.5 min-w-0">
+          <span
+            v-for="opt in selectedOptions"
+            :key="String(opt.value)"
+            class="inline-flex items-center gap-1 max-w-full pl-2 pr-1 py-0.5 rounded bg-muted text-xs text-foreground border border-border"
+          >
+            <span class="truncate">{{ opt.label }}</span>
+            <button
+              type="button"
+              @click.stop="removeOption(opt.value)"
+              class="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded-full text-muted-foreground hover:bg-border hover:text-foreground transition-colors"
+              :aria-label="`Remove ${opt.label}`"
+            >
+              <svg class="w-3 h-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <path d="M6 6l8 8M14 6l-8 8" />
+              </svg>
+            </button>
+          </span>
+        </div>
+        <span v-else class="truncate text-left py-1">{{ placeholder }}</span>
+
         <svg
-          class="w-4 h-4 shrink-0 text-muted-foreground transition-transform duration-200"
+          class="w-4 h-4 shrink-0 mt-2 text-muted-foreground transition-transform duration-200"
           :class="isOpen && 'rotate-180'"
           viewBox="0 0 20 20"
           fill="currentColor"
@@ -130,7 +176,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
             clip-rule="evenodd"
           />
         </svg>
-      </button>
+      </div>
 
       <Transition
         enter-active-class="transition duration-100 ease-out"

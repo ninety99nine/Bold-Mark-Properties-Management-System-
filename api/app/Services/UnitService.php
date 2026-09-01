@@ -1487,7 +1487,12 @@ class UnitService extends BaseService
         $to   = $data['to'] ?? null;
         $st   = $this->buildStatementData($unit, $from, $to);
 
-        $format   = in_array($data['_format'] ?? 'xlsx', ['csv', 'xlsx', 'pdf']) ? $data['_format'] : 'xlsx';
+        $format   = in_array($data['_format'] ?? 'xlsx', ['csv', 'xlsx', 'pdf'], true) ? ($data['_format'] ?? 'xlsx') : 'xlsx';
+
+        if ($format === 'pdf') {
+            return $this->renderStatementPdf($community, $unit, $from, $to);
+        }
+
         $unit->loadMissing('owner');
         $who      = $unit->owner?->full_name ?? $unit->unit_number;
         $filename = trim('customer statement-' . strtolower((string) $unit->customer_code) . ' _ ' . strtolower($who) . '-' . ($from ?: '') . ' - ' . ($to ?: ''));
@@ -1499,6 +1504,205 @@ class UnitService extends BaseService
             $format,
             'Customer Statement — ' . $who,
             ['Unit' => $unit->unit_number, 'Customer Code' => $unit->customer_code, 'Period' => trim(($from ?: '…') . ' → ' . ($to ?: '…'))]
+        );
+    }
+
+    /**
+     * Render a unit's customer statement as a WeConnectU-style PDF.
+     *
+     * @param Community $community
+     * @param Unit $unit
+     * @param string|null $from
+     * @param string|null $to
+     * @return \Symfony\Component\HttpFoundation\Response
+     */
+    /**
+     * Build a customer's on-screen ledger (Detailed Customer Ledger / Status Management drill-in).
+     *
+     * @param Community $community
+     * @param Unit $unit
+     * @param string|null $from
+     * @param string|null $to
+     * @return array
+     */
+    public function buildCustomerLedger(Community $community, Unit $unit, ?string $from = null, ?string $to = null): array
+    {
+        $unit->loadMissing('owner');
+        $customer     = $unit->owner;
+        $customerCode = $customer?->customer_code ?: $unit->customer_code;
+
+        $bank = \App\Models\BankAccount::where('community_id', $community->id)
+            ->where('is_active', true)
+            ->orderByRaw("CASE WHEN type = 'current' THEN 0 ELSE 1 END")
+            ->first();
+        $bankSource = $bank ? strtoupper((string) $bank->bank_name) . ': ' . $bank->account_number : 'Receipt';
+
+        $invoices = Invoice::where('unit_id', $unit->id)->get();
+        $payments = CashbookEntry::where('unit_id', $unit->id)->where('type', 'credit')->get();
+
+        $opening = 0.0;
+        if ($from) {
+            $opening += (float) $invoices->filter(fn ($i) => optional($i->billing_period)->toDateString() < $from)->sum('amount');
+            $opening -= (float) $payments->filter(fn ($p) => optional($p->date)->toDateString() < $from)->sum('amount');
+        }
+
+        $events = [];
+        foreach ($invoices as $inv) {
+            $d = optional($inv->billing_period)->toDateString() ?? optional($inv->created_at)->toDateString();
+            $events[] = ['date' => $d, 'source' => 'Invoice', 'description' => $inv->invoice_number, 'remarks' => '', 'debit' => (float) $inv->amount, 'credit' => 0.0, 'invoice_id' => $inv->id, 'invoice_number' => $inv->invoice_number];
+        }
+        foreach ($payments as $p) {
+            $d = optional($p->date)->toDateString() ?? optional($p->created_at)->toDateString();
+            // WeConnectU splits a quoted remark (e.g. "Payment - Thank you") out of the description.
+            $desc = (string) ($p->description ?: 'Payment received');
+            $remarks = '';
+            if (preg_match('/"([^"]+)"/', $desc, $m)) {
+                $remarks = $m[1];
+                $desc = trim(preg_replace('/\s*-?\s*"[^"]+"/', '', $desc));
+            }
+            $events[] = ['date' => $d, 'source' => $bankSource, 'description' => $desc, 'remarks' => $remarks, 'debit' => 0.0, 'credit' => (float) $p->amount, 'invoice_id' => null, 'invoice_number' => null];
+        }
+
+        $events = array_values(array_filter($events, function ($e) use ($from, $to) {
+            if ($from && ($e['date'] ?? '') < $from) return false;
+            if ($to && ($e['date'] ?? '') > $to) return false;
+            return true;
+        }));
+        usort($events, fn ($a, $b) => ($a['date'] ?? '') <=> ($b['date'] ?? ''));
+
+        $balance     = $opening;
+        $debitTotal  = 0.0;
+        $creditTotal = 0.0;
+        $rows = [[
+            'date' => $from ?: ($events[0]['date'] ?? $to), 'source' => '', 'description' => 'Balance b/f', 'remarks' => '',
+            'debit' => $opening, 'credit' => 0.0, 'cumulative' => $opening, 'invoice_id' => null, 'invoice_number' => null,
+        ]];
+        foreach ($events as $e) {
+            $balance     += $e['debit'] - $e['credit'];
+            $debitTotal  += $e['debit'];
+            $creditTotal += $e['credit'];
+            $rows[] = array_merge($e, ['cumulative' => round($balance, 2)]);
+        }
+
+        return [
+            'customer' => [
+                'unit_id'       => $unit->id,
+                'unit_number'   => $unit->unit_number,
+                'customer_code' => $customerCode,
+                'customer_name' => $customer?->full_name ?? '—',
+            ],
+            'rows'   => $rows,
+            'totals' => ['debit' => round($debitTotal, 2), 'credit' => round($creditTotal, 2), 'balance' => round($balance, 2)],
+        ];
+    }
+
+    private function renderStatementPdf(Community $community, Unit $unit, ?string $from, ?string $to): \Symfony\Component\HttpFoundation\Response
+    {
+        $vars = $this->buildStatementPresentation($community, $unit, $from, $to);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdfs.statement', $vars)->setPaper('a4', 'portrait');
+
+        // Enable inline PHP so the "Page X/Y" page-text script runs.
+        $pdf->getDomPDF()->getOptions()->setIsPhpEnabled(true);
+
+        return $pdf->download('CustomerStatement-' . ($vars['customerCode'] ?: $unit->unit_number) . '.pdf');
+    }
+
+    /**
+     * Assemble every presentation variable the statement blade needs for a unit
+     * (header, customer block, transaction ledger, ageing buckets, banking + logo).
+     * Extracted so both the single-statement PDF and the combined "View PDF"
+     * (Customer Statements) render the exact same layout.
+     *
+     * @param Community $community
+     * @param Unit $unit
+     * @param string|null $from
+     * @param string|null $to
+     * @return array<string, mixed>
+     */
+    public function buildStatementPresentation(Community $community, Unit $unit, ?string $from, ?string $to): array
+    {
+        $unit->loadMissing('owner');
+        $customer     = $unit->owner;
+        $customerCode = $customer?->customer_code ?: $unit->customer_code;
+
+        // Community's primary (current) bank account drives the footer + payment source.
+        $bank = \App\Models\BankAccount::where('community_id', $community->id)
+            ->where('is_active', true)
+            ->orderByRaw("CASE WHEN type = 'current' THEN 0 ELSE 1 END")
+            ->first();
+        $bankSource = $bank ? strtoupper((string) $bank->bank_name) . ":\n" . $bank->account_number : 'Receipt';
+
+        // ── Transaction ledger (invoices as debits, receipts as credits) ──
+        $invoices = Invoice::where('unit_id', $unit->id)->get();
+        $payments = CashbookEntry::where('unit_id', $unit->id)->where('type', 'credit')->get();
+
+        $opening = 0.0;
+        if ($from) {
+            $opening += (float) $invoices->filter(fn ($i) => optional($i->billing_period)->toDateString() < $from)->sum('amount');
+            $opening -= (float) $payments->filter(fn ($p) => optional($p->date)->toDateString() < $from)->sum('amount');
+        }
+
+        $events = [];
+        foreach ($invoices as $inv) {
+            $d = optional($inv->billing_period)->toDateString() ?? optional($inv->created_at)->toDateString();
+            $events[] = ['date' => $d, 'source' => 'Invoice', 'description' => $inv->invoice_number, 'debit' => (float) $inv->amount, 'credit' => 0.0, 'invoice_id' => $inv->id];
+        }
+        foreach ($payments as $p) {
+            $d = optional($p->date)->toDateString() ?? optional($p->created_at)->toDateString();
+            $events[] = ['date' => $d, 'source' => $bankSource, 'description' => $p->description ?: 'Payment received', 'debit' => 0.0, 'credit' => (float) $p->amount, 'invoice_id' => null];
+        }
+
+        $events = array_values(array_filter($events, function ($e) use ($from, $to) {
+            if ($from && ($e['date'] ?? '') < $from) return false;
+            if ($to && ($e['date'] ?? '') > $to) return false;
+            return true;
+        }));
+        usort($events, fn ($a, $b) => ($a['date'] ?? '') <=> ($b['date'] ?? ''));
+
+        $balance = $opening;
+        $rows = [];
+        $rows[] = ['date' => $from ?: ($events[0]['date'] ?? $to), 'source' => '', 'description' => 'Balance b/f', 'debit' => $opening, 'credit' => 0.0, 'cumulative' => $opening, 'invoice_id' => null];
+        foreach ($events as $e) {
+            $balance += $e['debit'] - $e['credit'];
+            $rows[] = ['date' => $e['date'], 'source' => $e['source'], 'description' => $e['description'], 'debit' => $e['debit'], 'credit' => $e['credit'], 'cumulative' => $balance, 'invoice_id' => $e['invoice_id']];
+        }
+
+        // ── Ageing buckets (reuse the Age Analysis computation for an exact match) ──
+        $ageRow = collect((new AgeAnalysisService())->getAgeAnalysis($community, [])['rows'])
+            ->firstWhere('unit_id', $unit->id);
+        $ageing = [
+            '120_plus' => (float) ($ageRow['120_plus'] ?? 0),
+            '90_days'  => (float) ($ageRow['90_days'] ?? 0),
+            '60_days'  => (float) ($ageRow['60_days'] ?? 0),
+            '30_days'  => (float) ($ageRow['30_days'] ?? 0),
+            'current'  => (float) ($ageRow['current'] ?? 0),
+        ];
+
+        // ── Header + customer presentation ──
+        $et          = $community->entity_type instanceof \BackedEnum ? $community->entity_type->value : $community->entity_type;
+        $entityLabel = ($community->suppress_entity_type || ! $et) ? '' : ucwords(str_replace('_', ' ', (string) $et));
+
+        if ($customer && (trim((string) $customer->suburb) !== '' || trim((string) $customer->town) !== '' || trim((string) $customer->postal_code) !== '' || trim((string) $customer->address_line_2) !== '')) {
+            $addressLines = collect([$customer->address, $customer->address_line_2, $customer->suburb, $customer->town, $customer->postal_code])
+                ->filter(fn ($l) => trim((string) $l) !== '')->values();
+        } else {
+            $addressLines = collect(preg_split('/,\s*/', (string) ($customer?->address ?? '')))
+                ->filter(fn ($l) => trim($l) !== '')->values();
+        }
+
+        $statementDate = $to ?: now()->toDateString();
+        $totalDue      = $balance;
+        $frontendUrl   = rtrim((string) config('app.frontend_url'), '/');
+        $accountType   = strtoupper($bank ? ($bank->type instanceof \BackedEnum ? $bank->type->value : (string) $bank->type) : 'CURRENT');
+
+        $organization    = $community->organization;
+        $companyLogoPath = $organization?->logoFilePath();
+
+        return compact(
+            'community', 'unit', 'customer', 'customerCode', 'addressLines', 'entityLabel',
+            'statementDate', 'rows', 'ageing', 'totalDue', 'bank', 'accountType', 'frontendUrl',
+            'organization', 'companyLogoPath'
         );
     }
 

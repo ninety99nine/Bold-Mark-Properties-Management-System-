@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Organization;
 
+use App\Helpers\BankHelper;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateOrganizationRequest extends FormRequest
 {
@@ -25,13 +27,33 @@ class UpdateOrganizationRequest extends FormRequest
         return [
             'company_name'    => ['sometimes', 'string', 'max:255'],
             'company_slogan'  => ['nullable', 'string', 'max:255'],
+            'company_reg_no'  => ['nullable', 'string', 'max:255'],
+            'transfer_clearance_fee' => ['nullable', 'numeric', 'min:0'],
             'contact_email'   => ['sometimes', 'email', 'max:255'],
+            'outgoing_email'  => ['nullable', 'email', 'max:255'],
             'contact_phone'   => ['nullable', 'string', 'max:30'],
             'address'         => ['nullable', 'string', 'max:500'],
             'country'         => ['sometimes', 'string', 'size:2'],
             'currency'        => ['sometimes', 'string', 'max:10'],
             'primary_color'   => ['nullable', 'string', 'max:10', 'regex:/^#[0-9A-Fa-f]{3,6}$/'],
             'secondary_color' => ['nullable', 'string', 'max:10', 'regex:/^#[0-9A-Fa-f]{3,6}$/'],
+
+            'bank_account_holder' => ['nullable', 'string', 'max:255'],
+            'bank_name'           => ['nullable', 'string', Rule::in(BankHelper::banks())],
+            'bank_account_type'   => ['nullable', 'string', Rule::in(BankHelper::accountTypes())],
+            'bank_account_number' => ['nullable', 'string', 'max:50'],
+            'bank_branch_code'    => ['nullable', 'string', 'max:20'],
+            'bank_branch_name'    => ['nullable', 'string', 'max:255'],
+
+            'logo'         => ['nullable', 'image', 'max:5120'],
+            'icon'         => ['nullable', 'image', 'max:5120'],
+            'email_header' => ['nullable', 'image', 'max:5120'],
+            'email_footer' => ['nullable', 'image', 'max:5120'],
+
+            'remove_logo'         => ['nullable', 'boolean'],
+            'remove_email_header' => ['nullable', 'boolean'],
+            'remove_email_footer' => ['nullable', 'boolean'],
+            'remove_icon'         => ['nullable', 'boolean'],
         ];
     }
 

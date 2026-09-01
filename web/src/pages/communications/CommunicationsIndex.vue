@@ -15,7 +15,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import AppMultiSelect from '@/components/common/AppMultiSelect.vue'
 import EmailTagsInput from '@/components/common/EmailTagsInput.vue'
 
-const { info } = useToast()
+const { success, error: toastError } = useToast()
 
 const activeTab = ref('send') // 'send' | 'archive'
 
@@ -93,52 +93,101 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// ── Archive (stub) ────────────────────────────────────────────────────
+// ── Archive (real) ────────────────────────────────────────────────────
 const archiveFrom = ref('')
 const archiveTo = ref('')
 const archiveSearch = ref('')
-const archiveRows = ref([]) // empty until backend is wired
+const archiveRows = ref([])
 
-function runArchiveSearch() {
-  info('Communication history will appear here once sending is enabled.')
+function statusLabel(row) {
+  if ((row.recipient_count ?? 0) > 1) {
+    return `${row.sent_count} of ${row.recipient_count} sent · ${row.error_count} errors`
+  }
+  const s = row.recipients?.[0]?.status ?? row.status
+  return { read: 'Read', delivered: 'Delivered', sent: 'Sent', failed: 'Failed', queued: 'Queued' }[s] ?? s
 }
 
-// ── Send (stub) ───────────────────────────────────────────────────────
+async function fetchArchive() {
+  try {
+    const { data } = await api.get('/communications', {
+      params: { _per_page: 25, _search: archiveSearch.value || undefined },
+    })
+    archiveRows.value = (data.data ?? []).map(row => ({
+      sentDate:  (row.sent_date || '').replace('T', ' ').slice(0, 16),
+      community: row.community?.name ?? '',
+      subject:   row.subject,
+      sentTo:    (row.recipient_count ?? 0) > 1
+        ? `${row.recipient_count} recipients`
+        : (row.recipients?.[0]?.recipient_email ?? ''),
+      sentBy:    row.sent_by_name,
+      status:    statusLabel(row),
+    }))
+  } catch {
+    archiveRows.value = []
+  }
+}
+
+function runArchiveSearch() { fetchArchive() }
+
+onMounted(fetchArchive)
+
+// ── Send (portfolio-wide: fan out to each selected community) ──────────
+const sending = ref(false)
 const canSend = computed(() =>
   form.value.communityIds.length > 0 &&
   form.value.recipients.length > 0 &&
   form.value.subject.trim() &&
   form.value.body.trim() &&
   bccValid.value &&
-  !overSizeLimit.value
+  !overSizeLimit.value &&
+  !sending.value
 )
 
-function sendCommunication() {
-  info('Sending is not enabled yet — this screen is being wired up.')
+async function sendCommunication() {
+  if (!canSend.value) return
+  sending.value = true
+  try {
+    for (const communityId of form.value.communityIds) {
+      const fd = new FormData()
+      form.value.recipients.forEach(g => fd.append('recipient_groups[]', g))
+      fd.append('subject', form.value.subject)
+      fd.append('body', form.value.body)
+      if (form.value.bcc.length) fd.append('bcc', form.value.bcc.join(','))
+      attachments.value.forEach(f => fd.append('attachments[]', f))
+      await api.post(`/communities/${communityId}/communications`, fd)
+    }
+    success('Communication sent.')
+    form.value.subject = ''
+    form.value.body = ''
+    attachments.value = []
+    activeTab.value = 'archive'
+    fetchArchive()
+  } catch (err) {
+    toastError(err?.response?.data?.message ?? 'Failed to send communication.')
+  } finally {
+    sending.value = false
+  }
 }
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="font-body font-bold text-2xl text-foreground">Communications</h1>
+  <div>
+    <h1 class="mb-5 font-body font-bold text-2xl text-foreground">Communications</h1>
 
-    <!-- Tabs -->
-    <div class="flex items-center gap-1 border-b border-border">
+    <!-- Tabs (WeConnectU folder style) -->
+    <div class="flex items-end gap-1">
       <button
         v-for="tab in [{ id: 'send', label: 'Send' }, { id: 'archive', label: 'Archive' }]"
         :key="tab.id"
         @click="activeTab = tab.id"
-        :class="[
-          'px-4 py-2.5 text-sm font-medium -mb-px border-b-2 transition-colors',
-          activeTab === tab.id
-            ? 'border-accent text-accent'
-            : 'border-transparent text-muted-foreground hover:text-foreground',
-        ]"
+        :class="activeTab === tab.id
+          ? '-mb-px rounded-t-lg border border-border border-b-0 bg-white px-6 py-2.5 text-sm font-semibold text-foreground'
+          : 'px-6 py-2.5 text-sm text-[#2f6fb0] hover:underline'"
       >{{ tab.label }}</button>
     </div>
 
     <!-- ── SEND ─────────────────────────────────────────────────────── -->
-    <div v-if="activeTab === 'send'" class="rounded-lg border bg-card text-card-foreground shadow-sm">
+    <div v-if="activeTab === 'send'" class="rounded-lg rounded-tl-none border border-border bg-white text-card-foreground shadow-sm">
       <div class="px-6 py-4 border-b border-border">
         <h3 class="tracking-tight font-body font-semibold text-lg">Send Communication</h3>
       </div>
@@ -170,7 +219,7 @@ function sendCommunication() {
               <input type="checkbox" v-model="allRecipients" class="w-4 h-4 rounded border-border accent-accent" />
               All
             </label>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+            <div class="grid w-fit grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-1.5">
               <label
                 v-for="group in RECIPIENT_GROUPS"
                 :key="group.value"
@@ -180,16 +229,17 @@ function sendCommunication() {
                 {{ group.label }}
               </label>
             </div>
-            <button
-              v-if="!showBcc"
-              type="button"
-              @click="showBcc = true"
-              class="mt-3 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
-              Add BCC
+            <div v-if="!showBcc" class="mt-3 flex items-center gap-1.5 text-sm">
+              <button
+                type="button"
+                @click="showBcc = true"
+                class="inline-flex items-center gap-1.5 text-accent hover:underline"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                Add BCC
+              </button>
               <span class="text-muted-foreground font-normal">(BCC will only receive a copy of the 1st email)</span>
-            </button>
+            </div>
             <div v-else class="mt-3 max-w-md">
               <label class="text-sm font-medium text-foreground block mb-1.5">BCC</label>
               <EmailTagsInput v-model="form.bcc" v-model:valid="bccValid" placeholder="bcc@example.com" />
@@ -208,12 +258,13 @@ function sendCommunication() {
           <label class="text-sm font-medium text-foreground md:pt-1">Attachments</label>
           <div>
             <div
+              @click="fileInput?.click()"
               @dragover.prevent="dragOver = true"
               @dragleave.prevent="dragOver = false"
               @drop.prevent="onDrop"
               :class="[
-                'rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
-                dragOver ? 'border-accent bg-accent/5' : 'border-border',
+                'cursor-pointer rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
+                dragOver ? 'border-accent bg-accent/5' : 'border-border hover:bg-muted/40',
               ]"
             >
               <p class="text-sm text-muted-foreground">Drag and drop your attachments here</p>
@@ -270,7 +321,7 @@ function sendCommunication() {
     </div>
 
     <!-- ── ARCHIVE ──────────────────────────────────────────────────── -->
-    <div v-else class="rounded-lg border bg-card text-card-foreground shadow-sm">
+    <div v-else class="rounded-lg rounded-tl-none border border-border bg-white text-card-foreground shadow-sm">
       <div class="px-6 py-4 border-b border-border">
         <h3 class="tracking-tight font-body font-semibold text-lg">Archive</h3>
       </div>

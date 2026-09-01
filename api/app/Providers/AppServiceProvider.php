@@ -9,6 +9,7 @@ use App\Models\ComplianceChecklist;
 use App\Models\ComplianceChecklistItem;
 use App\Models\ComplianceTemplate;
 use App\Models\Community;
+use App\Models\CustomerGroup;
 use App\Models\Invoice;
 use App\Models\Owner;
 use App\Models\RiskRule;
@@ -24,6 +25,7 @@ use App\Policies\ComplianceChecklistItemPolicy;
 use App\Policies\ComplianceChecklistPolicy;
 use App\Policies\ComplianceTemplatePolicy;
 use App\Policies\CommunityPolicy;
+use App\Policies\CustomerGroupPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\OwnerPolicy;
 use App\Policies\RiskRulePolicy;
@@ -114,11 +116,13 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Ledger::class, LedgerPolicy::class);
         Gate::policy(Community::class, CommunityPolicy::class);
+        Gate::policy(CustomerGroup::class, CustomerGroupPolicy::class);
         Gate::policy(Unit::class, UnitPolicy::class);
         Gate::policy(Owner::class, OwnerPolicy::class);
         Gate::policy(Occupant::class, OccupantPolicy::class);
         Gate::policy(UnitChargeConfig::class, UnitChargeConfigPolicy::class);
         Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(\App\Models\CreditNote::class, \App\Policies\CreditNotePolicy::class);
         Gate::policy(BankAccount::class, BankAccountPolicy::class);
         Gate::policy(CashbookEntry::class, CashbookEntryPolicy::class);
         Gate::policy(RiskRule::class, RiskRulePolicy::class);
@@ -137,6 +141,7 @@ class AppServiceProvider extends ServiceProvider
         Route::model('community', Community::class);
         Route::model('unit', Unit::class);
         Route::model('owner', Owner::class);
+        Route::model('customerGroup', CustomerGroup::class);
         Route::model('occupant', Occupant::class);
         Route::model('ledger', Ledger::class);
         Route::model('chargeConfig', UnitChargeConfig::class);
@@ -144,6 +149,8 @@ class AppServiceProvider extends ServiceProvider
         Route::bind('invoice', function (string $value) {
             return Invoice::withTrashed()->findOrFail($value);
         });
+
+        Route::model('creditNote', \App\Models\CreditNote::class);
 
         // Resolves {deletedInvoice} route parameters — includes soft-deleted records
         Route::bind('deletedInvoice', function (string $value) {
@@ -158,7 +165,11 @@ class AppServiceProvider extends ServiceProvider
         Route::model('communication', \App\Models\UnitCommunication::class);
         Route::model('offence', \App\Models\UnitOffence::class);
         Route::model('task', \App\Models\UnitTask::class);
+        Route::model('note', \App\Models\UnitCollectionNote::class);
         Route::model('document', \App\Models\UnitDocument::class);
         Route::model('member', \App\Models\CommunityMember::class);
+        Route::model('communicationLog', \App\Models\Communication::class);
+        Route::model('messageTemplate', \App\Models\MessageTemplate::class);
+        Route::model('ledgerReport', \App\Models\LedgerReportBatch::class);
     }
 }

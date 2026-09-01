@@ -1,42 +1,100 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import AppButton from '@/components/common/AppButton.vue'
 import SidebarIcon from '@/components/layout/SidebarIcon.vue'
 import { useCommunityStore } from '@/stores/community'
 
 const route          = useRoute()
 const router         = useRouter()
 const communityStore = useCommunityStore()
-const collapsed = ref(false)
 
 // Which context are we in? null selection = Global / portfolio rail.
 const inCommunity   = computed(() => communityStore.selectedId != null)
-const community     = computed(() => communityStore.selected)
 const communityId   = computed(() => communityStore.selectedId)
 
 // ── GLOBAL rail — portfolio-wide (mirrors WeConnectU's global sidebar) ──────────
+// Same WeConnectU icon-rail + fly-out pattern as the community rail below:
+// each parent slides out a panel; unbuilt destinations are flagged `soon`.
 const globalNav = computed(() => [
-  { name: 'Dashboard',   to: '/dashboard',    icon: 'house' },
-  { name: 'Communities', to: '/communities',  icon: 'building' },
+  { name: 'Dashboard',   to: '/dashboard',   icon: 'line-chart' },
+  { name: 'Communities', to: '/communities', icon: 'grid' },
   {
-    name: 'Manage', key: 'g-manage', icon: 'layers',
+    // Manage flyout — mirrors WeConnectU's global Manage menu.
+    // Rail icon = clipboard-check; flyout header icon = list-checks.
+    name: 'Manage', icon: 'clipboard-check', headerIcon: 'list-checks',
     children: [
-      { name: 'Planner & Compliance', to: '/compliance', icon: 'clipboard-check' },
-      { name: 'Tasks',                to: '/tasks',      icon: 'list-checks' },
+      { name: 'Planner & Compliance', soon: true },
+      { name: 'Tasks',                soon: true },
+      { name: 'Offences',             soon: true },
+      { name: 'Transfers',            soon: true },
     ],
   },
   {
-    name: 'Finance', key: 'g-finance', icon: 'wallet',
-    children: [
-      { name: 'Run Billing',         to: '/billing',             icon: 'file-text' },
-      { name: 'Cashbooks',           to: '/cashbook',            icon: 'wallet' },
-      { name: 'Customer Management', to: '/customer-management', icon: 'alert-circle' },
-      { name: 'Age Analysis',        to: '/age-analysis',        icon: 'trending-down' },
+    // Finance flyout — mirrors WeConnectU's global Finance menu (sections + order).
+    name: 'Finance', icon: 'wallet',
+    groups: [
+      { title: 'Customers', icon: 'users', items: [
+        { name: 'Netcash Debit Orders', soon: true },
+        { name: 'Debit Order Batches',  soon: true },
+        { name: 'Customer Management',  to: '/customer-management' },
+      ] },
+      { title: 'Suppliers', icon: 'truck', items: [
+        { name: 'Payments',            soon: true },
+        { name: 'Invoice',             soon: true },
+        { name: 'Recurring Invoices',  soon: true },
+        { name: 'Supplier Management', soon: true },
+        { name: 'Supplier Balances',   soon: true },
+      ] },
+      { title: 'General', icon: 'building', items: [
+        { name: 'Cashbooks',              to: '/cashbook' },
+        { name: 'Journals',               soon: true },
+        { name: 'Lock Financial Periods', soon: true },
+      ] },
+      { title: 'Billing', icon: 'file-text', items: [
+        { name: 'Run Billing',            to: '/billing' },
+        { name: 'Import Utility Readings', soon: true },
+      ] },
+      { title: 'Reports', icon: 'line-chart', items: [
+        { name: 'Ledger Report',        soon: true },
+        { name: 'Custom Ledger Report', soon: true },
+        { name: 'Community Report',     soon: true },
+      ] },
     ],
   },
-  { name: 'Communicate', to: '/communications', icon: 'megaphone' },
-  { name: 'Vacancies',   to: '/vacancies',    icon: 'door-open', badge: 'new' },
+  { name: 'Communicate', to: '/communications', icon: 'mail' },
+  {
+    // Reports flyout — mirrors WeConnectU's global Reports menu (Company section).
+    name: 'Reports', icon: 'file-text', headerIcon: 'line-chart',
+    groups: [
+      { title: 'Company', icon: 'line-chart', items: [
+        { name: 'Costs',         soon: true },
+        { name: 'Meeting Costs', soon: true },
+        { name: 'Audit Trail',   soon: true },
+      ] },
+    ],
+  },
+  {
+    // Settings flyout — mirrors WeConnectU's global Settings menu (grouped).
+    name: 'Settings', icon: 'sliders',
+    groups: [
+      { title: 'General Settings', icon: 'sliders', items: [
+        { name: 'Company', to: '/settings/company' },
+        { name: 'Users',   to: '/settings/users' },
+      ] },
+      { title: 'Operations Settings', icon: 'clipboard-check', items: [
+        { name: 'Compliance',            to: '/compliance' },
+        { name: 'Meetings',              soon: true },
+        { name: 'Communication',         to: '/settings/communication' },
+        { name: 'Community Roles Setup', soon: true },
+      ] },
+      { title: 'Finances Settings', icon: 'wallet', items: [
+        { name: 'Default Ledgers',       soon: true },
+        { name: 'Debt Collection',       soon: true },
+        { name: 'Utilities Schedule',    soon: true },
+        { name: 'Supplier Verification', soon: true },
+      ] },
+    ],
+  },
 ])
 
 // ── COMMUNITY rail — a single community (mirrors WeConnectU's /app sidebar) ──────
@@ -58,7 +116,7 @@ const communityNav = computed(() => {
       // Rail icon = clipboard-check; flyout header icon = list-checks (like WeConnectU).
       name: 'Manage', icon: 'clipboard-check', headerIcon: 'list-checks',
       children: [
-        { name: 'Tasks',     to: '/tasks' },
+        { name: 'Tasks',     soon: true },
         { name: 'Offences',  soon: true },
         { name: 'Transfers', soon: true },
         { name: 'Documents', soon: true },
@@ -71,13 +129,13 @@ const communityNav = computed(() => {
         { title: 'Customers', icon: 'users', items: [
           { name: 'Invoice',                 to: '/customers/invoice' },
           { name: 'Recurring Invoices',      soon: true },
-          { name: 'Credit Note',             soon: true },
-          { name: 'Detailed Customer Ledger', soon: true },
+          { name: 'Credit Note',             to: '/customers/credit-note' },
+          { name: 'Detailed Customer Ledger', to: '/customers/ledger' },
           { name: 'Age Analysis',            to: '/age-analysis' },
-          { name: 'Status Management',       soon: true },
+          { name: 'Status Management',       to: '/customers/status' },
           { name: 'Interest on Arrears',     soon: true },
-          { name: 'Manage Customers',        to: '/customer-management' },
-          { name: 'Customer Statements',     soon: true },
+          { name: 'Manage Customers',        to: '/customers/manage' },
+          { name: 'Customer Statements',     to: '/customers/statements' },
         ] },
         { title: 'Suppliers', icon: 'truck', items: [
           { name: 'Payments',                soon: true },
@@ -128,7 +186,7 @@ const communityNav = computed(() => {
       children: [
         { name: 'General',                   to: '/settings/general' },
         { name: 'Address & Contact Details', to: '/settings/address-contact' },
-        { name: 'Charges',                   soon: true },
+        { name: 'Charges',                   to: '/settings/charges' },
         { name: 'Default Billing Setup',     to: '/settings/default-billing-setup' },
         { name: 'Community Roles',           soon: true },
         { name: 'Offences Clause Setup',     soon: true },
@@ -150,20 +208,7 @@ function withCommunityTargets(item, id) {
 
 const navItems = computed(() => (inCommunity.value ? communityNav.value : globalNav.value))
 
-// Track which fly-out parents are open (default: open).
-const expandedParents = ref({})
-function toggleParent(key) { expandedParents.value[key] = !expandedParents.value[key] }
-
 const effectiveTab = computed(() => route.query.tab || 'overview')
-
-// Open the parent group of the active route automatically (and default-open groups).
-watch([navItems, () => route.fullPath], () => {
-  for (const item of navItems.value) {
-    if (!item.key) continue
-    if (expandedParents.value[item.key] === undefined) expandedParents.value[item.key] = true
-    if (item.children && item.children.some(isActive)) expandedParents.value[item.key] = true
-  }
-}, { immediate: true })
 
 function isActive(item) {
   const to = item.to
@@ -222,14 +267,14 @@ function openChild(child) {
 </script>
 
 <template>
-  <!-- ── COMMUNITY context: compact WeConnectU-style icon rail ──────────────── -->
+  <!-- ── WeConnectU-style icon rail — used for BOTH the global & community levels ── -->
   <aside
-    v-if="inCommunity"
-    class="relative flex flex-col items-center bg-navy-dark text-white min-h-screen border-r border-white/5 flex-shrink-0 w-20"
+    class="relative flex flex-col items-center bg-navy-dark text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28"
   >
     <nav class="flex-1 flex flex-col items-center gap-1 py-4 w-full px-2">
-      <!-- Global exit -->
+      <!-- Global — exit button inside a community, active context indicator at the global level -->
       <button
+        v-if="inCommunity"
         type="button"
         @click="exitToGlobal"
         class="flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150 text-white/50 hover:bg-white/5 hover:text-white/80"
@@ -237,6 +282,13 @@ function openChild(child) {
         <SidebarIcon name="fingerprint" :size="22" />
         <span>Global</span>
       </button>
+      <RouterLink
+        v-else to="/dashboard"
+        class="flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150 text-accent bg-accent/10"
+      >
+        <SidebarIcon name="fingerprint" :size="22" />
+        <span>Global</span>
+      </RouterLink>
 
       <template v-for="item in navItems" :key="item.name">
         <!-- Parent with a fly-out sub-menu (e.g. Units → Units / PQs, Finance → …) -->
@@ -246,11 +298,18 @@ function openChild(child) {
           @click="toggleFlyout(item)"
           :class="[
             'flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150',
-            (flyout?.name === item.name || isParentActive(item)) ? 'text-accent bg-accent/10' : 'text-white/50 hover:bg-white/5 hover:text-white/80',
+            // Active (gold) only when the current page belongs to this menu — NOT
+            // merely because its fly-out is open. An open (but inactive) fly-out
+            // gets a subtle neutral highlight so you can see which panel is showing.
+            isParentActive(item)
+              ? 'text-accent bg-accent/10'
+              : flyout?.name === item.name
+                ? 'text-white/80 bg-white/5'
+                : 'text-white/50 hover:bg-white/5 hover:text-white/80',
           ]"
         >
           <SidebarIcon :name="item.icon" :size="22" />
-          <span class="text-center">{{ item.name }}</span>
+          <span class="text-center max-w-[80px] leading-tight">{{ item.name }}</span>
         </button>
 
         <!-- Leaf item -->
@@ -262,7 +321,7 @@ function openChild(child) {
           ]"
         >
           <SidebarIcon :name="item.icon" :size="22" />
-          <span class="text-center">{{ item.name }}</span>
+          <span class="text-center max-w-[80px] leading-tight">{{ item.name }}</span>
         </RouterLink>
       </template>
     </nav>
@@ -276,7 +335,7 @@ function openChild(child) {
         enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0 -translate-x-3" enter-to-class="opacity-100 translate-x-0"
         leave-active-class="transition duration-100 ease-in" leave-from-class="opacity-100 translate-x-0" leave-to-class="opacity-0 -translate-x-3"
       >
-        <div class="fixed left-20 top-14 bottom-0 z-40 w-72 bg-card shadow-2xl border-r border-border flex flex-col">
+        <div class="fixed left-28 top-14 bottom-0 z-40 w-72 bg-card shadow-2xl border-r border-border flex flex-col">
           <!-- Search -->
           <div class="p-3 border-b border-border">
             <div class="relative">
@@ -340,144 +399,5 @@ function openChild(child) {
         </div>
       </Transition>
     </template>
-  </aside>
-
-  <!-- ── GLOBAL context: full portfolio sidebar ─────────────────────────────── -->
-  <aside
-    v-else
-    :class="[
-      'flex flex-col bg-navy-dark text-white transition-all duration-300 min-h-screen border-r border-white/5 flex-shrink-0',
-      collapsed ? 'w-[60px]' : 'w-60',
-    ]"
-  >
-    <!-- Branding / context header -->
-    <div class="flex items-center gap-3 border-b border-white/5 px-5 py-5 min-h-[64px]">
-      <template v-if="!collapsed">
-        <div v-if="inCommunity" class="overflow-hidden min-w-0">
-          <p class="text-xs uppercase tracking-widest text-accent/80 font-semibold mb-0.5">Community</p>
-          <p class="font-body font-semibold text-sm text-white truncate">{{ community?.name }}</p>
-        </div>
-        <div v-else class="overflow-hidden min-w-0">
-          <p class="text-xs uppercase tracking-widest text-accent/80 font-semibold mb-0.5">Global</p>
-          <p class="font-body font-semibold text-sm text-white truncate">Bold Mark Properties</p>
-          <p class="text-[11px] text-white/40 font-normal truncate">Moving People Forward</p>
-        </div>
-      </template>
-      <div v-else class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
-        <span class="text-accent font-bold text-xs">B</span>
-      </div>
-    </div>
-
-    <!-- Global exit (community context only) -->
-    <div v-if="inCommunity" class="px-3 pt-3">
-      <button
-        type="button"
-        @click="exitToGlobal"
-        :title="collapsed ? 'Back to Global' : undefined"
-        :class="[
-          'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium w-full transition-all duration-150 text-white/60 hover:bg-white/5 hover:text-white',
-          collapsed ? 'justify-center' : '',
-        ]"
-      >
-        <SidebarIcon name="globe" :size="18" />
-        <span v-if="!collapsed" class="flex-1 text-left">Global</span>
-        <svg v-if="!collapsed" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 rotate-180"><path d="m9 18 6-6-6-6"/></svg>
-      </button>
-    </div>
-
-    <!-- Navigation -->
-    <nav class="flex-1 flex flex-col py-5 px-3 gap-0.5">
-      <p v-if="!collapsed" class="text-[10px] uppercase tracking-widest text-white/30 font-semibold px-3 mb-2">Menu</p>
-
-      <template v-for="item in navItems" :key="item.key || item.name">
-        <!-- Parent with children (fly-out / collapsible) -->
-        <template v-if="item.children">
-          <button
-            v-if="!collapsed"
-            @click="toggleParent(item.key)"
-            :class="[
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 w-full text-left',
-              isParentActive(item) ? 'text-accent' : 'text-white/50 hover:bg-white/5 hover:text-white/80',
-            ]"
-          >
-            <SidebarIcon :name="item.icon" :size="18" />
-            <span class="flex-1">{{ item.name }}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-              :class="['w-3.5 h-3.5 transition-transform duration-200', expandedParents[item.key] ? 'rotate-180' : '']"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-
-          <!-- Collapsed: show child icons directly -->
-          <template v-if="collapsed">
-            <RouterLink
-              v-for="child in item.children" :key="child.name" :to="child.to" :title="child.name"
-              :class="[
-                'flex items-center justify-center px-3 py-2 rounded-lg transition-all duration-150',
-                isActive(child) ? 'bg-accent/15 text-accent shadow-sm' : 'text-white/50 hover:bg-white/5 hover:text-white/80',
-              ]"
-            ><SidebarIcon :name="child.icon" :size="18" /></RouterLink>
-          </template>
-
-          <!-- Expanded children -->
-          <Transition
-            enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 max-h-0" enter-to-class="opacity-100 max-h-60"
-            leave-active-class="transition-all duration-150 ease-in" leave-from-class="opacity-100 max-h-60" leave-to-class="opacity-0 max-h-0"
-          >
-            <div v-if="!collapsed && expandedParents[item.key]" class="overflow-hidden">
-              <RouterLink
-                v-for="child in item.children" :key="child.name" :to="child.to"
-                :class="[
-                  'flex items-center gap-3 pl-9 pr-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150',
-                  isActive(child) ? 'bg-accent/15 text-accent shadow-sm' : 'text-white/40 hover:bg-white/5 hover:text-white/70',
-                ]"
-              >
-                <SidebarIcon :name="child.icon" :size="15" />
-                <span class="flex-1">{{ child.name }}</span>
-              </RouterLink>
-            </div>
-          </Transition>
-        </template>
-
-        <!-- Regular item -->
-        <RouterLink
-          v-else :to="item.to" :title="collapsed ? item.name : undefined"
-          :class="[
-            'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150',
-            collapsed ? 'justify-center' : '',
-            isActive(item) ? 'bg-accent/15 text-accent shadow-sm' : 'text-white/50 hover:bg-white/5 hover:text-white/80',
-          ]"
-        >
-          <SidebarIcon :name="item.icon" :size="18" />
-          <span v-if="!collapsed" class="flex-1">{{ item.name }}</span>
-          <span v-if="!collapsed && item.badge === 'new'" class="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 leading-none">New</span>
-        </RouterLink>
-      </template>
-    </nav>
-
-    <!-- Bottom: Settings + Collapse -->
-    <div class="px-3 pb-4 space-y-0.5 border-t border-white/10 pt-3">
-      <RouterLink
-        to="/settings" :title="collapsed ? 'Settings' : undefined"
-        :class="[
-          'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150',
-          collapsed ? 'justify-center' : '',
-          route.path.startsWith('/settings') ? 'bg-accent/15 text-accent shadow-sm' : 'text-white/50 hover:bg-white/5 hover:text-white/80',
-        ]"
-      >
-        <SidebarIcon name="settings" :size="18" />
-        <span v-if="!collapsed">Settings</span>
-      </RouterLink>
-
-      <AppButton
-        variant="ghost" :full="!collapsed" :square="collapsed" size="sm"
-        :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-        class="text-white/30 hover:text-white/60 hover:bg-white/5 text-[13px] px-3"
-        :class="collapsed ? 'justify-center' : 'justify-start gap-3'"
-        @click="collapsed = !collapsed"
-      >
-        <svg v-if="!collapsed" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] shrink-0"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] shrink-0"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>
-        <span v-if="!collapsed">Collapse</span>
-      </AppButton>
-    </div>
   </aside>
 </template>

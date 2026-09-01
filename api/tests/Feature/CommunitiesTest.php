@@ -1345,3 +1345,296 @@ it('returns occupant analytics for an community', function () {
         ->getJson(route('api.v1.community.occupant.analytics', $community))
         ->assertOk();
 })->skip('CommunityService::showOccupantAnalytics is not implemented — endpoint currently returns 500.');
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ WeConnectU "Add / Edit Community" modal fields                            ║
+// ║ (merchant_number, pdf_passwords, Select Users)                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('persists merchant_number and pdf_passwords on create', function () {
+    $user = adminUser();
+
+    $resp = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.community'), [
+            'name'            => 'Barnato View',
+            'entity_type'     => 'body_corporate',
+            'merchant_number' => 'SS37/1980',
+            'pdf_passwords'   => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.merchant_number', 'SS37/1980')
+        ->assertJsonPath('data.pdf_passwords', true);
+
+    $this->assertDatabaseHas('communities', [
+        'id'              => $resp->json('data.id'),
+        'merchant_number' => 'SS37/1980',
+        'pdf_passwords'   => true,
+    ]);
+});
+
+it('rejects merchant_number longer than 100 chars on create', function () {
+    $user = adminUser();
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.community'), [
+            'name'            => 'X',
+            'entity_type'     => 'body_corporate',
+            'merchant_number' => str_repeat('a', 101),
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['merchant_number']);
+});
+
+it('assigns the selected users plus the creator on create', function () {
+    $user  = adminUser();
+    $other = \App\Models\User::factory()->create(['organization_id' => $user->organization_id]);
+
+    $resp = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.community'), [
+            'name'        => 'Crystal Mews',
+            'entity_type' => 'body_corporate',
+            'user_ids'    => [$other->id],
+        ])
+        ->assertOk();
+
+    $community = Community::find($resp->json('data.id'));
+    $assigned  = $community->assignedUsers()->pluck('users.id')->all();
+
+    expect($assigned)->toContain($user->id);   // creator always retained
+    expect($assigned)->toContain($other->id);  // selected user
+});
+
+it('updates merchant_number and pdf_passwords', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create([
+        'organization_id' => $user->organization_id,
+        'merchant_number' => null,
+        'pdf_passwords'   => false,
+    ]);
+
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), [
+            'merchant_number' => 'SS99/2001',
+            'pdf_passwords'   => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.merchant_number', 'SS99/2001')
+        ->assertJsonPath('data.pdf_passwords', true);
+
+    $this->assertDatabaseHas('communities', [
+        'id'              => $community->id,
+        'merchant_number' => 'SS99/2001',
+        'pdf_passwords'   => true,
+    ]);
+});
+
+it('re-syncs assigned users on update', function () {
+    $user  = adminUser();
+    $a     = \App\Models\User::factory()->create(['organization_id' => $user->organization_id]);
+    $b     = \App\Models\User::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $community->assignedUsers()->sync([$a->id]);
+
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), [
+            'user_ids' => [$b->id],
+        ])
+        ->assertOk();
+
+    $assigned = $community->fresh()->assignedUsers()->pluck('users.id')->all();
+
+    expect($assigned)->toContain($b->id);
+    expect($assigned)->not->toContain($a->id); // replaced, not merged
+});
+
+it('does not assign a user from another organization on update', function () {
+    $user     = adminUser();
+    $outsider = \App\Models\User::factory()->create(['organization_id' => createOrganization()->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    // Cross-org id fails the exists+org scope; validation rejects the unknown id
+    // only if it doesn't exist — it exists, so it passes validation but is
+    // filtered out by the org-scoped sync.
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), [
+            'user_ids' => [$outsider->id],
+        ])
+        ->assertOk();
+
+    $assigned = $community->fresh()->assignedUsers()->pluck('users.id')->all();
+    expect($assigned)->not->toContain($outsider->id);
+});
+
+it('exposes assigned_user_ids on the show response', function () {
+    $user  = adminUser();
+    $other = \App\Models\User::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $community->assignedUsers()->sync([$user->id, $other->id]);
+
+    $resp = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community', $community))
+        ->assertOk();
+
+    $ids = $resp->json('data.assigned_user_ids');
+    expect($ids)->toContain($user->id);
+    expect($ids)->toContain($other->id);
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ Community Manager (WeConnectU "Community Manager")                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('sets the community manager on create', function () {
+    $user    = adminUser();
+    $manager = \App\Models\User::factory()->create(['organization_id' => $user->organization_id]);
+
+    $resp = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.community'), [
+            'name'                 => 'Managed Estate',
+            'entity_type'          => 'body_corporate',
+            'community_manager_id' => $manager->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.community_manager_id', $manager->id);
+
+    $this->assertDatabaseHas('communities', [
+        'id'                   => $resp->json('data.id'),
+        'community_manager_id' => $manager->id,
+    ]);
+});
+
+it('ignores a community manager from another organization on create', function () {
+    $user     = adminUser();
+    $outsider = \App\Models\User::factory()->create(['organization_id' => createOrganization()->id]);
+
+    $resp = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.community'), [
+            'name'                 => 'X',
+            'entity_type'          => 'body_corporate',
+            'community_manager_id' => $outsider->id,
+        ])
+        ->assertOk();
+
+    expect($resp->json('data.community_manager_id'))->toBeNull();
+});
+
+it('assigns and then clears the community manager on update', function () {
+    $user      = adminUser();
+    $manager   = \App\Models\User::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    // Assign
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), ['community_manager_id' => $manager->id])
+        ->assertOk()
+        ->assertJsonPath('data.community_manager_id', $manager->id);
+
+    // Clear
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), ['community_manager_id' => null])
+        ->assertOk();
+
+    expect($community->fresh()->community_manager_id)->toBeNull();
+});
+
+it('exposes the community manager on the list and show responses', function () {
+    $user      = adminUser();
+    $manager   = \App\Models\User::factory()->create(['organization_id' => $user->organization_id, 'name' => 'Thabo Manager']);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id, 'community_manager_id' => $manager->id]);
+
+    $list = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.communities'))
+        ->assertOk();
+    expect($list->json('data.0.community_manager.name'))->toBe('Thabo Manager');
+
+    $show = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community', $community))
+        ->assertOk();
+    expect($show->json('data.community_manager.email'))->toBe($manager->email);
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ Community-info modal fields (Information / Admin Charges / Bank Details)  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('exposes info-modal fields and bank details on the show response', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create([
+        'organization_id'          => $user->organization_id,
+        'penalty_admin_fee'        => 65,
+        'warning_admin_fee'        => 150,
+        'transfer_clearance_fee'   => 1100,
+        'phonecall_fee'            => 20,
+        'apply_debt_collection_fee' => true,
+    ]);
+    // Recovery flags live on the billing setup, not the community.
+    \App\Models\CommunityBillingSetup::create([
+        'organization_id'      => $user->organization_id,
+        'community_id'         => $community->id,
+        'water_recovery'       => true,
+        'electricity_recovery' => false,
+    ]);
+    \App\Models\BankAccount::create([
+        'organization_id' => $user->organization_id,
+        'community_id'    => $community->id,
+        'name'            => 'Main',
+        'bank_name'       => 'Standard Bank',
+        'account_number'  => '401794555',
+        'branch_code'     => '051001',
+        'branch_name'     => 'Rosebank',
+        'integration'     => 'Standard Bank Business Free',
+        'type'            => 'current',
+    ]);
+
+    $resp = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community', $community))
+        ->assertOk()
+        ->assertJsonPath('data.water_recovery', true)
+        ->assertJsonPath('data.electricity_recovery', false)
+        ->assertJsonPath('data.penalty_admin_fee', 65)
+        ->assertJsonPath('data.apply_debt_collection_fee', true);
+
+    expect($resp->json('data.bank_accounts.0.account_number'))->toBe('401794555');
+    expect($resp->json('data.bank_accounts.0.branch_code'))->toBe('051001');
+});
+
+it('saves Settings → Charges fields on update', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), [
+            'penalty_admin_fee'         => 65,
+            'warning_admin_fee'         => 150,
+            'transfer_clearance_fee'    => 1100,
+            'phonecall_fee'             => 20,
+            'handed_over_fee'           => 350,
+            'notice_threshold_amount'   => 350,
+            'apply_debt_collection_fee' => true,
+            'notices_exemption'         => ['debit_order', 'handed_over', 'payment_arrangement'],
+            'notice_charges'            => [
+                'first'           => ['email_charge' => 0, 'sms_charge' => 3.45, 'threshold' => 'current', 'status' => null],
+                'letter_of_demand' => ['email_charge' => 75, 'sms_charge' => 3.45, 'threshold' => '60_days', 'status' => null],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.penalty_admin_fee', 65)
+        ->assertJsonPath('data.handed_over_fee', 350)
+        ->assertJsonPath('data.apply_debt_collection_fee', true);
+
+    $fresh = $community->fresh();
+    expect($fresh->notices_exemption)->toContain('debit_order');
+    expect($fresh->notice_charges['letter_of_demand']['email_charge'])->toBe(75);
+});
+
+it('rejects an invalid notices_exemption value', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    $this->actingAs($user, 'api')
+        ->putJson(route('api.v1.update.community', $community), [
+            'notices_exemption' => ['not_a_real_exemption'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['notices_exemption.0']);
+});

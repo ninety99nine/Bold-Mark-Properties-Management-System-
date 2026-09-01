@@ -1076,9 +1076,13 @@ class InvoiceService extends BaseService
             ? $invoice->billedToOwner
             : $invoice->billedToUnitOccupant;
 
+        $organization = $invoice->organization;
+
         $pdf = Pdf::loadView('pdfs.invoice', [
-            'invoice'  => $invoice,
-            'billedTo' => $billedTo,
+            'invoice'         => $invoice,
+            'billedTo'        => $billedTo,
+            'organization'    => $organization,
+            'companyLogoPath' => $organization?->logoFilePath(),
         ])->setPaper('a4');
 
         return $pdf->download("{$invoice->invoice_number}.pdf");

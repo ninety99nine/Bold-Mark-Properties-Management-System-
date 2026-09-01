@@ -98,10 +98,13 @@
   <table class="w100">
     <tr>
       <td class="head-cell" style="width: 38%;">
-        <div class="logo-box">
-          <div class="logo-primary">BOLD <span class="logo-amber">MARK</span></div>
-          <div class="logo-sub">PROPERTIES</div>
-        </div>
+        @if(!empty($companyLogoPath))
+          <img src="{{ $companyLogoPath }}" alt="{{ $organization?->display_name }}" style="max-height: 70px; max-width: 230px;">
+        @else
+          <div class="logo-box">
+            <div class="logo-primary">{{ $organization?->display_name ?? $community->name }}</div>
+          </div>
+        @endif
       </td>
       <td class="head-cell" style="width: 37%;">
         <div class="head-line">

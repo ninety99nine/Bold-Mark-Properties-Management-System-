@@ -8,6 +8,9 @@ use App\Models\CashbookEntry;
 use App\Models\ComplianceTemplate;
 use App\Models\ComplianceTemplateItem;
 use App\Models\Community;
+use App\Models\CommunityBillingSetup;
+use App\Models\CommunityMember;
+use App\Models\CustomerGroup;
 use App\Models\Ledger;
 use App\Models\CommunityLedger;
 use App\Models\Invoice;
@@ -44,6 +47,8 @@ class DemoSeeder extends Seeder
     protected array  $ledgers  = [];
     protected int    $invoiceCounter = 0;
     protected int    $receiptIndex   = 0;
+    protected ?int   $managerUserId  = null;
+    protected int    $communitySeq   = 0;
 
     /** 9 billing periods: July 2025 → March 2026 (billing day 25) */
     protected const PERIODS = [
@@ -118,8 +123,33 @@ class DemoSeeder extends Seeder
         $this->seedExternalUsers();
         $this->seedCommunities();
         $this->seedComplianceTemplates();
+        $this->seedLedgerReports();
 
         $this->command?->info('Demo seed complete.');
+    }
+
+    /**
+     * Seed a couple of "Recent Email Reports" per community so the Detailed
+     * Customer Ledger panel is populated and its row-download can be tested.
+     */
+    private function seedLedgerReports(): void
+    {
+        $this->command?->info('Seeding recent ledger email reports...');
+
+        foreach (\App\Models\Community::all() as $community) {
+            $accounts = \App\Models\Unit::where('community_id', $community->id)->count();
+
+            \App\Models\LedgerReportBatch::updateOrCreate(
+                ['community_id' => $community->id, 'date_from' => '2026-01-01', 'date_to' => '2026-03-31'],
+                [
+                    'organization_id' => $community->organization_id,
+                    'account_count'   => max(1, $accounts),
+                    'status'          => 'completed',
+                    'generated_at'    => '2026-03-12 12:22:00',
+                    'filters'         => ['all_customers' => true, 'show_line_items' => true],
+                ]
+            );
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -227,12 +257,21 @@ class DemoSeeder extends Seeder
                 'name'            => 'Bold Mark Properties',
                 'company_name'    => 'Bold Mark Properties',
                 'company_slogan'  => 'Moving People Forward',
+                'company_reg_no'  => '2021/147096/07',
+                'transfer_clearance_fee' => 1100.00,
                 'logo_url'        => '/assets/logo2-CB_yk5b_.png',
                 'contact_email'   => 'info@boldmarkprop.co.za',
-                'contact_phone'   => '+27 10 442 0012',
+                'outgoing_email'  => 'noreply@boldmarkprop.co.za',
+                'contact_phone'   => '010 824 9671',
                 'address'         => '112 Boeing Rd, Bedfordview, Johannesburg',
                 'country'         => 'ZA',
                 'currency'        => 'ZAR',
+                'bank_account_holder' => 'Bold Mark Properties',
+                'bank_name'           => 'Standard Bank',
+                'bank_account_type'   => 'Current',
+                'bank_account_number' => '201656302',
+                'bank_branch_code'    => '004305',
+                'bank_branch_name'    => 'Rosebank',
                 'primary_color'   => '#0B1F38',
                 'secondary_color' => '#D89B4B',
                 'credentials'     => ['NAMA-9141', 'PPRA Registered', 'Johannesburg · Botswana'],
@@ -335,6 +374,13 @@ class DemoSeeder extends Seeder
         $organization = Organization::where('slug', 'boldmark')->firstOrFail();
         $this->organizationId = $organization->id;
 
+        // A portfolio manager to assign as each community's Community Manager.
+        $this->managerUserId = User::where('organization_id', $this->organizationId)
+            ->where('email', 'pm@demo.boldmark.test')
+            ->value('id')
+            ?? User::where('organization_id', $this->organizationId)->orderBy('id')->value('id');
+        $this->communitySeq = 0;
+
         // Wipe previously seeded uploaded files so every run is clean
         Storage::disk('public')->deleteDirectory("proof_of_payment/{$organization->id}");
         Storage::disk('public')->deleteDirectory('occupants');
@@ -351,6 +397,7 @@ class DemoSeeder extends Seeder
             $community = $this->createCommunity($def);
             $this->enableCommunityLedgers($community, $def['type']);
             $this->seedUnits($community, $def);
+            $this->seedCustomerGroups($community);
         }
 
         // ── South Africa Communities ──
@@ -359,6 +406,7 @@ class DemoSeeder extends Seeder
             $community = $this->createCommunity($def);
             $this->enableCommunityLedgers($community, $def['type']);
             $this->seedUnits($community, $def);
+            $this->seedCustomerGroups($community);
         }
 
         // Recalculate unit balances after all invoices and payments are seeded
@@ -367,6 +415,15 @@ class DemoSeeder extends Seeder
         Unit::where('organization_id', $this->organizationId)->each(function (Unit $unit) use ($balanceService) {
             $balanceService->recalculate($unit);
         });
+
+        // Spread collection statuses / debit-order / transfer flags so the Age
+        // Analysis status markers show the full WeConnectU range.
+        $this->command?->info('Seeding collection statuses...');
+        $this->call(DemoCollectionStatusSeeder::class);
+
+        // Status-change history for the Status Batches / Automatic Status Changes pages.
+        $this->command?->info('Seeding status history...');
+        $this->call(DemoStatusHistorySeeder::class);
     }
 
     private function loadLedgers(): void
@@ -387,18 +444,46 @@ class DemoSeeder extends Seeder
 
     private function createCommunity(array $def): Community
     {
+        $this->communitySeq++;
+        $seq     = $this->communitySeq;
+        $isZA    = ($def['country'] ?? null) === 'ZA';
+        $year    = 1980 + $seq; // spread scheme registration years
+
         $community = Community::create([
             'name'                => $def['name'],
-            // 'sectional_title' maps to the merged entity type 'body_corporate'.
-            'entity_type'         => $def['type'] === 'sectional_title' ? 'body_corporate' : $def['type'],
+            'entity_type'         => $def['type'],
             'address'             => $def['address'],
             'admin_fund_amount'   => $def['admin_fund_amount'] ?? null,
+            'reserve_fund_amount' => $def['reserve_fund_amount'] ?? null,
             'default_rent_amount' => $def['default_rent_amount'] ?? null,
             'billing_day'         => $def['billing_day'],
             'country'             => $def['country'],
             'currency'            => $def['currency'],
             'is_active'           => true,
             'organization_id'     => $this->organizationId,
+
+            // ── Registration / tax identifiers (Information tab) ──────────
+            'registration_number'      => sprintf('SS%d/%d', 30 + $seq, $year),
+            'csos_registration_number' => $isZA ? sprintf('CSOS%06d', 100000 + $seq) : null,
+            'income_tax_number'        => sprintf('91%08d', 10000000 + $seq),
+            'merchant_number'          => sprintf('MERCH-%05d', 40000 + $seq),
+            'community_manager_id'     => $this->managerUserId,
+            'payment_authorisation_mode' => 'single',
+
+            // ── Admin charges (Admin Charges tab / Settings → Charges) ────
+            'penalty_admin_fee'         => 65.00,
+            'warning_admin_fee'         => 150.00,
+            'transfer_clearance_fee'    => 1100.00,
+            'phonecall_fee'             => 20.00,
+            'handed_over_fee'           => 350.00,
+            'notice_threshold_amount'   => 350.00,
+            'apply_debt_collection_fee' => true,
+            'notices_exemption'         => ['debit_order', 'handed_over', 'payment_arrangement'],
+            'notice_charges'            => [
+                'first'            => ['email_charge' => 0.00,  'sms_charge' => 3.45, 'threshold' => 'current', 'status' => null],
+                'second'           => ['email_charge' => 27.60, 'sms_charge' => 3.45, 'threshold' => '30_days', 'status' => null],
+                'letter_of_demand' => ['email_charge' => 75.00, 'sms_charge' => 3.45, 'threshold' => '60_days', 'status' => null],
+            ],
         ]);
 
         $community->timestamps = false;
@@ -408,8 +493,45 @@ class DemoSeeder extends Seeder
         $community->timestamps = true;
 
         $this->createBankAccounts($community);
+        $this->seedCommunityGovernance($community, $seq);
 
         return $community;
+    }
+
+    /**
+     * Seed the Default Billing Setup recovery flags (Information tab) and a small
+     * board of directors / trustees (Trustees tab) for the community-info modal.
+     */
+    private function seedCommunityGovernance(Community $community, int $seq): void
+    {
+        CommunityBillingSetup::updateOrCreate(
+            ['community_id' => $community->id],
+            [
+                'organization_id'      => $this->organizationId,
+                'water_recovery'       => true,
+                'electricity_recovery' => true,
+            ]
+        );
+
+        $trustees = [
+            ['name' => 'Kgomotso Tlokweng',   'email' => "trustee1.c{$seq}@boldmarkprop.co.za", 'cellphone' => '+267 71 601 1001'],
+            ['name' => 'Badisa Morokotso',    'email' => "trustee2.c{$seq}@boldmarkprop.co.za", 'cellphone' => '+267 71 601 1002'],
+            ['name' => 'Thandiwe Nkosi',      'email' => "trustee3.c{$seq}@boldmarkprop.co.za", 'cellphone' => '+27 82 601 1003'],
+        ];
+        foreach ($trustees as $i => $t) {
+            CommunityMember::create([
+                'organization_id'     => $this->organizationId,
+                'community_id'        => $community->id,
+                'name'                => $t['name'],
+                'email'               => $t['email'],
+                'cellphone'           => $t['cellphone'],
+                'user_type'           => 'director_trustee',
+                'is_director_trustee' => true,
+                'is_payment_authoriser' => $i === 0,
+                'is_verified'         => true,
+                'sort_order'          => $i,
+            ]);
+        }
     }
 
     /**
@@ -426,6 +548,9 @@ class DemoSeeder extends Seeder
             'name'            => 'Standard Bank Current',
             'bank_name'       => 'Standard Bank',
             'account_number'  => (string) rand(100000000, 999999999),
+            'branch_code'     => '051001',
+            'branch_name'     => 'Rosebank',
+            'integration'     => 'Standard Bank Business Free',
             'type'            => BankAccountType::CURRENT->value,
             'balance'         => round(rand(5000, 350000) + (rand(0, 99) / 100), 2),
             'balance_as_at'   => $asAt,
@@ -450,20 +575,12 @@ class DemoSeeder extends Seeder
 
     private function enableCommunityLedgers(Community $community, string $type): void
     {
-        $activeCodes = match ($type) {
-            'sectional_title'    => ['LEVY','WATER_RECOVERY','ELECTRICITY_RECOVERY','SEWERAGE_RECOVERY',
-                                     'REFUSE_RECOVERY','PARKING_RENTAL','GYM_ACCESS','POOL_ACCESS',
-                                     'PET_LEVY','GARDEN_MAINT','SECURITY_CONTRIB','SPECIAL_LEVY',
-                                     'LATE_INTEREST','LATE_PENALTY','ACCESS_CARD'],
-            'residential_rental' => ['RENT','DAMAGE_DEPOSIT','KEY_DEPOSIT','MOVING_IN','MOVING_OUT',
-                                     'LATE_INTEREST','LATE_PENALTY','PARKING_RENTAL','PET_LEVY'],
-            'commercial_rental'  => ['RENT','DAMAGE_DEPOSIT','KEY_DEPOSIT','LATE_INTEREST',
-                                     'LATE_PENALTY','PARKING_RENTAL','STORAGE_RENTAL','ACCESS_CARD'],
-            default /* mixed */  => ['LEVY','RENT','WATER_RECOVERY','ELECTRICITY_RECOVERY',
-                                     'PARKING_RENTAL','GYM_ACCESS','POOL_ACCESS','PET_LEVY',
-                                     'DAMAGE_DEPOSIT','KEY_DEPOSIT','MOVING_IN','MOVING_OUT',
-                                     'LATE_INTEREST','LATE_PENALTY','SPECIAL_LEVY','ACCESS_CARD'],
-        };
+        // Every demo community is a levy-billed ownership scheme (the 5 supported
+        // entity types), so they all share the levy ledger set.
+        $activeCodes = ['LEVY','WATER_RECOVERY','ELECTRICITY_RECOVERY','SEWERAGE_RECOVERY',
+                        'REFUSE_RECOVERY','PARKING_RENTAL','GYM_ACCESS','POOL_ACCESS',
+                        'PET_LEVY','GARDEN_MAINT','SECURITY_CONTRIB','SPECIAL_LEVY',
+                        'LATE_INTEREST','LATE_PENALTY','ACCESS_CARD'];
 
         foreach ($this->ledgers as $code => $ct) {
             CommunityLedger::updateOrCreate(
@@ -501,7 +618,10 @@ class DemoSeeder extends Seeder
             'occupancy_type' => $def['occupancy'],
             'status'         => 'active',
             'levy_override'  => $def['levy_override'] ?? null,
-            'rent_amount'    => $def['rent_amount'] ?? $community->default_rent_amount,
+            // All demo communities are levy-billed ownership schemes — the
+            // community levy (admin_fund_amount) drives billing, so units carry
+            // no rent. (default_rent_amount is null for every community.)
+            'rent_amount'    => $community->default_rent_amount,
             'balance'        => 0,
             'community_id'      => $community->id,
             'organization_id' => $this->organizationId,
@@ -510,10 +630,39 @@ class DemoSeeder extends Seeder
 
     private function createOwner(Unit $unit, array $data): Owner
     {
-        return Owner::create(array_merge($data, [
+        // WeConnectU-style customer code: 3-letter name prefix + sequence + unit suffix.
+        $letters = strtoupper(preg_replace('/[^A-Za-z]/', '', $data['full_name'] ?? ''));
+        $prefix  = $letters !== '' ? str_pad(substr($letters, 0, 3), 3, 'X') : 'CUS';
+
+        return Owner::create(array_merge([
+            'customer_code' => $prefix . '001-U' . $unit->unit_number,
+            'customer_type' => $data['customer_type'] ?? 'individual',
+        ], $data, [
             'unit_id'         => $unit->id,
+            'community_id'    => $unit->community_id,
             'organization_id' => $this->organizationId,
         ]));
+    }
+
+    /**
+     * Seed a couple of customer groups per community and attach a subset of its
+     * customers, so the Manage Customers "Customer Groups" tab shows real data.
+     */
+    private function seedCustomerGroups(Community $community): void
+    {
+        $groups = collect(['Trustees', 'Directors'])->map(fn (string $name) => CustomerGroup::create([
+            'name'            => $name,
+            'community_id'    => $community->id,
+            'organization_id' => $this->organizationId,
+        ]));
+
+        $owners = Owner::whereHas('unit', fn ($query) => $query->where('community_id', $community->id))->get();
+
+        foreach ($owners as $index => $owner) {
+            if ($index % 4 === 0) {
+                $owner->customerGroups()->syncWithoutDetaching([$groups[$index % 2]->id]);
+            }
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -957,23 +1106,23 @@ class DemoSeeder extends Seeder
     private function botswanaCommunityDefinitions(): array
     {
         return [
-            ['name'=>'Molapo Crossing Residences','type'=>'mixed','address'=>'Plot 12875, Molapo Extension, Gaborone, Botswana',
-             'admin_fund_amount'=>2500.00,'default_rent_amount'=>8500.00,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
+            ['name'=>'Molapo Crossing Residences','type'=>'body_corporate','address'=>'Plot 12875, Molapo Extension, Gaborone, Botswana',
+             'admin_fund_amount'=>2500.00,'reserve_fund_amount'=>750.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
              'created_at'=>'2025-07-01 09:00:00','start_period'=>0,'units'=>$this->molapoCrossingUnits()],
-            ['name'=>'Phakalane Golf Community','type'=>'mixed','address'=>'Plot 2540, Phakalane, North-East Gaborone, Botswana',
-             'admin_fund_amount'=>1800.00,'default_rent_amount'=>9200.00,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
+            ['name'=>'Phakalane Golf Community','type'=>'home_owners_association','address'=>'Plot 2540, Phakalane, North-East Gaborone, Botswana',
+             'admin_fund_amount'=>1800.00,'reserve_fund_amount'=>600.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
              'created_at'=>'2025-07-05 10:00:00','start_period'=>0,'units'=>$this->phakalaneGolfUnits()],
-            ['name'=>'Kgale Hill Body Corporate','type'=>'sectional_title','address'=>'Lot 45891, Kgale Hill Extension 5, Gaborone, Botswana',
-             'admin_fund_amount'=>3200.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
+            ['name'=>'Kgale Hill Body Corporate','type'=>'body_corporate','address'=>'Lot 45891, Kgale Hill Extension 5, Gaborone, Botswana',
+             'admin_fund_amount'=>3200.00,'reserve_fund_amount'=>950.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
              'created_at'=>'2025-08-01 08:00:00','start_period'=>1,'units'=>$this->kgaleHillUnits()],
-            ['name'=>'Masa Centre Scheme','type'=>'sectional_title','address'=>'Plot 54360, Masa Centre, CBD, Gaborone, Botswana',
-             'admin_fund_amount'=>2800.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
+            ['name'=>'Masa Centre Scheme','type'=>'body_corporate','address'=>'Plot 54360, Masa Centre, CBD, Gaborone, Botswana',
+             'admin_fund_amount'=>2800.00,'reserve_fund_amount'=>840.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
              'created_at'=>'2025-09-01 08:00:00','start_period'=>2,'units'=>$this->masaCentreUnits()],
-            ['name'=>'Extension 15 Rental Homes','type'=>'residential_rental','address'=>'15 Tswane Drive, Extension 15, Gaborone, Botswana',
-             'admin_fund_amount'=>null,'default_rent_amount'=>7500.00,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
+            ['name'=>'Extension 15 Home Owners','type'=>'home_owners_association','address'=>'15 Tswane Drive, Extension 15, Gaborone, Botswana',
+             'admin_fund_amount'=>1500.00,'reserve_fund_amount'=>450.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
              'created_at'=>'2025-10-01 08:00:00','start_period'=>3,'units'=>$this->extension15Units()],
-            ['name'=>'Fairgrounds Business Park','type'=>'commercial_rental','address'=>'Plot 6940, Fairgrounds Office Park, Gaborone, Botswana',
-             'admin_fund_amount'=>null,'default_rent_amount'=>18000.00,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
+            ['name'=>'Fairgrounds Business Park','type'=>'property_owners_association','address'=>'Plot 6940, Fairgrounds Office Park, Gaborone, Botswana',
+             'admin_fund_amount'=>3500.00,'reserve_fund_amount'=>1050.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'BW','currency'=>'BWP',
              'created_at'=>'2025-11-01 08:00:00','start_period'=>4,'units'=>$this->fairgroundsUnits()],
         ];
     }
@@ -1405,23 +1554,23 @@ class DemoSeeder extends Seeder
     private function southAfricaCommunityDefinitions(): array
     {
         return [
-            ['name'=>'Menlyn Maine Lifestyle Community','type'=>'mixed','address'=>'Menlyn Maine, cnr Aramand & Corobay Avenue, Waterkloof Glen, Pretoria, 0181',
-             'admin_fund_amount'=>3800.00,'default_rent_amount'=>15000.00,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
+            ['name'=>'Menlyn Maine Lifestyle Community','type'=>'body_corporate','address'=>'Menlyn Maine, cnr Aramand & Corobay Avenue, Waterkloof Glen, Pretoria, 0181',
+             'admin_fund_amount'=>3800.00,'reserve_fund_amount'=>1140.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
              'created_at'=>'2025-07-02 09:00:00','start_period'=>0,'units'=>$this->menlynMaineUnits()],
-            ['name'=>'Waterfall Country Village','type'=>'mixed','address'=>'Waterfall Country Village, Waterfall Drive, Jukskei View, Midrand, 1682',
-             'admin_fund_amount'=>3200.00,'default_rent_amount'=>14500.00,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
+            ['name'=>'Waterfall Country Village','type'=>'home_owners_association','address'=>'Waterfall Country Village, Waterfall Drive, Jukskei View, Midrand, 1682',
+             'admin_fund_amount'=>3200.00,'reserve_fund_amount'=>960.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
              'created_at'=>'2025-07-06 10:00:00','start_period'=>0,'units'=>$this->waterfallVillageUnits()],
-            ['name'=>'Sandton Skye Body Corporate','type'=>'sectional_title','address'=>'75 Maude Street, Sandton, Johannesburg, 2196',
-             'admin_fund_amount'=>5200.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
+            ['name'=>'Sandton Skye Body Corporate','type'=>'body_corporate','address'=>'75 Maude Street, Sandton, Johannesburg, 2196',
+             'admin_fund_amount'=>5200.00,'reserve_fund_amount'=>1560.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
              'created_at'=>'2025-08-02 08:00:00','start_period'=>1,'units'=>$this->sandtonSkyeUnits()],
-            ['name'=>'The Marc Residences','type'=>'sectional_title','address'=>'129 Rivonia Road, Sandton, Johannesburg, 2196',
-             'admin_fund_amount'=>4500.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
+            ['name'=>'The Marc Residences','type'=>'body_corporate','address'=>'129 Rivonia Road, Sandton, Johannesburg, 2196',
+             'admin_fund_amount'=>4500.00,'reserve_fund_amount'=>1350.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
              'created_at'=>'2025-09-02 08:00:00','start_period'=>2,'units'=>$this->theMarcUnits()],
-            ['name'=>'Camps Bay Terrace Homes','type'=>'residential_rental','address'=>'12 Victoria Road, Camps Bay, Cape Town, 8005',
-             'admin_fund_amount'=>null,'default_rent_amount'=>22000.00,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
+            ['name'=>'Camps Bay Terrace Homes','type'=>'full_title','address'=>'12 Victoria Road, Camps Bay, Cape Town, 8005',
+             'admin_fund_amount'=>2200.00,'reserve_fund_amount'=>660.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
              'created_at'=>'2025-10-02 08:00:00','start_period'=>3,'units'=>$this->campsBayUnits()],
-            ['name'=>'Umhlanga Ridge Office Park','type'=>'commercial_rental','address'=>'10 Umhlanga Ridge Boulevard, Umhlanga, Durban, 4319',
-             'admin_fund_amount'=>null,'default_rent_amount'=>28000.00,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
+            ['name'=>'Umhlanga Ridge Office Park','type'=>'property_owners_association','address'=>'10 Umhlanga Ridge Boulevard, Umhlanga, Durban, 4319',
+             'admin_fund_amount'=>4500.00,'reserve_fund_amount'=>1350.00,'default_rent_amount'=>null,'billing_day'=>25,'country'=>'ZA','currency'=>'ZAR',
              'created_at'=>'2025-11-02 08:00:00','start_period'=>4,'units'=>$this->umhlangaRidgeUnits()],
         ];
     }

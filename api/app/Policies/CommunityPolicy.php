@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\Community;
+use App\Models\Owner;
 use App\Models\User;
 use Illuminate\Http\Request;
 
@@ -73,5 +74,77 @@ class CommunityPolicy extends BasePolicy
     public function delete(User $user, Community $community): bool
     {
         return $this->authService->hasPermission($user, 'community.delete');
+    }
+
+    /**
+     * Determine whether the user can view the community's customers.
+     */
+    public function viewCustomers(User $user, Community $community): bool
+    {
+        return true;
+    }
+
+    /**
+     * Determine whether the user can create customers in the community.
+     */
+    public function createCustomer(User $user, Community $community): bool
+    {
+        return true;
+    }
+
+    /**
+     * Determine whether the user can update the customer.
+     */
+    public function updateCustomer(User $user, Community $community, Owner $owner): bool
+    {
+        return $this->authService->hasPermission($user, 'owner.update');
+    }
+
+    /**
+     * Determine whether the user can disable the customer.
+     */
+    public function disableCustomer(User $user, Community $community, Owner $owner): bool
+    {
+        return $this->authService->hasPermission($user, 'owner.update');
+    }
+
+    /**
+     * Determine whether the user can enable the customer.
+     */
+    public function enableCustomer(User $user, Community $community, Owner $owner): bool
+    {
+        return $this->authService->hasPermission($user, 'owner.update');
+    }
+
+    /**
+     * Determine whether the user can delete the customer.
+     */
+    public function deleteCustomer(User $user, Community $community, Owner $owner): bool
+    {
+        return $this->authService->hasPermission($user, 'owner.delete');
+    }
+
+    /**
+     * Determine whether the user can apply collection statuses to customers.
+     */
+    public function applyCustomerStatuses(User $user, Community $community): bool
+    {
+        return $this->authService->hasPermission($user, 'owner.update');
+    }
+
+    /**
+     * Determine whether the user can view the community's communications archive.
+     */
+    public function viewCommunications(User $user, Community $community): bool
+    {
+        return true;
+    }
+
+    /**
+     * Determine whether the user can send communications for the community.
+     */
+    public function sendCommunication(User $user, Community $community): bool
+    {
+        return true;
     }
 }

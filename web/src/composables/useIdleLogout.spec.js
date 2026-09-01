@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { defineComponent, h } from 'vue'
-import { mount } from '@vue/test-utils'
+import { mount, enableAutoUnmount } from '@vue/test-utils'
 import { useIdleLogout } from '@/composables/useIdleLogout'
+
+// Tear each mounted Host down after its test so stale activity listeners from a
+// prior test can't fire into the next one (they share window + module mocks).
+enableAutoUnmount(afterEach)
 
 // ──────────────────────────────────────────────────────────────────────────────
 // useIdleLogout — proactive inactivity auto-logout (BM-006).
@@ -9,8 +13,10 @@ import { useIdleLogout } from '@/composables/useIdleLogout'
 // ──────────────────────────────────────────────────────────────────────────────
 
 const TIMEOUT_MS = 30 * 60 * 1000
+const HEARTBEAT_MS = 5 * 60 * 1000 // default (no VITE override in the test env)
 
 const replaceMock = vi.fn()
+const postMock = vi.fn(() => Promise.resolve())
 let authState
 
 vi.mock('vue-router', () => ({
@@ -24,6 +30,11 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authState,
 }))
 
+vi.mock('@/composables/useApi', () => ({
+  // Referenced lazily (at call time) so it isn't read during hoisted mocking.
+  default: { post: (...args) => postMock(...args) },
+}))
+
 const Host = defineComponent({
   setup() {
     useIdleLogout()
@@ -35,6 +46,7 @@ describe('useIdleLogout', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     replaceMock.mockClear()
+    postMock.mockClear()
     authState = { isAuthenticated: true, persistent: false, clearSession: vi.fn() }
   })
 
@@ -50,7 +62,7 @@ describe('useIdleLogout', () => {
     expect(authState.clearSession).toHaveBeenCalledOnce()
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'login',
-      query: { redirect: '/communities/9', expired: '1' },
+      query: { redirect: '/communities/9', expired: '1', reason: 'inactivity' },
     })
   })
 
@@ -96,5 +108,34 @@ describe('useIdleLogout', () => {
     vi.advanceTimersByTime(TIMEOUT_MS + 1)
 
     expect(authState.clearSession).not.toHaveBeenCalled()
+  })
+
+  it('pings the heartbeat on interaction, throttled to the heartbeat interval', () => {
+    mount(Host)
+
+    // Seeded at mount — no immediate ping.
+    expect(postMock).not.toHaveBeenCalled()
+
+    // Interaction before the interval elapses does not ping.
+    vi.advanceTimersByTime(HEARTBEAT_MS - 1000)
+    window.dispatchEvent(new Event('mousemove'))
+    expect(postMock).not.toHaveBeenCalled()
+
+    // Once the interval has passed, the next interaction pings exactly once.
+    vi.advanceTimersByTime(2000)
+    window.dispatchEvent(new Event('mousemove'))
+    window.dispatchEvent(new Event('mousemove'))
+    expect(postMock).toHaveBeenCalledOnce()
+    expect(postMock).toHaveBeenCalledWith('/auth/heartbeat')
+  })
+
+  it('never pings the heartbeat for a persistent ("remember me") session', () => {
+    authState.persistent = true
+    mount(Host)
+
+    vi.advanceTimersByTime(HEARTBEAT_MS * 3)
+    window.dispatchEvent(new Event('mousemove'))
+
+    expect(postMock).not.toHaveBeenCalled()
   })
 })

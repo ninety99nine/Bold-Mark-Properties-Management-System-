@@ -10,6 +10,7 @@ use App\Models\UserLoginLog;
 use App\Models\UserSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
@@ -102,6 +103,17 @@ class AuthController extends Controller
         return response()->json([
             'data' => $request->user()->load('roles', 'permissions'),
         ]);
+    }
+
+    /**
+     * Lightweight keep-alive ping (BM-006). Reaching this method means the `api`
+     * middleware group's EnforceSessionTimeout has already refreshed this
+     * session's last-activity timestamp for the current request, so an
+     * actively-used session stays alive. Returns 204 — nothing to send back.
+     */
+    public function heartbeat(): Response
+    {
+        return response()->noContent();
     }
 
     public function logout(Request $request): JsonResponse

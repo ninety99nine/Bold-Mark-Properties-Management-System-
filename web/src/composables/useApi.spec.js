@@ -26,11 +26,11 @@ vi.mock('@/stores/auth', () => ({
 
 import api from '@/composables/useApi'
 
-function reject401() {
+function reject401(data = {}) {
   // Make axios's adapter fail with a 401-shaped error.
   api.defaults.adapter = async () => {
     const err = new Error('Unauthorized')
-    err.response = { status: 401, data: {} }
+    err.response = { status: 401, data }
     throw err
   }
 }
@@ -52,6 +52,17 @@ describe('useApi 401 interceptor', () => {
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'login',
       query: { redirect: '/communities/5', expired: '1' },
+    })
+  })
+
+  it('flags reason=inactivity only when the server reports an inactivity timeout', async () => {
+    reject401({ message: 'Your session has expired due to inactivity. Please log in again.' })
+
+    await expect(api.get('/auth/me')).rejects.toBeTruthy()
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/communities/5', expired: '1', reason: 'inactivity' },
     })
   })
 

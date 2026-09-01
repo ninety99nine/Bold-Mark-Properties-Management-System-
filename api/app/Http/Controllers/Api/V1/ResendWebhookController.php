@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\CommunicationRecipient;
 use App\Models\InvoiceEmailEvent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +30,20 @@ class ResendWebhookController extends Controller
 
         if (!$eventType) {
             return ['message' => 'Unhandled event type: ' . $type];
+        }
+
+        // Communication archive: update the matching recipient's delivery status.
+        // "opened" maps to "read" (matches the WeConnectU archive Status column).
+        $commStatus = $eventType === 'opened' ? 'read' : 'delivered';
+        $recipient  = CommunicationRecipient::where('resend_email_id', $resendEmailId)->first();
+
+        if ($recipient) {
+            // Never downgrade a "read" back to "delivered".
+            if (! ($recipient->status === 'read' && $commStatus === 'delivered')) {
+                $recipient->update(['status' => $commStatus]);
+            }
+
+            return ['message' => 'Communication webhook processed'];
         }
 
         // Find the original sent event to get invoice and occupant context

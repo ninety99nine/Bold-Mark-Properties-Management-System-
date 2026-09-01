@@ -35,6 +35,8 @@ const props = defineProps({
   label:       { type: String, default: null },
   required:    { type: Boolean, default: false },
   error:       { type: String, default: null },
+  /** 'md' (h-11, default) | 'sm' (h-9, compact) */
+  size:        { type: String, default: 'md' },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -45,17 +47,30 @@ const containerRef  = ref(null)
 const triggerRef    = ref(null)
 const dropdownStyle = ref({})
 
-// Normalise options → always { value, label }
-const normalised = computed(() =>
-  props.options.map(o =>
-    typeof o === 'object' ? o : { value: o, label: String(o) }
-  )
-)
+// Display list — flat { value, label } rows, with { header, label } rows inserted
+// for grouped options ({ group, options: [...] }, WeConnectU "Select Status").
+const normalised = computed(() => {
+  const out = []
+  for (const o of props.options) {
+    if (o && typeof o === 'object' && Array.isArray(o.options)) {
+      out.push({ header: true, label: o.group })
+      for (const child of o.options) {
+        out.push(typeof child === 'object' ? child : { value: child, label: String(child) })
+      }
+    } else {
+      out.push(typeof o === 'object' ? o : { value: o, label: String(o) })
+    }
+  }
+  return out
+})
+
+// Selectable leaf rows only (excludes group headers).
+const selectable = computed(() => normalised.value.filter(o => !o.header))
 
 // Display label for the currently selected value
 const selectedLabel = computed(() => {
   if (props.modelValue === null || props.modelValue === undefined || props.modelValue === '') return null
-  return normalised.value.find(o => o.value === props.modelValue)?.label ?? null
+  return selectable.value.find(o => o.value === props.modelValue)?.label ?? null
 })
 
 function toggle() {
@@ -113,8 +128,8 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
         type="button"
         :id="id"
         @click="toggle"
-        class="w-full h-11 flex items-center justify-between gap-2 px-4 py-0 text-sm rounded border bg-white outline-none select-none cursor-pointer border-border"
-        :class="selectedLabel ? 'text-foreground' : 'text-muted-foreground'"
+        class="w-full flex items-center justify-between gap-2 py-0 text-sm rounded border bg-white outline-none select-none cursor-pointer border-border"
+        :class="[size === 'sm' ? 'h-9 px-3' : 'h-11 px-4', selectedLabel ? 'text-foreground' : 'text-muted-foreground']"
       >
         <span class="truncate text-left">{{ selectedLabel ?? placeholder }}</span>
         <!-- Chevron icon -->
@@ -148,19 +163,28 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
           :style="dropdownStyle"
         >
           <ul class="py-1 max-h-60 overflow-y-auto">
-            <li
-              v-for="opt in normalised"
-              :key="String(opt.value)"
-              @click="select(opt)"
-              :class="[
-                'px-4 py-2.5 text-sm cursor-pointer transition-colors duration-100',
-                opt.value === modelValue
-                  ? 'bg-amber text-white font-medium'
-                  : 'text-foreground hover:bg-amber hover:text-white',
-              ]"
-            >
-              {{ opt.label }}
-            </li>
+            <template v-for="(opt, i) in normalised" :key="opt.header ? 'h-' + i : String(opt.value)">
+              <!-- Group header (WeConnectU section label) -->
+              <li
+                v-if="opt.header"
+                class="px-4 pt-2.5 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground select-none"
+              >
+                {{ opt.label }}
+              </li>
+              <!-- Selectable option -->
+              <li
+                v-else
+                @click="select(opt)"
+                :class="[
+                  'px-4 py-2.5 text-sm cursor-pointer transition-colors duration-100',
+                  opt.value === modelValue
+                    ? 'bg-amber text-white font-medium'
+                    : 'text-foreground hover:bg-amber hover:text-white',
+                ]"
+              >
+                {{ opt.label }}
+              </li>
+            </template>
             <li v-if="normalised.length === 0" class="px-4 py-2.5 text-sm text-muted-foreground italic">
               No options available
             </li>

@@ -1,1160 +1,442 @@
+<!--
+  Customer Age Analysis — strict WeConnectU clone (Bold Mark branding).
+
+  Per-community ageing grid with the WeConnectU controls: Financial Year / Budget
+  Period selector, Ageing Date, Hide Zero / Hide Negative / Exclude Debit-Arrear
+  toggles, Status Management + Run Automatic Notices + View last notice batch,
+  Filter Type / Debt Status / Customer Group / Debit Order filters, a green
+  Download Excel button, and the aged buckets (120+/90/60/30/Current) + Balance
+  with the collection-status icons and a totals row.
+-->
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bar, Doughnut } from 'vue-chartjs'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js'
-import AppButton       from '@/components/common/AppButton.vue'
-import AppExportModal  from '@/components/common/AppExportModal.vue'
-import AppTableToolbar from '@/components/common/AppTableToolbar.vue'
-import AppStatCard     from '@/components/common/AppStatCard.vue'
-import api             from '@/composables/useApi.js'
-import { useExport }   from '@/composables/useExport.js'
-import { useCountryStore } from '@/stores/country'
+import AppButton           from '@/components/common/AppButton.vue'
+import AppSelect           from '@/components/common/AppSelect.vue'
+import AgeStatusIcon       from '@/components/age-analysis/AgeStatusIcon.vue'
+import LastNoticeBatchModal from '@/components/age-analysis/LastNoticeBatchModal.vue'
+import AppModal            from '@/components/common/AppModal.vue'
+import CustomerNotesModal   from '@/components/customer-management/CustomerNotesModal.vue'
+import api                 from '@/composables/useApi'
+import { useToast }        from '@/composables/useToast'
+import { useCommunityStore } from '@/stores/community'
 
-const countryStore = useCountryStore()
+const router         = useRouter()
+const communityStore = useCommunityStore()
+const { error: toastError } = useToast()
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend)
+const communityId   = computed(() => communityStore.selectedId)
+const communityName = computed(() => communityStore.selected?.name ?? '')
 
-const router = useRouter()
-
-// ─── Brand colours ────────────────────────────────────────────────────────
-const NAVY   = '#1F3A5C'
-const AMBER  = '#D89B4B'
-const RED    = '#dc2828'
-const MUTED  = '#717B99'
-const BORDER = '#DCDEE8'
-
-// ─── UI state ─────────────────────────────────────────────────────────────
-const showExportModal = ref(false)
-const detailedView    = ref(false)
-
-// ─── Export ───────────────────────────────────────────────────────────────
-const { downloadExport } = useExport()
-
-async function handleExportDownload({ format, records }) {
-  showExportModal.value = false
-  const ext      = format === 'xlsx' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'csv'
-  const filename = `age-analysis-${new Date().toISOString().slice(0, 10)}.${ext}`
-
-  const params = {}
-  if (countryStore.activeCountry) params.country = countryStore.activeCountry
-  if (toolbarState.value.filters?.community)       params.community_id      = toolbarState.value.filters.community
-  if (toolbarState.value.filters?.ledger)  params.ledger_id = toolbarState.value.filters.ledger
-  if (toolbarState.value.filters?.billed_to)    params.billed_to_type = toolbarState.value.filters.billed_to
-  params._format = format
-  params._limit  = records
-
-  await downloadExport('/age-analysis/export', params, filename)
-}
-
-// ─── Loading / error ──────────────────────────────────────────────────────
+// ── Data ────────────────────────────────────────────────────────────────
 const loading = ref(false)
 const error   = ref(null)
+const rows    = ref([])
+const totals  = ref({})
 
-// ─── API data ─────────────────────────────────────────────────────────────
-const ownersData  = ref([])
-const occupantsData = ref([])
-const summaryData = ref(null)
+// ── Controls ────────────────────────────────────────────────────────────
+// WeConnectU defaults the ageing date to the LAST day of the current month.
+function endOfCurrentMonth() {
+  const d    = new Date()
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  const mm   = String(last.getMonth() + 1).padStart(2, '0')
+  const dd   = String(last.getDate()).padStart(2, '0')
+  return `${last.getFullYear()}-${mm}-${dd}`
+}
+const ageingDate = ref(endOfCurrentMonth())
 
-// ─── Filter option lists (from API) ───────────────────────────────────────
-const communityOpts     = ref([])
-const ledgerOpts = ref([])
+const periods           = ref([])
+const selectedPeriodKey = ref(null)
+const fyOpen            = ref(false)
 
-// ─── Toolbar ──────────────────────────────────────────────────────────────
-const toolbarState = ref({
-  search: '', dateRange: 'all_time', customStart: '', customEnd: '', filters: {}, sort: null,
-})
-let searchDebounceTimer = null
+const hideZero           = ref(false)
+const hideNegative       = ref(false)
+const excludeDebitArrear = ref(false)
 
-const BILLED_TO_OPTS = [
-  { value: 'owner',  label: 'Owners'  },
-  { value: 'occupant', label: 'Occupants' },
+// ── Toolbar filters ──────────────────────────────────────────────────────
+const search          = ref('')
+const filterType      = ref('no_status')
+const debtStatus      = ref('')
+const customerGroupId = ref('')
+const debitOrder      = ref(false)
+const groups          = ref([])
+
+// First filter — the collection-status dropdown (WeConnectU: exactly these three,
+// mutually exclusive, defaulting to "No Status"). Red flag = handed over, orange
+// flag = payment arrangement, no flag = no status.
+const FILTER_TYPE_OPTIONS = [
+  { value: 'no_status',           label: 'No Status' },
+  { value: 'handed_over',         label: 'Handed Over' },
+  { value: 'payment_arrangement', label: 'Payment Arrangement' },
 ]
 
-const FILTER_FIELDS = computed(() => [
-  {
-    key:     'community',
-    label:   'Community',
-    options: communityOpts.value,
-  },
-  {
-    key:     'ledger',
-    label:   'Ledger',
-    options: ledgerOpts.value,
-  },
-  {
-    key:     'billed_to',
-    label:   'Billed To',
-    options: BILLED_TO_OPTS,
-  },
+const DEBT_STATUS_OPTIONS = [
+  { value: '',                    label: 'All Statuses' },
+  { value: 'none',                label: 'No Status' },
+  { value: 'first_notice',        label: '1st Notice' },
+  { value: 'second_notice',       label: '2nd Notice' },
+  { value: 'final_notice',        label: 'Letter of demand' },
+  { value: 'letter_of_demand',    label: 'Letter of Demand sent' },
+  { value: 'payment_arrangement', label: 'Payment Arrangement' },
+  { value: 'handed_over',         label: 'Handed over to Attorneys' },
+]
+
+const customerGroupOptions = computed(() => [
+  { value: '', label: 'All Groups' },
+  ...groups.value.map(g => ({ value: g.id, label: g.name })),
 ])
 
-const SORT_OPTIONS = [
-  { value: 'name_asc',   label: 'Name (A → Z)'       },
-  { value: 'name_desc',  label: 'Name (Z → A)'       },
-  { value: 'total_desc', label: 'Total (High → Low)' },
-  { value: 'total_asc',  label: 'Total (Low → High)' },
-  { value: 'unit_asc',   label: 'Unit (A → Z)'       },
-  { value: 'unit_desc',  label: 'Unit (Z → A)'       },
-]
+// ── Modals ────────────────────────────────────────────────────────────────
+const lastBatchOpen  = ref(false)
+const lastBatch      = ref(null)
+const notesOpen      = ref(false)
+const notesRow       = ref(null)
 
-// ─── Pagination ───────────────────────────────────────────────────────────
-const currentPage = ref(1)
-const PER_PAGE    = 15
+// ── FY selector groupings ──────────────────────────────────────────────────
+const pastPeriods    = computed(() => periods.value.filter(p => p.is_past))
+const currentPeriod  = computed(() => periods.value.find(p => p.is_current) ?? null)
+const futurePeriods  = computed(() => periods.value.filter(p => p.is_future))
+const selectedPeriodLabel = computed(() =>
+  periods.value.find(p => p.year === selectedPeriodKey.value)?.label ?? 'Select period',
+)
 
-// ─── Load communities for filter dropdown ────────────────────────────────────
-async function loadCommunities() {
-  try {
-    const res = await api.get('/communities', { params: { _per_page: 200 } })
-    communityOpts.value = (res.data.data ?? []).map(e => ({ value: e.id, label: e.name }))
-  } catch { /* silently ignore — filters just won't be populated */ }
+// ── Formatting (WeConnectU: plain 2dp, space thousands, no symbol) ──────────
+function fmt(v) {
+  const n = Number(v) || 0
+  const neg = n < 0
+  const [i, d] = Math.abs(n).toFixed(2).split('.')
+  return (neg ? '-' : '') + i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + d
 }
 
-// ─── Load ledgers for filter dropdown ────────────────────────────────
-async function loadLedgers() {
-  try {
-    const res = await api.get('/ledgers', { params: { _per_page: 100 } })
-    ledgerOpts.value = (res.data.data ?? []).map(c => ({ value: c.id, label: c.name }))
-  } catch { /* silently ignore */ }
+// ── Requests ────────────────────────────────────────────────────────────────
+function buildParams() {
+  const p = { ageing_date: ageingDate.value }
+  if (filterType.value)      p.filter_type          = filterType.value
+  if (debtStatus.value)      p.debt_status          = debtStatus.value
+  if (customerGroupId.value) p.customer_group_id    = customerGroupId.value
+  if (debitOrder.value)      p.debit_order          = true
+  if (hideZero.value)        p.hide_zero            = true
+  if (hideNegative.value)    p.hide_negative        = true
+  if (excludeDebitArrear.value) p.exclude_debit_arrear = true
+  if (search.value.trim())   p._search              = search.value.trim()
+  return p
 }
 
-// ─── Fetch age analysis (server filters: community_id, ledger_id) ────────
-async function fetchAgeAnalysis() {
+async function fetchData() {
+  if (!communityId.value) return
   loading.value = true
   error.value   = null
-
-  const params = {}
-  if (countryStore.activeCountry) params.country = countryStore.activeCountry
-  if (toolbarState.value.filters?.community) {
-    params.community_id = toolbarState.value.filters.community
-  }
-  if (toolbarState.value.filters?.ledger) {
-    params.ledger_id = toolbarState.value.filters.ledger
-  }
-
   try {
-    const res     = await api.get('/age-analysis', { params })
-    ownersData.value  = res.data.owners  ?? []
-    occupantsData.value = res.data.occupants ?? []
-    summaryData.value = res.data.summary ?? null
+    const { data } = await api.get(`/communities/${communityId.value}/age-analysis`, { params: buildParams() })
+    rows.value   = data.rows ?? []
+    totals.value = data.totals ?? {}
   } catch (e) {
-    error.value = 'Failed to load age analysis data. Please try again.'
+    error.value = 'Failed to load age analysis. Please try again.'
   } finally {
     loading.value = false
   }
 }
 
-// ─── Toolbar update handler ───────────────────────────────────────────────
-function onToolbarUpdate(state) {
-  const prev    = toolbarState.value
-  toolbarState.value = state
-  currentPage.value  = 1
-
-  // Re-fetch only when server-side filters (community, ledger) change
-  const serverChanged =
-    state.filters?.community       !== prev.filters?.community ||
-    state.filters?.ledger  !== prev.filters?.ledger
-  if (serverChanged) {
-    fetchAgeAnalysis()
-    return
-  }
-
-  // Debounce search (client-side computed handles it)
-  if (state.search !== prev.search) {
-    clearTimeout(searchDebounceTimer)
-    searchDebounceTimer = setTimeout(() => {}, 350)
-  }
+async function loadPeriods() {
+  if (!communityId.value) return
+  try {
+    const { data } = await api.get(`/communities/${communityId.value}/financial-years`)
+    periods.value = data.periods ?? []
+    const current = periods.value.find(p => p.is_current)
+    if (current) selectedPeriodKey.value = current.year
+  } catch { /* selector just stays empty */ }
 }
 
-// ─── Client-side filtered + sorted rows ───────────────────────────────────
-const activeRows = computed(() => {
-  // Merge owners and occupants, tagging each with _role
-  const billedTo = toolbarState.value.filters?.billed_to
-  let base
-  if (billedTo === 'owner') {
-    base = ownersData.value.map(r => ({ ...r, _role: 'owner' }))
-  } else if (billedTo === 'occupant') {
-    base = occupantsData.value.map(r => ({ ...r, _role: 'occupant' }))
-  } else {
-    base = [
-      ...ownersData.value.map(r => ({ ...r, _role: 'owner' })),
-      ...occupantsData.value.map(r => ({ ...r, _role: 'occupant' })),
-    ]
-  }
-
-  // Apply bucket filter (from summary card clicks)
-  if (activeBucket.value) {
-    base = base.filter(r => (r[activeBucket.value] ?? 0) > 0)
-  }
-
-  // Apply search (sort is applied later in displayRows, after grouping if needed)
-  const search = (toolbarState.value.search ?? '').trim().toLowerCase()
-  if (!search) return base
-  return base.filter(r =>
-    (r.person_name ?? '').toLowerCase().includes(search) ||
-    (r.unit_number ?? '').toLowerCase().includes(search) ||
-    (r.ledger ?? '').toLowerCase().includes(search)
-  )
-})
-
-// ─── Grouped rows (one row per person + unit, buckets summed) ─────────────
-const groupedActiveRows = computed(() => {
-  const map = new Map()
-  for (const row of activeRows.value) {
-    const key = `${row.person_id ?? row.person_name}__${row.unit_number}`
-    if (map.has(key)) {
-      const g = map.get(key)
-      g.current     += row.current     ?? 0
-      g['30_days']  += row['30_days']  ?? 0
-      g['60_days']  += row['60_days']  ?? 0
-      g['90_days']  += row['90_days']  ?? 0
-      g['120_plus'] += row['120_plus'] ?? 0
-      g.outstanding += row.outstanding ?? 0
-      g.invoice_count += 1
-      if (row.ledger) {
-        const existing = g.ledgers.find(ct => ct.name === row.ledger)
-        if (existing) existing.count += 1
-        else g.ledgers.push({ name: row.ledger, count: 1 })
-      }
-    } else {
-      map.set(key, {
-        ...row,
-        ledgers:  row.ledger ? [{ name: row.ledger, count: 1 }] : [],
-        invoice_count: 1,
-        current:       row.current     ?? 0,
-        '30_days':     row['30_days']  ?? 0,
-        '60_days':     row['60_days']  ?? 0,
-        '90_days':     row['90_days']  ?? 0,
-        '120_plus':    row['120_plus'] ?? 0,
-        outstanding:   row.outstanding ?? 0,
-      })
-    }
-  }
-  return [...map.values()]
-})
-
-// ─── Source for the table: pick grouped/detailed, then sort ──────────────
-const displayRows = computed(() => {
-  const source = detailedView.value ? activeRows.value : groupedActiveRows.value
-  const sort   = toolbarState.value.sort
-  if (!sort) return source
-  return [...source].sort((a, b) => {
-    if (sort === 'name_asc')   return (a.person_name ?? '').localeCompare(b.person_name ?? '')
-    if (sort === 'name_desc')  return (b.person_name ?? '').localeCompare(a.person_name ?? '')
-    if (sort === 'total_asc')  return (a.outstanding ?? 0) - (b.outstanding ?? 0)
-    if (sort === 'total_desc') return (b.outstanding ?? 0) - (a.outstanding ?? 0)
-    if (sort === 'unit_asc')   return (a.unit_number ?? '').localeCompare(b.unit_number ?? '')
-    if (sort === 'unit_desc')  return (b.unit_number ?? '').localeCompare(a.unit_number ?? '')
-    return 0
-  })
-})
-
-// ─── Pagination computed ──────────────────────────────────────────────────
-const totalPages       = computed(() => Math.max(1, Math.ceil(displayRows.value.length / PER_PAGE)))
-const totalRowsInQuery = computed(() => displayRows.value.length)
-const paginatedRows    = computed(() => {
-  const start = (currentPage.value - 1) * PER_PAGE
-  return displayRows.value.slice(start, start + PER_PAGE)
-})
-
-function setPage(page) {
-  currentPage.value = Math.min(Math.max(1, page), totalPages.value)
+async function loadGroups() {
+  if (!communityId.value) return
+  try {
+    const { data } = await api.get(`/communities/${communityId.value}/customer-groups`, { params: { _per_page: 200 } })
+    groups.value = data.data ?? []
+  } catch { /* filter just won't populate */ }
 }
 
-// ─── Summary (from API) ───────────────────────────────────────────────────
-const summary = computed(() => ({
-  current:      summaryData.value?.current           ?? 0,
-  d30:          summaryData.value?.['30_days']        ?? 0,
-  d60:          summaryData.value?.['60_days']        ?? 0,
-  d90:          summaryData.value?.['90_days']        ?? 0,
-  d120:         summaryData.value?.['120_plus']       ?? 0,
-  total:        summaryData.value?.total_outstanding  ?? 0,
-  currentCount: summaryData.value?.current_count      ?? 0,
-  d30Count:     summaryData.value?.d30_count          ?? 0,
-  d60Count:     summaryData.value?.d60_count          ?? 0,
-  d90Count:     summaryData.value?.d90_count          ?? 0,
-  d120Count:    summaryData.value?.d120_count         ?? 0,
-  totalCount:   summaryData.value?.total_count        ?? 0,
-  peopleCount:  summaryData.value?.people_count       ?? 0,
-  currentPeople: summaryData.value?.current_people_count ?? 0,
-  d30People:     summaryData.value?.d30_people_count    ?? 0,
-  d60People:     summaryData.value?.d60_people_count    ?? 0,
-  d90People:     summaryData.value?.d90_people_count    ?? 0,
-  d120People:    summaryData.value?.d120_people_count   ?? 0,
-}))
-
-// ─── Bucket filter (set by clicking summary cards) ─────────────────────────
-const activeBucket = ref(null) // null = all, 'current' | '30_days' | '60_days' | '90_days' | '120_plus'
-
-function toggleBucket(bucket) {
-  activeBucket.value = activeBucket.value === bucket ? null : bucket
-  currentPage.value = 1
+function selectPeriod(p) {
+  selectedPeriodKey.value = p.year
+  ageingDate.value        = p.end
+  fyOpen.value            = false
+  fetchData()
 }
 
-// ─── Chart helpers ────────────────────────────────────────────────────────
-const ownersTotal  = computed(() => ownersData.value.reduce((s, r) => s + (r.outstanding ?? 0), 0))
-const occupantsTotal = computed(() => occupantsData.value.reduce((s, r) => s + (r.outstanding ?? 0), 0))
-const grandTotal   = computed(() => ownersTotal.value + occupantsTotal.value)
-const ownersPct    = computed(() =>
-  grandTotal.value > 0 ? Math.round((ownersTotal.value / grandTotal.value) * 100) : 0
-)
-const occupantsPct   = computed(() => 100 - ownersPct.value)
-
-const hasAgeData     = computed(() => summary.value.total > 0)
-const hasOwnersData  = computed(() => ownersData.value.length > 0)
-const hasOccupantsData = computed(() => occupantsData.value.length > 0)
-
-// ─── Format helpers ───────────────────────────────────────────────────────
-function fmt(val) {
-  if (!val || val === 0) return '—'
-  return countryStore.formatCurrency(val)
-}
-
-function fmtFull(val) {
-  return countryStore.formatCurrency(val)
-}
-
-function fmtTip(val) {
-  return countryStore.formatCurrency(val)
-}
-
-// ─── Selected community label (for page subtitle) ────────────────────────────
-const selectedCommunityLabel = computed(() => {
-  const communityId = toolbarState.value.filters?.community
-  if (!communityId) return null
-  return communityOpts.value.find(e => e.value === communityId)?.label ?? null
-})
-
-// ─── Navigation ───────────────────────────────────────────────────────────
-function goToOwner(row) {
-  if (row.person_id) {
-    router.push({ name: 'owner-detail', params: { ownerId: row.person_id } })
-  }
-}
-
-function goToOccupant(row) {
-  if (row.person_id && row.unit_id && row.community_id) {
-    router.push({
-      name: 'occupant-detail',
-      params: { communityId: row.community_id, unitId: row.unit_id, occupantId: row.person_id },
+async function downloadExcel() {
+  if (!communityId.value) return
+  try {
+    const res = await api.get(`/communities/${communityId.value}/age-analysis/export`, {
+      params: buildParams(),
+      responseType: 'blob',
     })
+    let filename = `customer age analysis-${(communityName.value || 'community').toLowerCase()}-${ageingDate.value}.xlsx`
+    const cd = res.headers['content-disposition'] || ''
+    const m  = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd)
+    if (m) filename = decodeURIComponent(m[1].replace(/"/g, ''))
+    const url = URL.createObjectURL(res.data)
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    toastError('Could not download the Excel file.')
   }
 }
 
-function navigateToPerson(row) {
-  if (row._role === 'owner') goToOwner(row)
-  else goToOccupant(row)
+function openLastBatch() {
+  router.push({ name: 'customer-notices' })
 }
 
-// ─── Chart 1: Arrears by Ageing Bucket ───────────────────────────────────
-const ageBucketData = computed(() => ({
-  labels: ['Current', '30 Days', '60 Days', '90 Days', '120+ Days'],
-  datasets: [{
-    label: 'Arrears',
-    data: [summary.value.current, summary.value.d30, summary.value.d60, summary.value.d90, summary.value.d120],
-    backgroundColor: [NAVY, AMBER, RED, RED, RED],
-    borderRadius: 4,
-  }],
-}))
-
-const ageBucketOpts = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    tooltip: { callbacks: { label: ctx => ' ' + fmtTip(ctx.parsed.y) } },
-  },
-  scales: {
-    x: {
-      grid: { display: false },
-      border: { display: false },
-      ticks: { font: { size: 11 }, color: MUTED },
-    },
-    y: {
-      beginAtZero: true,
-      border: { display: false },
-      grid: { color: BORDER },
-      ticks: {
-        font: { size: 11 },
-        color: MUTED,
-        callback: v => countryStore.formatCurrencyCompact(v),
-      },
-    },
-  },
-}))
-
-// ─── Shared horizontal bar options ────────────────────────────────────────
-const hBarOpts = computed(() => ({
-  indexAxis: 'y',
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    tooltip: { callbacks: { label: ctx => ' ' + fmtTip(ctx.parsed.x) } },
-  },
-  scales: {
-    x: {
-      beginAtZero: true,
-      border: { display: false },
-      grid: { color: BORDER },
-      ticks: {
-        font: { size: 11 },
-        color: MUTED,
-        callback: v => countryStore.formatCurrencyCompact(v),
-      },
-    },
-    y: {
-      grid: { display: false },
-      border: { display: false },
-      ticks: { font: { size: 12 }, color: MUTED },
-    },
-  },
-}))
-
-// ─── Chart 2: Owners Outstanding ─────────────────────────────────────────
-// Keep sorted IDs in a parallel ref so the click handler can navigate
-const ownersSortedIds = ref([])
-
-const ownersBarData = computed(() => {
-  // Aggregate per person (multiple rows when filtered by ledger)
-  const totals = new Map()   // name → { total, id }
-  for (const r of ownersData.value) {
-    const name = r.person_name ?? '—'
-    const prev = totals.get(name) ?? { total: 0, id: r.person_id }
-    totals.set(name, { total: prev.total + (r.outstanding ?? 0), id: prev.id })
-  }
-  // Top 10 by highest outstanding, then reverse for horizontal bar (lowest at top)
-  const top = [...totals.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10).reverse()
-  ownersSortedIds.value = top.map(([, v]) => v.id)
-  return {
-    labels: top.map(([name]) => name.split(' ').pop()),
-    datasets: [{
-      label: 'Outstanding',
-      data: top.map(([, v]) => v.total),
-      backgroundColor: RED,
-      borderRadius: 4,
-    }],
-  }
-})
-
-const ownersBarOpts = computed(() => ({
-  ...hBarOpts.value,
-  onHover: (event) => { event.native.target.style.cursor = 'pointer' },
-  onClick: (_event, elements) => {
-    if (!elements.length) return
-    const id = ownersSortedIds.value[elements[0].index]
-    if (id) router.push({ name: 'owner-detail', params: { ownerId: id } })
-  },
-}))
-
-// ─── Chart 3: Occupants Outstanding ────────────────────────────────────────
-const occupantsSortedIds = ref([])
-
-const occupantsBarData = computed(() => {
-  // Aggregate per person
-  const totals = new Map()
-  for (const r of occupantsData.value) {
-    const name = r.person_name ?? '—'
-    const prev = totals.get(name) ?? { total: 0, id: r.person_id }
-    totals.set(name, { total: prev.total + (r.outstanding ?? 0), id: prev.id })
-  }
-  // Top 10 by highest outstanding, then reverse for horizontal bar (lowest at top)
-  const top = [...totals.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10).reverse()
-  occupantsSortedIds.value = top.map(([, v]) => v.id)
-  return {
-    labels: top.map(([name]) => name.split(' ').pop()),
-    datasets: [{
-      label: 'Outstanding',
-      data: top.map(([, v]) => v.total),
-      backgroundColor: RED,
-      borderRadius: 4,
-    }],
-  }
-})
-
-const occupantsBarOpts = computed(() => ({
-  ...hBarOpts.value,
-  onHover: (event) => { event.native.target.style.cursor = 'pointer' },
-  onClick: (_event, elements) => {
-    if (!elements.length) return
-    // Occupant detail is accessed via the unit page; use the first row's unit/community for this person
-    const id = occupantsSortedIds.value[elements[0].index]
-    if (id) router.push({ name: 'occupant-detail', params: { occupantId: id } })
-  },
-}))
-
-// ─── Chart 4: Owner vs Occupant Split (donut) ───────────────────────────────
-const splitData = computed(() => ({
-  labels: [`Owners ${ownersPct.value}%`, `Occupants ${occupantsPct.value}%`],
-  datasets: [{
-    data: [ownersTotal.value, occupantsTotal.value],
-    backgroundColor: ['#22c55e', '#3b82f6'],
-    borderWidth: 2,
-    borderColor: '#fff',
-    hoverBorderColor: '#fff',
-  }],
-}))
-
-const splitOpts = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  cutout: '62%',
-  plugins: {
-    centerText: ownersPct.value >= occupantsPct.value
-      ? { value: `${ownersPct.value}%`, label: 'Owners' }
-      : { value: `${occupantsPct.value}%`, label: 'Occupants' },
-    legend: {
-      position: 'bottom',
-      labels: {
-        font: { size: 12, family: "'DM Sans', sans-serif" },
-        color: '#1E2740',
-        padding: 16,
-        boxWidth: 10,
-        boxHeight: 10,
-        borderRadius: 3,
-      },
-    },
-    tooltip: { callbacks: { label: ctx => ' ' + fmtTip(ctx.parsed) } },
-  },
-}))
-
-// ─── Center text plugin (donut) ───────────────────────────────────────────
-const centerTextPlugin = {
-  id: 'centerText',
-  beforeDraw(chart) {
-    const opts = chart.config.options.plugins?.centerText
-    if (!opts) return
-    const { ctx, chartArea } = chart
-    if (!chartArea) return
-    const cx = (chartArea.left + chartArea.right) / 2
-    const cy = (chartArea.top + chartArea.bottom) / 2
-    ctx.save()
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.font = 'bold 24px "DM Sans", sans-serif'
-    ctx.fillStyle = '#1E2740'
-    ctx.fillText(opts.value, cx, cy - 10)
-    ctx.font = '10px "DM Sans", sans-serif'
-    ctx.fillStyle = '#717B99'
-    ctx.fillText(opts.label, cx, cy + 10)
-    ctx.restore()
-  },
+function goToStatusManagement() {
+  router.push({ name: 'customer-status' })
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────
+function goToRunNotices() {
+  router.push({ name: 'legal-notices', query: buildParams() })
+}
+
+function goToCustomer(row) {
+  if (row.person_role === 'owner' && row.person_id) {
+    router.push({ name: 'customer-detail', params: { ownerId: row.person_id } })
+  }
+}
+
+function openNotes(row) {
+  notesRow.value  = row
+  notesOpen.value = true
+}
+
+// ── Init / reactivity ──────────────────────────────────────────────────────
+function boot() {
+  if (!communityId.value) return
+  loadPeriods()
+  loadGroups()
+  fetchData()
+}
+
 onMounted(() => {
-  loadCommunities()
-  loadLedgers()
-  fetchAgeAnalysis()
+  if (!communityStore.loaded) communityStore.fetch()
+  boot()
 })
 
-// Re-fetch when active country changes
-watch(() => countryStore.activeCountry, (newVal, oldVal) => {
-  if (oldVal !== null && newVal !== oldVal) fetchAgeAnalysis()
+watch(communityId, () => {
+  rows.value = []
+  totals.value = {}
+  boot()
 })
 </script>
 
 <template>
-  <div class="space-y-6 pb-8">
-
-    <!-- ── Error state ────────────────────────────────────────────────────── -->
-    <div
-      v-if="error"
-      class="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive"
-    >
-      {{ error }}
-    </div>
-
-    <!-- ── Page Header ────────────────────────────────────────────────────── -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="font-body font-bold text-2xl text-foreground">Age Analysis</h1>
-        <p class="text-sm text-muted-foreground mt-0.5">
-          <template v-if="selectedCommunityLabel">
-            {{ selectedCommunityLabel }} — Arrears by ageing bucket
-          </template>
-          <template v-else>
-            All Communities — Arrears by ageing bucket
-          </template>
-        </p>
+  <div class="p-6">
+    <!-- No community selected -->
+    <div v-if="!communityId" class="rounded-lg border border-border bg-white p-8 text-center text-muted-foreground">
+      Select a community to view its age analysis.
+      <div class="mt-4">
+        <AppButton variant="secondary" @click="router.push('/communities')">Choose a community</AppButton>
       </div>
     </div>
 
-    <!-- ── 6 Summary Cards (2 rows × 3) ──────────────────────────────────── -->
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+    <template v-else>
+      <!-- ══════════ Header band ══════════ -->
+      <div class="rounded-t-lg border border-border bg-[#eef1f5] px-6 py-5">
+        <h1 class="font-body text-2xl font-bold text-navy-dark">Customer Age Analysis</h1>
 
-      <!-- Skeleton while loading -->
-      <template v-if="loading && !summaryData">
-        <div v-for="n in 6" :key="n" class="rounded-lg border bg-card shadow-sm">
-          <div class="p-4 text-center">
-            <div class="h-7 w-20 bg-muted rounded animate-pulse mx-auto mb-1.5" />
-            <div class="h-3 w-14 bg-muted rounded animate-pulse mx-auto" />
-          </div>
-        </div>
-      </template>
-
-      <!-- Real summary cards — clickable to filter the table by bucket -->
-      <template v-else>
-
-        <div
-          @click="toggleBucket('current')"
-          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === 'current' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
-        >
-          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
-          <AppStatCard
-            label="Current"
-            :value="fmtFull(summary.current)"
-            :subtitle="`${summary.currentCount} invoice${summary.currentCount === 1 ? '' : 's'} · ${summary.currentPeople} ${summary.currentPeople === 1 ? 'person' : 'people'}`"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-foreground">
-                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-              </svg>
-            </template>
-          </AppStatCard>
-        </div>
-
-        <div
-          @click="toggleBucket('30_days')"
-          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '30_days' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
-        >
-          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
-          <AppStatCard
-            label="30 Days"
-            :value="fmtFull(summary.d30)"
-            value-class="text-accent"
-            :subtitle="`${summary.d30Count} invoice${summary.d30Count === 1 ? '' : 's'} · ${summary.d30People} ${summary.d30People === 1 ? 'person' : 'people'}`"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-accent">
-                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-              </svg>
-            </template>
-          </AppStatCard>
-        </div>
-
-        <div
-          @click="toggleBucket('60_days')"
-          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '60_days' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
-        >
-          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
-          <AppStatCard
-            label="60 Days"
-            :value="fmtFull(summary.d60)"
-            value-class="text-accent"
-            :subtitle="`${summary.d60Count} invoice${summary.d60Count === 1 ? '' : 's'} · ${summary.d60People} ${summary.d60People === 1 ? 'person' : 'people'}`"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-accent">
-                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-              </svg>
-            </template>
-          </AppStatCard>
-        </div>
-
-        <div
-          @click="toggleBucket('90_days')"
-          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '90_days' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
-        >
-          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
-          <AppStatCard
-            label="90 Days"
-            :value="fmtFull(summary.d90)"
-            value-class="text-destructive"
-            :subtitle="`${summary.d90Count} invoice${summary.d90Count === 1 ? '' : 's'} · ${summary.d90People} ${summary.d90People === 1 ? 'person' : 'people'}`"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <path d="M12 9v4"/><path d="M12 17h.01"/>
-              </svg>
-            </template>
-          </AppStatCard>
-        </div>
-
-        <div
-          @click="toggleBucket('120_plus')"
-          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === '120_plus' ? 'ring-1 ring-primary/40 ring-offset-1' : '']"
-        >
-          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
-          <AppStatCard
-            label="120+ Days"
-            :value="fmtFull(summary.d120)"
-            value-class="text-destructive"
-            :subtitle="`${summary.d120Count} invoice${summary.d120Count === 1 ? '' : 's'} · ${summary.d120People} ${summary.d120People === 1 ? 'person' : 'people'}`"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <path d="M12 9v4"/><path d="M12 17h.01"/>
-              </svg>
-            </template>
-          </AppStatCard>
-        </div>
-
-        <div
-          @click="toggleBucket(null)"
-          :class="['cursor-pointer transition-all rounded-lg group relative', activeBucket === null ? 'ring-1 ring-destructive/40 ring-offset-1' : '']"
-        >
-          <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">Click to filter table</span>
-          <AppStatCard
-            label="Total Outstanding"
-            :value="fmtFull(summary.total)"
-            value-class="text-destructive"
-            :subtitle="`${summary.totalCount} invoice${summary.totalCount === 1 ? '' : 's'} · ${summary.peopleCount} ${summary.peopleCount === 1 ? 'person' : 'people'}`"
-            class="border-destructive/20 bg-accent/5"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] text-destructive">
-                <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
-            </template>
-          </AppStatCard>
-        </div>
-
-      </template>
-    </div>
-
-    <!-- ── Table Card ─────────────────────────────────────────────────────── -->
-    <div class="rounded-lg border bg-card shadow-sm">
-
-      <!-- Table card header -->
-      <div class="px-6 pt-5 pb-3 flex items-center justify-between">
-        <h3 class="font-body font-semibold text-lg flex items-center gap-2 text-foreground">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
-            <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
-          </svg>
-          Arrears Report
-        </h3>
-        <div class="flex items-center gap-3">
-          <!-- Detailed view toggle -->
-          <label class="inline-flex items-center gap-2 cursor-pointer select-none">
-            <span class="text-xs font-medium text-muted-foreground font-body">Detailed view</span>
+        <!-- Financial Year / Budget Period -->
+        <div class="mt-4">
+          <label class="mb-1 block text-xs font-bold text-muted-foreground">Financial Year / Budget Period:</label>
+          <div class="relative w-full max-w-md">
             <button
               type="button"
-              role="switch"
-              :aria-checked="detailedView"
-              @click="detailedView = !detailedView; currentPage = 1"
-              :class="[
-                'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
-                detailedView ? 'bg-primary' : 'bg-muted',
-              ]"
+              class="flex h-11 w-full items-center justify-between rounded-md border border-border bg-white px-3 text-sm text-foreground focus:border-navy focus:outline-none"
+              @click="fyOpen = !fyOpen"
             >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform duration-200',
-                  detailedView ? 'translate-x-4' : 'translate-x-0',
-                ]"
-              />
+              <span>{{ selectedPeriodLabel }}</span>
+              <svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
             </button>
-          </label>
 
-          <!-- Export button -->
-          <button
-            @click="showExportModal = true"
-            class="inline-flex items-center gap-1.5 h-8 px-3 rounded text-sm font-medium font-body text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-border"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" x2="12" y1="15" y2="3"/>
-            </svg>
-            Export
+            <div v-if="fyOpen" class="absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded-md border border-border bg-white py-1 shadow-lg">
+              <div v-if="pastPeriods.length" class="px-3 pb-1 pt-2 text-xs font-semibold text-muted-foreground">Past financial years</div>
+              <button v-for="p in pastPeriods" :key="p.year" type="button"
+                      class="block w-full px-4 py-1.5 text-left text-sm hover:bg-muted"
+                      :class="p.year === selectedPeriodKey ? 'bg-muted font-medium' : ''"
+                      @click="selectPeriod(p)">{{ p.label }}</button>
+
+              <template v-if="currentPeriod">
+                <div class="border-t border-border px-3 pb-1 pt-2 text-xs font-semibold text-muted-foreground">Current financial year end</div>
+                <button type="button"
+                        class="block w-full px-4 py-1.5 text-left text-sm hover:bg-muted"
+                        :class="currentPeriod.year === selectedPeriodKey ? 'bg-muted font-medium' : ''"
+                        @click="selectPeriod(currentPeriod)">{{ currentPeriod.label }}</button>
+              </template>
+
+              <template v-if="futurePeriods.length">
+                <div class="border-t border-border px-3 pb-1 pt-2 text-xs font-semibold text-muted-foreground">Future financial years</div>
+                <button v-for="p in futurePeriods" :key="p.year" type="button"
+                        class="block w-full px-4 py-1.5 text-left text-sm hover:bg-muted"
+                        :class="[p.year === selectedPeriodKey ? 'bg-muted font-medium' : '', p.is_setup ? '' : 'text-destructive']"
+                        @click="selectPeriod(p)">{{ p.label }}</button>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ageing date + toggles + actions -->
+        <div class="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
+          <div>
+            <label class="mb-1 block text-xs font-bold text-muted-foreground">Ageing Date:</label>
+            <input v-model="ageingDate" type="date"
+                   class="h-11 rounded-md border border-border bg-white px-3 text-sm focus:border-navy focus:outline-none"
+                   @change="fetchData" />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-4 pb-2.5 text-sm">
+            <label class="flex cursor-pointer items-center gap-2 select-none">
+              <input v-model="hideZero" type="checkbox" class="h-4 w-4 rounded border-border text-navy focus:ring-navy" @change="fetchData" />
+              Hide Zero Values
+            </label>
+            <label class="flex cursor-pointer items-center gap-2 select-none">
+              <input v-model="hideNegative" type="checkbox" class="h-4 w-4 rounded border-border text-navy focus:ring-navy" @change="fetchData" />
+              Hide Negative Values
+            </label>
+            <label class="flex cursor-pointer items-center gap-2 select-none">
+              <input v-model="excludeDebitArrear" type="checkbox" class="h-4 w-4 rounded border-border text-navy focus:ring-navy" @change="fetchData" />
+              Exclude Debit/Arrear charges
+            </label>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center gap-3">
+          <AppButton variant="secondary" @click="goToStatusManagement">Status Management</AppButton>
+          <AppButton variant="primary" @click="goToRunNotices">Run Automatic Notices</AppButton>
+          <button type="button" class="text-sm font-medium text-[#2f6fb0] hover:underline" @click="openLastBatch">
+            View last notice batch
           </button>
         </div>
       </div>
 
-      <!-- Toolbar row -->
-      <div class="px-6 pb-4">
-        <AppTableToolbar
-          search-placeholder="Search by name, unit..."
-          :filter-fields="FILTER_FIELDS"
-          :sort-options="SORT_OPTIONS"
-          storage-key="age-analysis"
-          date-range-context="Due Date"
-          @update:state="onToolbarUpdate"
-        />
-      </div>
+      <!-- ══════════ Table card ══════════ -->
+      <div class="rounded-b-lg border border-t-0 border-border bg-white p-5">
+        <!-- Toolbar -->
+        <div class="mb-4 flex items-center gap-2">
+          <input
+            v-model="search"
+            type="text"
+            placeholder="Search..."
+            class="h-9 w-40 shrink-0 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
+            @keyup.enter="fetchData"
+          />
+          <div class="min-w-0 flex-1"><AppSelect v-model="filterType" :options="FILTER_TYPE_OPTIONS" placeholder="Filter Type" size="sm" @change="fetchData" /></div>
+          <div class="min-w-0 flex-1"><AppSelect v-model="debtStatus" :options="DEBT_STATUS_OPTIONS" placeholder="Filter Debt Status" size="sm" @change="fetchData" /></div>
+          <div class="min-w-0 flex-1"><AppSelect v-model="customerGroupId" :options="customerGroupOptions" placeholder="Filter Customer Group" size="sm" @change="fetchData" /></div>
+          <label class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap text-xs select-none">
+            <input v-model="debitOrder" type="checkbox" class="h-4 w-4 rounded border-border text-navy focus:ring-navy" @change="fetchData" />
+            Debit Order Customers
+          </label>
 
-      <!-- Table -->
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-border bg-muted/50">
-              <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-              <th class="text-left py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
-              <th class="text-left py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                {{ detailedView ? 'Type' : 'Charges' }}
-              </th>
-              <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Current</th>
-              <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">30 Days</th>
-              <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">60 Days</th>
-              <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">90 Days</th>
-              <th class="text-right py-3 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">120+ Days</th>
-              <th class="text-right py-3 px-4 text-xs font-medium text-foreground uppercase tracking-wider font-bold">Total</th>
-            </tr>
-          </thead>
-          <tbody>
+          <button
+            type="button"
+            class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-[#2c9b67] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#268a5b]"
+            @click="downloadExcel"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" />
+            </svg>
+            Download Excel
+          </button>
+        </div>
 
-            <!-- Loading skeleton rows -->
-            <template v-if="loading">
-              <tr v-for="n in 5" :key="`sk-${n}`" class="border-b border-border">
-                <td class="py-3 px-4">
-                  <div class="h-4 w-36 bg-muted rounded animate-pulse mb-1" />
-                  <div class="h-3 w-28 bg-muted rounded animate-pulse" />
-                </td>
-                <td class="py-3 px-3"><div class="h-4 w-10 bg-muted rounded animate-pulse" /></td>
-                <td class="py-3 px-3"><div class="h-4 w-14 bg-muted rounded animate-pulse" /></td>
-                <td class="py-3 px-3 text-right"><div class="h-4 w-14 bg-muted rounded animate-pulse ml-auto" /></td>
-                <td class="py-3 px-3 text-right"><div class="h-4 w-4 bg-muted rounded animate-pulse ml-auto" /></td>
-                <td class="py-3 px-3 text-right"><div class="h-4 w-4 bg-muted rounded animate-pulse ml-auto" /></td>
-                <td class="py-3 px-3 text-right"><div class="h-4 w-4 bg-muted rounded animate-pulse ml-auto" /></td>
-                <td class="py-3 px-3 text-right"><div class="h-4 w-4 bg-muted rounded animate-pulse ml-auto" /></td>
-                <td class="py-3 px-4 text-right"><div class="h-4 w-14 bg-muted rounded animate-pulse ml-auto" /></td>
+        <!-- Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-sm">
+            <thead>
+              <tr class="bg-[#eef1f5]">
+                <th class="border border-border px-3 py-2.5 text-left text-[13px] font-bold text-navy-dark">Unit No</th>
+                <th class="border border-border px-3 py-2.5 text-left text-[13px] font-bold text-navy-dark">Customer</th>
+                <th class="border border-border px-1 py-2.5 w-8"></th>
+                <th class="border border-border px-3 py-2.5 text-right text-[13px] font-bold text-navy-dark">120+ days</th>
+                <th class="border border-border px-3 py-2.5 text-right text-[13px] font-bold text-navy-dark">90 days</th>
+                <th class="border border-border px-3 py-2.5 text-right text-[13px] font-bold text-navy-dark">60 days</th>
+                <th class="border border-border px-3 py-2.5 text-right text-[13px] font-bold text-navy-dark">30 days</th>
+                <th class="border border-border px-3 py-2.5 text-right text-[13px] font-bold text-navy-dark">Current</th>
+                <th class="border border-border px-3 py-2.5 text-right text-[13px] font-bold text-navy-dark">Balance</th>
               </tr>
-            </template>
+            </thead>
+            <tbody>
+              <!-- Loading -->
+              <tr v-if="loading">
+                <td colspan="9" class="border border-border px-3 py-10 text-center text-muted-foreground">Loading…</td>
+              </tr>
 
-            <!-- Real rows -->
-            <template v-else>
-              <tr
-                v-for="row in paginatedRows"
-                :key="row.invoice_id"
-                class="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer"
-                @click="navigateToPerson(row)"
-              >
-                <!-- Name: clickable link -->
-                <td class="py-3 px-4 font-medium">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-foreground">{{ row.person_name ?? '—' }}</span>
-                    <!-- Role badge — shown when viewing all (no billed_to filter) -->
-                    <span
-                      v-if="!toolbarState.filters?.billed_to"
-                      :class="[
-                        'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none shrink-0',
-                        row._role === 'owner'
-                          ? 'bg-success/10 text-success border border-success/20'
-                          : 'bg-blue-50 text-blue-600 border border-blue-200',
-                      ]"
-                    >
-                      {{ row._role === 'owner' ? 'Owner' : 'Occupant' }}
-                    </span>
-                  </div>
-                  <p v-if="row.person_email" class="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">
-                    {{ row.person_email }}
-                  </p>
+              <!-- Empty -->
+              <tr v-else-if="rows.length === 0">
+                <td colspan="9" class="border border-border px-3 py-10 text-center text-muted-foreground">
+                  No customers match the current filters.
                 </td>
-                <td class="py-3 px-3 text-foreground font-medium">{{ row.unit_number ?? '—' }}</td>
-                <!-- Type cell: single type in detailed mode, badge list in grouped mode -->
-                <td class="py-3 px-3">
-                  <template v-if="detailedView">
-                    <span class="text-muted-foreground">{{ row.ledger ?? '—' }}</span>
-                  </template>
-                  <template v-else>
-                    <div class="flex flex-wrap gap-1">
-                      <span
-                        v-for="ct in row.ledgers"
-                        :key="ct.name"
-                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border leading-none"
-                      >{{ ct.name }}<span v-if="ct.count > 1" class="text-[9px] font-bold text-accent">× {{ ct.count }}</span></span>
+              </tr>
+
+              <!-- Rows -->
+              <template v-else>
+                <tr v-for="row in rows" :key="row.unit_id" class="hover:bg-muted/30">
+                  <td class="border border-border px-3 py-2 text-navy-dark">{{ row.unit_no }}</td>
+                  <td class="border border-border px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <AgeStatusIcon
+                        :status="row.collection_status"
+                        :customer-name="row.customer_name"
+                        :transfer-active="row.transfer_active"
+                        :debit-order="row.debit_order"
+                      />
+                      <button type="button" class="text-left font-medium text-[#2f6fb0] hover:underline" @click="goToCustomer(row)">
+                        {{ row.customer_code }}<template v-if="row.customer_code">: </template>{{ row.customer_name }}
+                      </button>
                     </div>
-                  </template>
-                </td>
-                <!-- Current: neutral -->
-                <td class="py-3 px-3 text-right text-foreground">{{ fmt(row.current) }}</td>
-                <!-- 30 Days: amber -->
-                <td class="py-3 px-3 text-right text-accent">{{ fmt(row['30_days']) }}</td>
-                <!-- 60 Days: amber bold -->
-                <td class="py-3 px-3 text-right text-accent font-medium">{{ fmt(row['60_days']) }}</td>
-                <!-- 90 Days: red danger -->
-                <td class="py-3 px-3 text-right text-destructive">{{ fmt(row['90_days']) }}</td>
-                <!-- 120+ Days: red danger bold -->
-                <td class="py-3 px-3 text-right text-destructive font-medium">{{ fmt(row['120_plus']) }}</td>
-                <!-- Total: bold -->
-                <td class="py-3 px-4 text-right font-bold text-foreground">{{ fmt(row.outstanding) }}</td>
+                  </td>
+                  <td class="border border-border px-1 py-2 text-center">
+                    <button type="button" class="relative" :class="row.notes_count > 0 ? 'text-[#2f6fb0] hover:text-navy' : 'text-muted-foreground/40 hover:text-navy'" title="Collection notes" @click="openNotes(row)">
+                      <svg class="mx-auto h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v6h6" />
+                      </svg>
+                      <span v-if="row.notes_count" class="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-bold leading-none text-white">{{ row.notes_count }}</span>
+                    </button>
+                  </td>
+                  <td class="border border-border px-3 py-2 text-right tabular-nums text-navy-dark">{{ fmt(row['120_plus']) }}</td>
+                  <td class="border border-border px-3 py-2 text-right tabular-nums text-navy-dark">{{ fmt(row['90_days']) }}</td>
+                  <td class="border border-border px-3 py-2 text-right tabular-nums text-navy-dark">{{ fmt(row['60_days']) }}</td>
+                  <td class="border border-border px-3 py-2 text-right tabular-nums text-navy-dark">{{ fmt(row['30_days']) }}</td>
+                  <td class="border border-border px-3 py-2 text-right tabular-nums text-navy-dark">{{ fmt(row.current) }}</td>
+                  <td class="border border-border px-3 py-2 text-right font-semibold tabular-nums text-navy-dark">{{ fmt(row.balance) }}</td>
+                </tr>
+              </template>
+            </tbody>
+            <tfoot v-if="!loading && rows.length">
+              <tr class="bg-[#eef1f5] font-bold text-navy-dark">
+                <td class="border border-border px-3 py-2.5"></td>
+                <td class="border border-border px-3 py-2.5">Totals</td>
+                <td class="border border-border px-1 py-2.5"></td>
+                <td class="border border-border px-3 py-2.5 text-right tabular-nums">{{ fmt(totals['120_plus']) }}</td>
+                <td class="border border-border px-3 py-2.5 text-right tabular-nums">{{ fmt(totals['90_days']) }}</td>
+                <td class="border border-border px-3 py-2.5 text-right tabular-nums">{{ fmt(totals['60_days']) }}</td>
+                <td class="border border-border px-3 py-2.5 text-right tabular-nums">{{ fmt(totals['30_days']) }}</td>
+                <td class="border border-border px-3 py-2.5 text-right tabular-nums">{{ fmt(totals.current) }}</td>
+                <td class="border border-border px-3 py-2.5 text-right tabular-nums">{{ fmt(totals.balance) }}</td>
               </tr>
+            </tfoot>
+          </table>
+        </div>
 
-              <!-- Empty state -->
-              <tr v-if="paginatedRows.length === 0">
-                <td colspan="9" class="py-12 text-center">
-                  <div class="flex flex-col items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-muted-foreground/40">
-                      <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
-                    </svg>
-                    <p class="text-sm text-muted-foreground">
-                      <template v-if="toolbarState.search || toolbarState.filters?.community || toolbarState.filters?.ledger">
-                        No arrears match your filters.
-                      </template>
-                      <template v-else>
-                        No outstanding arrears found. All accounts are clear.
-                      </template>
-                    </p>
-                  </div>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
+        <p v-if="error" class="mt-3 text-sm text-destructive">{{ error }}</p>
       </div>
 
-      <!-- Pagination -->
-      <div
-        v-if="!loading && totalPages > 1"
-        class="flex items-center justify-between px-6 py-3 border-t border-border"
-      >
-        <p class="text-xs text-muted-foreground">
-          Showing {{ (currentPage - 1) * PER_PAGE + 1 }}–{{ Math.min(currentPage * PER_PAGE, totalRowsInQuery) }}
-          of {{ totalRowsInQuery }} records
-        </p>
-        <div class="flex items-center gap-1">
-          <button
-            class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
-            :disabled="currentPage <= 1"
-            @click="setPage(currentPage - 1)"
-          >Previous</button>
-          <button
-            v-for="page in totalPages"
-            :key="page"
-            :class="[
-              'h-8 w-8 text-xs rounded border transition-colors',
-              page === currentPage
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-border hover:bg-muted',
-            ]"
-            @click="setPage(page)"
-          >{{ page }}</button>
-          <button
-            class="h-8 px-3 text-xs rounded border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
-            :disabled="currentPage >= totalPages"
-            @click="setPage(currentPage + 1)"
-          >Next</button>
-        </div>
-      </div>
+      <!-- ══════════ Modals ══════════ -->
+      <LastNoticeBatchModal
+        :show="lastBatchOpen"
+        :community-id="communityId"
+        :batch="lastBatch"
+        @close="lastBatchOpen = false"
+      />
 
-    </div>
-
-    <!-- ── Charts: 3-column row ───────────────────────────────────────────── -->
-    <!-- Skeleton while primary data is still loading -->
-    <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div v-for="n in 3" :key="n" class="rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div class="px-6 pt-5 pb-2">
-          <div class="h-4 w-40 bg-muted rounded animate-pulse" />
-        </div>
-        <div class="px-6 pb-6">
-          <div class="h-56 bg-muted/50 rounded animate-pulse" />
-        </div>
-      </div>
-    </div>
-
-    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-      <!-- Chart 1: Arrears by Ageing Bucket -->
-      <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Arrears by Ageing Bucket</h3>
-        </div>
-        <div class="px-6 pb-6">
-          <!-- Loading skeleton -->
-          <div v-if="loading" class="h-[280px] flex items-end gap-4 justify-center pb-6">
-            <div v-for="n in 5" :key="n" :style="{ height: `${30 + n * 20}px` }" class="w-12 bg-muted rounded animate-pulse" />
-          </div>
-          <!-- Ghost chart when no data -->
-          <div v-else-if="!hasAgeData" class="h-[280px] flex flex-col items-center justify-center">
-            <svg width="100%" height="220" viewBox="0 0 300 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-              <!-- Y-axis -->
-              <line x1="38" y1="10" x2="38" y2="168" stroke="#E8EAF0" stroke-width="1.5"/>
-              <!-- X-axis (extended to cover all 5 bars) -->
-              <line x1="38" y1="168" x2="298" y2="168" stroke="#E8EAF0" stroke-width="1.5"/>
-              <!-- Grid lines -->
-              <line x1="38" y1="44"  x2="298" y2="44"  stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <line x1="38" y1="86"  x2="298" y2="86"  stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <line x1="38" y1="128" x2="298" y2="128" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <!-- Y-axis tick labels -->
-              <rect x="8" y="41"  width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="8" y="83"  width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="8" y="125" width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <!-- 5 bars evenly spaced (width=36, gap=16): Current(navy), 30d(amber), 60d-90d-120+(red) -->
-              <rect x="50"  y="28"  width="36" height="140" rx="4" fill="#CBD5E8" opacity="0.75"/>
-              <rect x="102" y="80"  width="36" height="88"  rx="4" fill="#FDE68A" opacity="0.75"/>
-              <rect x="154" y="112" width="36" height="56"  rx="4" fill="#FECACA" opacity="0.75"/>
-              <rect x="206" y="148" width="36" height="20"  rx="4" fill="#FECACA" opacity="0.55"/>
-              <rect x="258" y="154" width="36" height="14"  rx="4" fill="#FECACA" opacity="0.45"/>
-              <!-- X-axis labels (centred under each bar) -->
-              <rect x="52"  y="176" width="32" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="104" y="176" width="32" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="156" y="176" width="32" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="208" y="176" width="32" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="260" y="176" width="32" height="6" rx="3" fill="#E8EAF0"/>
-            </svg>
-            <p class="text-xs text-muted-foreground -mt-1">Arrears data will appear here once invoices are overdue</p>
-          </div>
-          <!-- Chart -->
-          <div v-else class="h-[280px] relative">
-            <Bar :data="ageBucketData" :options="ageBucketOpts" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Chart 2: Owners Outstanding -->
-      <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Owners — Outstanding</h3>
-        </div>
-        <div class="px-6 pb-6">
-          <!-- Loading skeleton -->
-          <div v-if="loading" class="h-[280px] space-y-3 py-4">
-            <div v-for="n in 5" :key="n" class="h-6 bg-muted rounded animate-pulse" :style="{ width: `${30 + n * 12}%` }" />
-          </div>
-          <!-- Ghost chart when no data -->
-          <div v-else-if="!hasOwnersData" class="h-[280px] flex flex-col items-center justify-center">
-            <svg width="100%" height="220" viewBox="0 0 300 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-              <!-- Y-axis (left) -->
-              <line x1="90" y1="10" x2="90" y2="178" stroke="#E8EAF0" stroke-width="1.5"/>
-              <!-- X-axis (bottom) -->
-              <line x1="90" y1="178" x2="285" y2="178" stroke="#E8EAF0" stroke-width="1.5"/>
-              <!-- Grid lines (vertical) -->
-              <line x1="148" y1="10" x2="148" y2="178" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <line x1="210" y1="10" x2="210" y2="178" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <line x1="270" y1="10" x2="270" y2="178" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <!-- Y-axis labels (name placeholders) -->
-              <rect x="10" y="19"  width="74" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="10" y="53"  width="62" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="10" y="87"  width="68" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="10" y="121" width="56" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="10" y="155" width="66" height="6" rx="3" fill="#E8EAF0"/>
-              <!-- Horizontal bars (red ghost) -->
-              <rect x="92" y="12"  height="16" width="186" rx="4" fill="#FECACA" opacity="0.8"/>
-              <rect x="92" y="46"  height="16" width="150" rx="4" fill="#FECACA" opacity="0.8"/>
-              <rect x="92" y="80"  height="16" width="118" rx="4" fill="#FECACA" opacity="0.8"/>
-              <rect x="92" y="114" height="16" width="84"  rx="4" fill="#FECACA" opacity="0.75"/>
-              <rect x="92" y="148" height="16" width="52"  rx="4" fill="#FECACA" opacity="0.7"/>
-              <!-- X-axis tick labels -->
-              <rect x="128" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="192" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="254" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
-            </svg>
-            <p class="text-xs text-muted-foreground -mt-1">No owner arrears — data will appear here once invoices are overdue</p>
-          </div>
-          <!-- Chart -->
-          <div v-else class="h-[280px] relative">
-            <Bar :data="ownersBarData" :options="ownersBarOpts" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Chart 3: Occupants Outstanding -->
-      <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Occupants — Outstanding</h3>
-        </div>
-        <div class="px-6 pb-6">
-          <!-- Loading skeleton -->
-          <div v-if="loading" class="h-[280px] space-y-3 py-4">
-            <div v-for="n in 3" :key="n" class="h-6 bg-muted rounded animate-pulse" :style="{ width: `${40 + n * 15}%` }" />
-          </div>
-          <!-- Ghost chart when no data -->
-          <div v-else-if="!hasOccupantsData" class="h-[280px] flex flex-col items-center justify-center">
-            <svg width="100%" height="220" viewBox="0 0 300 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-              <!-- Y-axis -->
-              <line x1="90" y1="10" x2="90" y2="178" stroke="#E8EAF0" stroke-width="1.5"/>
-              <!-- X-axis -->
-              <line x1="90" y1="178" x2="285" y2="178" stroke="#E8EAF0" stroke-width="1.5"/>
-              <!-- Grid lines -->
-              <line x1="148" y1="10" x2="148" y2="178" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <line x1="210" y1="10" x2="210" y2="178" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <line x1="270" y1="10" x2="270" y2="178" stroke="#F0F0F5" stroke-width="1" stroke-dasharray="4,3"/>
-              <!-- Y-axis labels -->
-              <rect x="10" y="37"  width="74" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="10" y="87"  width="60" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="10" y="137" width="68" height="6" rx="3" fill="#E8EAF0"/>
-              <!-- Horizontal bars (3 occupants, red ghost) -->
-              <rect x="92" y="28"  height="16" width="172" rx="4" fill="#FECACA" opacity="0.8"/>
-              <rect x="92" y="78"  height="16" width="120" rx="4" fill="#FECACA" opacity="0.8"/>
-              <rect x="92" y="128" height="16" width="72"  rx="4" fill="#FECACA" opacity="0.75"/>
-              <!-- X-axis tick labels -->
-              <rect x="128" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="192" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
-              <rect x="254" y="186" width="24" height="6" rx="3" fill="#E8EAF0"/>
-            </svg>
-            <p class="text-xs text-muted-foreground -mt-1">No occupant arrears — data will appear here once invoices are overdue</p>
-          </div>
-          <!-- Chart -->
-          <div v-else class="h-[280px] relative">
-            <Bar :data="occupantsBarData" :options="occupantsBarOpts" />
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ── Owner vs Occupant Split (donut) ──────────────────────────────────── -->
-    <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div class="px-6 pt-5 pb-2">
-          <div class="h-4 w-40 bg-muted rounded animate-pulse" />
-        </div>
-        <div class="px-6 pb-6">
-          <div class="h-64 bg-muted/50 rounded animate-pulse" />
-        </div>
-      </div>
-    </div>
-    <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-      <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Owner vs Occupant Split</h3>
-        </div>
-        <div class="px-6 pb-6">
-          <!-- Loading skeleton -->
-          <div v-if="loading" class="h-[260px] flex items-center justify-center">
-            <div class="w-40 h-40 rounded-full border-4 border-muted animate-pulse" />
-          </div>
-          <!-- Ghost chart when no data -->
-          <div v-else-if="!hasAgeData" class="h-[260px] flex flex-col items-center justify-center">
-            <svg width="240" height="220" viewBox="0 0 240 220" xmlns="http://www.w3.org/2000/svg">
-              <!-- Ghost donut: 2 segments (~65% green/owner, ~35% blue/occupant) -->
-              <!-- Geometry: center(120,110), outer r=80, inner r=50 — matches Occupancy Breakdown -->
-              <!-- Segment 1: Owners (65% — large arc, sweep-flag=1) -->
-              <path d="M 120.0 30.0 A 80 80 0 1 1 55.3 157.0 L 79.5 139.4 A 50 50 0 1 0 120.0 60.0 Z" fill="#D1EFE0" opacity="0.75"/>
-              <!-- Segment 2: Occupants (35% — small arc, sweep-flag=1) -->
-              <path d="M 55.3 157.0 A 80 80 0 0 1 120.0 30.0 L 120.0 60.0 A 50 50 0 0 0 79.5 139.4 Z" fill="#CCDDF9" opacity="0.75"/>
-              <!-- Center hole fill -->
-              <circle cx="120" cy="110" r="42" fill="white"/>
-              <!-- Center text placeholders -->
-              <rect x="94"  y="102" width="52" height="10" rx="5" fill="#E8EAF0"/>
-              <rect x="102" y="118" width="36" height="8"  rx="4" fill="#E8EAF0"/>
-              <!-- Legend placeholders -->
-              <rect x="46"  y="202" width="10" height="10" rx="2" fill="#D1EFE0"/>
-              <rect x="60"  y="205" width="40" height="6"  rx="3" fill="#E8EAF0"/>
-              <rect x="120" y="202" width="10" height="10" rx="2" fill="#CCDDF9"/>
-              <rect x="134" y="205" width="48" height="6"  rx="3" fill="#E8EAF0"/>
-            </svg>
-            <p class="text-xs text-muted-foreground mt-3">Data will appear here once arrears exist</p>
-          </div>
-          <!-- Chart -->
-          <div v-else class="h-[260px] w-full relative">
-            <Doughnut :data="splitData" :options="splitOpts" :plugins="[centerTextPlugin]" />
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ── Export Modal ───────────────────────────────────────────────────── -->
-    <AppExportModal
-      :show="showExportModal"
-      context="Age Analysis"
-      @close="showExportModal = false"
-      @download="handleExportDownload"
-    />
-
+      <CustomerNotesModal :show="notesOpen" :community-id="communityId" :unit="notesRow" @close="notesOpen = false" @changed="fetchData" />
+    </template>
   </div>
 </template>

@@ -53,9 +53,11 @@ export function isLevyOnly(entityType) {
   return billingBasis(entityType) === 'levy'
 }
 
-/** Human-readable label for an entity type value. */
+/** Human-readable label for an entity type value.
+ *  Resolves ALL known types (incl. the legacy rental/mixed values) so a seeded
+ *  or pre-existing rental community never renders its raw snake_case value. */
 export function entityTypeLabel(entityType) {
-  return ENTITY_TYPE_OPTIONS.find(o => o.value === entityType)?.label || entityType || '—'
+  return ENTITY_TYPE_LABELS[entityType] || entityType || '—'
 }
 
 // Tailwind badge classes per entity type (levy schemes share the brand-navy chip;

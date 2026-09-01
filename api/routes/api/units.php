@@ -48,6 +48,7 @@ Route::prefix('communities/{community}/units')
             Route::post('/collection-notes', 'addCollectionNote')->name('add.collection.note');
             Route::get('/statement', 'downloadStatement')->name('download.statement');
             Route::post('/statement/email', 'emailStatement')->name('email.statement');
+            Route::get('/customer-ledger', 'showCustomerLedger')->name('show.customer.ledger');
 
             // Communication (e-mail) log
             Route::get('/communications', 'showCommunications')->name('show.communications');

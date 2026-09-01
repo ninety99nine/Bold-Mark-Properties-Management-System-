@@ -38,10 +38,21 @@ class Community extends Model
         'payment_reminder_days'   => 'integer',
         'billing_paused'          => 'boolean',
         'financial_year_end_month' => 'integer',
+        'pdf_passwords'            => 'boolean',
+        'penalty_admin_fee'        => 'float',
+        'warning_admin_fee'        => 'float',
+        'transfer_clearance_fee'   => 'float',
+        'phonecall_fee'            => 'float',
+        'apply_debt_collection_fee' => 'boolean',
+        'handed_over_fee'          => 'float',
+        'notice_threshold_amount'  => 'float',
+        'notice_charges'           => 'array',
+        'notices_exemption'        => 'array',
         'is_vat_registered'        => 'boolean',
         'interest_rate'            => 'float',
         'interest_exempt_threshold' => 'float',
         'ageing_type'              => AgeingType::class,
+        'opening_balance_date'     => 'date',
         'suppress_entity_type'     => 'boolean',
         'apply_pq'                 => 'boolean',
         'transfer_clearance_bank'  => 'array',
@@ -82,12 +93,29 @@ class Community extends Model
         'registration_number',
         'csos_registration_number',
         'income_tax_number',
+        'merchant_number',
+        'pdf_passwords',
+        'community_manager_id',
+        'previous_managing_agent',
+        'opening_balance_date',
+        'penalty_admin_fee',
+        'warning_admin_fee',
+        'transfer_clearance_fee',
+        'phonecall_fee',
+        'apply_debt_collection_fee',
+        'handed_over_fee',
+        'notice_threshold_amount',
+        'notice_charges',
+        'notices_exemption',
         'financial_year_end_month',
         'is_vat_registered',
         'vat_number',
         'interest_rate',
         'interest_exempt_threshold',
         'ageing_type',
+        'email_logo_url',
+        'email_header_url',
+        'email_footer_url',
         'organization_id',
     ];
 
@@ -151,6 +179,16 @@ class Community extends Model
     }
 
     /**
+     * Get the community's customer groups.
+     *
+     * @return HasMany
+     */
+    public function customerGroups(): HasMany
+    {
+        return $this->hasMany(CustomerGroup::class);
+    }
+
+    /**
      * Get the community's members (Settings → Users list).
      *
      * @return HasMany
@@ -188,6 +226,16 @@ class Community extends Model
     public function bankAccounts(): HasMany
     {
         return $this->hasMany(BankAccount::class);
+    }
+
+    /**
+     * The community's default billing setup (ledger mappings + recovery toggles).
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function billingSetup(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(CommunityBillingSetup::class);
     }
 
     /**
@@ -240,6 +288,16 @@ class Community extends Model
     }
 
     /**
+     * Get budget lines (per-ledger monthly figures) for this community.
+     *
+     * @return HasMany
+     */
+    public function budgets(): HasMany
+    {
+        return $this->hasMany(CommunityBudget::class);
+    }
+
+    /**
      * Get staff users assigned to this community.
      *
      * @return BelongsToMany
@@ -249,6 +307,17 @@ class Community extends Model
         return $this->belongsToMany(User::class, 'user_communities')
                     ->using(UserCommunity::class)
                     ->withTimestamps();
+    }
+
+    /**
+     * The staff user designated as this community's manager (WeConnectU
+     * "Community Manager"). Nullable — communities may have none set.
+     *
+     * @return BelongsTo
+     */
+    public function communityManager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'community_manager_id');
     }
 
     public function resolveRouteBinding($value, $field = null): ?self

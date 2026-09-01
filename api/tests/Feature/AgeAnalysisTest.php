@@ -8,6 +8,7 @@ use App\Models\Ledger;
 use App\Models\Owner;
 use App\Models\Unit;
 use App\Models\UnitCollectionNote;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Helper: create a unit + owner + one outstanding invoice due `$daysOverdue`
@@ -36,16 +37,48 @@ function arrearsUnit(string $orgId, Community $community, float $amount, int $da
     return $unit;
 }
 
+/** Route helper for the community-scoped age analysis endpoint. */
+function ageRoute(Community $community, array $params = []): string
+{
+    return route('api.v1.show.community.age.analysis', array_merge(['community' => $community->id], $params));
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Auth
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns 401 on age analysis routes when unauthenticated', function (string $method, string $route) {
-    $this->{$method . 'Json'}(route($route))->assertUnauthorized();
-})->with([
-    ['get',  'api.v1.show.age.analysis'],
-    ['post', 'api.v1.send.age.analysis.notices'],
-]);
+it('returns 401 on age analysis routes when unauthenticated', function () {
+    $community = Community::factory()->create(['organization_id' => createOrganization()->id]);
+
+    $this->getJson(ageRoute($community))->assertUnauthorized();
+    $this->postJson(route('api.v1.run.community.notices', ['community' => $community->id]))->assertUnauthorized();
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Financial Year / Budget Period selector
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('lists past/current/future financial-year periods with the current one flagged', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create([
+        'organization_id'          => $user->organization_id,
+        'financial_year_end_month' => 12,
+    ]);
+
+    $resp = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community.financial.years', ['community' => $community->id]))
+        ->assertOk();
+
+    expect($resp->json('periods'))->toHaveCount(6);
+
+    $current = collect($resp->json('periods'))->firstWhere('is_current', true);
+    expect($current)->not->toBeNull()
+        ->and($current['label'])->toContain('31/12/');
+
+    $future = collect($resp->json('periods'))->firstWhere('is_future', true);
+    expect($future['is_setup'])->toBeFalse()
+        ->and($future['label'])->toContain('Not Setup');
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Shape + buckets
@@ -57,11 +90,12 @@ it('returns rows and totals keyed by WeConnectU buckets', function () {
     arrearsUnit($user->organization_id, $community, 1000, 45); // 60-day bucket
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.age.analysis'))
+        ->getJson(ageRoute($community))
         ->assertOk()
         ->assertJsonStructure([
-            'rows' => [['unit_id', 'unit_number', 'customer_code', 'customer_name', 'collection_status', 'debit_order', 'notes_count', '120_plus', '90_days', '60_days', '30_days', 'current', 'balance']],
+            'rows' => [['unit_id', 'unit_number', 'unit_no', 'customer_code', 'customer_name', 'collection_status', 'debit_order', 'notes_count', '120_plus', '90_days', '60_days', '30_days', 'current', 'balance']],
             'totals' => ['120_plus', '90_days', '60_days', '30_days', 'current', 'balance', 'customer_count'],
+            'ageing_date',
         ]);
 
     expect($response->json('totals.customer_count'))->toBe(1)
@@ -74,7 +108,7 @@ it('places invoices in the correct ageing bucket', function (int $daysOverdue, s
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     arrearsUnit($user->organization_id, $community, 500, $daysOverdue);
 
-    $row = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('rows.0');
+    $row = $this->actingAs($user, 'api')->getJson(ageRoute($community))->json('rows.0');
 
     expect((float) $row[$bucket])->toBe(500.0)
         ->and((float) $row['balance'])->toBe(500.0);
@@ -93,14 +127,13 @@ it('aggregates multiple invoices for the same unit into one row', function () {
     $owner     = Owner::where('unit_id', $unit->id)->first();
     $ledger    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
-    // second invoice, current bucket, same unit
     Invoice::factory()->create([
         'organization_id' => $user->organization_id, 'unit_id' => $unit->id, 'ledger_id' => $ledger->id,
         'billed_to_type' => 'owner', 'billed_to_id' => $owner->id, 'amount' => 400, 'status' => 'unpaid',
         'due_date' => now()->addDays(5)->toDateString(),
     ]);
 
-    $response = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->assertOk();
+    $response = $this->actingAs($user, 'api')->getJson(ageRoute($community))->assertOk();
 
     expect($response->json('totals.customer_count'))->toBe(1)
         ->and((float) $response->json('rows.0.60_days'))->toBe(1000.0)
@@ -120,7 +153,7 @@ it('excludes fully paid units', function () {
         'due_date' => now()->subDays(45)->toDateString(),
     ]);
 
-    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('totals.customer_count'))->toBe(0);
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community))->json('totals.customer_count'))->toBe(0);
 });
 
 it('nets unallocated credits oldest-first and can produce a negative balance', function () {
@@ -128,7 +161,6 @@ it('nets unallocated credits oldest-first and can produce a negative balance', f
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit      = arrearsUnit($user->organization_id, $community, 1000, 120); // 120+ bucket
 
-    // credit of 1500 → clears the 1000 arrears, leaves 500 credit → balance -500
     CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id,
         'community_id'    => $community->id,
@@ -138,7 +170,7 @@ it('nets unallocated credits oldest-first and can produce a negative balance', f
         'amount'          => 1500,
     ]);
 
-    $row = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('rows.0');
+    $row = $this->actingAs($user, 'api')->getJson(ageRoute($community))->json('rows.0');
 
     expect((float) $row['120_plus'])->toBe(0.0)
         ->and((float) $row['balance'])->toBe(-500.0);
@@ -159,7 +191,7 @@ it('surfaces collection status, debit order and notes count on the row', functio
         'unit_id' => $unit->id, 'organization_id' => $user->organization_id, 'note' => 'Called owner',
     ]);
 
-    $row = $this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('rows.0');
+    $row = $this->actingAs($user, 'api')->getJson(ageRoute($community))->json('rows.0');
 
     expect($row['collection_status'])->toBe('second_notice')
         ->and($row['collection_status_label'])->toBe('2nd Notice')
@@ -171,55 +203,134 @@ it('surfaces collection status, debit order and notes count on the row', functio
 // Filters
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('filters by debt status and debit order', function () {
+it('filters by debt status, debit order and hide-negative', function () {
     $user      = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     arrearsUnit($user->organization_id, $community, 500, 45, ['collection_status' => CollectionStatus::FIRST_NOTICE->value, 'debit_order' => true]);
     arrearsUnit($user->organization_id, $community, 500, 45, ['collection_status' => CollectionStatus::HANDED_OVER->value, 'debit_order' => false]);
 
-    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis', ['debt_status' => 'first_notice']))->json('totals.customer_count'))->toBe(1);
-    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis', ['debit_order' => 'true']))->json('totals.customer_count'))->toBe(1);
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['debt_status' => 'first_notice']))->json('totals.customer_count'))->toBe(1);
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['filter_type' => 'handed_over']))->json('totals.customer_count'))->toBe(1);
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['debit_order' => 'true']))->json('totals.customer_count'))->toBe(1);
 });
 
-it('scopes results to the authenticated organization', function () {
+it('scopes results to the community', function () {
     $user  = adminUser();
     $mine  = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $other = Community::factory()->create(['organization_id' => $user->organization_id]);
     arrearsUnit($user->organization_id, $mine, 500, 45);
+    arrearsUnit($user->organization_id, $other, 900, 45);
 
-    $other = createOrganization();
-    $theirs = Community::factory()->create(['organization_id' => $other->id]);
-    arrearsUnit($other->id, $theirs, 900, 45);
-
-    expect($this->actingAs($user, 'api')->getJson(route('api.v1.show.age.analysis'))->json('totals.customer_count'))->toBe(1);
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($mine))->json('totals.customer_count'))->toBe(1);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Export + Send Notices
+// Excel export
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('exports the age analysis as CSV with the WeConnectU columns', function () {
+it('exports a WeConnectU-named Excel workbook', function () {
     $user      = adminUser();
-    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $community = Community::factory()->create([
+        'organization_id' => $user->organization_id,
+        'name'            => 'Lyndhurst Estate',
+    ]);
     arrearsUnit($user->organization_id, $community, 500, 45);
 
-    $response = $this->actingAs($user, 'api')
-        ->get(route('api.v1.export.age.analysis', ['_format' => 'csv']))
-        ->assertOk();
+    $resp = $this->actingAs($user, 'api')
+        ->get(route('api.v1.export.community.age.analysis', ['community' => $community->id]));
 
-    $body = $response->streamedContent();
-    expect($body)->toContain('120+ Days')->toContain('Balance')->toContain('Customer');
+    $resp->assertOk();
+    expect($resp->headers->get('content-disposition'))
+        ->toContain('customer age analysis-lyndhurst estate');
 });
 
-it('send notices advances the collection status and logs a note for arrears customers', function () {
-    $user      = adminUser();
+// ──────────────────────────────────────────────────────────────────────────────
+// Run Automatic Notices
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('runs automatic notices — escalating status, logging a note and rendering a downloadable letter', function () {
+    Storage::fake('local');
+
+    $user      = superAdminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
-    $unit      = arrearsUnit($user->organization_id, $community, 500, 45); // status none
+    $unit      = arrearsUnit($user->organization_id, $community, 2000, 120); // status none
+
+    $resp = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.run.community.notices', ['community' => $community->id]), [])
+        ->assertOk();
+
+    expect($resp->json('batch.total'))->toBe(1);
+    expect($unit->fresh()->collection_status->value)->toBe(CollectionStatus::FIRST_NOTICE->value)
+        ->and(UnitCollectionNote::where('unit_id', $unit->id)->count())->toBe(1);
+
+    $batchId = $resp->json('batch.id');
+    $itemId  = $resp->json('batch.sections.0.rows.0.id');
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.send.age.analysis.notices'))
-        ->assertOk()
-        ->assertJsonPath('sent', 1);
+        ->get(route('api.v1.download.community.notice.item', [
+            'community'       => $community->id,
+            'noticeBatch'     => $batchId,
+            'noticeBatchItem' => $itemId,
+        ]))
+        ->assertOk();
+});
 
-    expect($unit->fresh()->collection_status->value)->toBe('first_notice')
-        ->and(UnitCollectionNote::where('unit_id', $unit->id)->count())->toBe(1);
+it('does not chase handed-over customers when running notices', function () {
+    Storage::fake('local');
+
+    $user      = superAdminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 1000, 120, ['collection_status' => CollectionStatus::HANDED_OVER->value]);
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.run.community.notices', ['community' => $community->id]), [])
+        ->assertStatus(500); // no chaseable customers → "No overdue customers to notice."
+});
+
+it('shows the last notice batch', function () {
+    Storage::fake('local');
+
+    $user      = superAdminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 2000, 120);
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.run.community.notices', ['community' => $community->id]), [])
+        ->assertOk();
+
+    $resp = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community.notices.last-batch', ['community' => $community->id]))
+        ->assertOk();
+
+    expect($resp->json('batch.total'))->toBe(1)
+        ->and($resp->json('batch.sections'))->toHaveCount(1)
+        ->and($resp->json('batch.sections.0.rows'))->toHaveCount(1);
+});
+
+it('creates a credit note for a notice charge', function () {
+    Storage::fake('local');
+
+    $user      = superAdminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 2000, 120);
+
+    $run     = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.run.community.notices', ['community' => $community->id]), [])
+        ->assertOk();
+    $batchId = $run->json('batch.id');
+    $itemId  = $run->json('batch.sections.0.rows.0.id');
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.credit.community.notice.item', [
+            'community'       => $community->id,
+            'noticeBatch'     => $batchId,
+            'noticeBatchItem' => $itemId,
+        ]), ['reason' => 'Test reversal', 'date_option' => 'today'])
+        ->assertOk();
+
+    $last = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community.notices.last-batch', ['community' => $community->id]))
+        ->assertOk();
+
+    expect($last->json('batch.sections.0.rows.0.credited'))->toBeTrue();
 });

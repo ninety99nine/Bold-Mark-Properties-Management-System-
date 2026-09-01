@@ -1506,6 +1506,46 @@ it('does not time out a remember-me session even after long inactivity', functio
 });
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ BM-006 — Keep-alive heartbeat                                             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+it('requires authentication to hit the heartbeat', function () {
+    $this->postJson(route('api.v1.auth.heartbeat'))->assertUnauthorized();
+});
+
+it('refreshes the inactivity clock and returns 204 on heartbeat', function () {
+    $user  = userWithPassword('beat@boldmark.test', 'password123');
+    $token = loginAndGetToken('beat@boldmark.test', 'password123');
+
+    // Backdate within the window, then ping — activity should reset to ~now.
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(20)]);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.heartbeat'))
+        ->assertNoContent();
+
+    $session = UserSession::where('user_id', $user->id)->first();
+    expect($session->last_activity_at->diffInMinutes(now()))->toBeLessThan(1);
+});
+
+it('does not revive a session already idle past the timeout on heartbeat', function () {
+    config()->set('auth.session_inactivity_timeout', 30);
+
+    $user  = userWithPassword('deadbeat@boldmark.test', 'password123');
+    $token = loginAndGetToken('deadbeat@boldmark.test', 'password123');
+
+    UserSession::where('user_id', $user->id)->update(['last_activity_at' => now()->subMinutes(31)]);
+
+    forgetAuth();
+    $this->withHeader('Authorization', "Bearer $token")
+        ->postJson(route('api.v1.auth.heartbeat'))
+        ->assertUnauthorized();
+
+    expect(UserSession::where('user_id', $user->id)->exists())->toBeFalse();
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ BM-011 — Direct URL access after logout                                  ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 

@@ -257,6 +257,19 @@ class UnitController extends Controller
     }
 
     /**
+     * Return a customer's on-screen ledger (Detailed Customer Ledger).
+     *
+     * @param ShowUnitRequest $request
+     * @param Community $community
+     * @param Unit $unit
+     * @return array
+     */
+    public function showCustomerLedger(ShowUnitRequest $request, Community $community, Unit $unit): array
+    {
+        return $this->service->buildCustomerLedger($community, $unit, $request->input('from'), $request->input('to'));
+    }
+
+    /**
      * E-mail a unit's customer statement to the owner.
      */
     public function emailStatement(Request $request, Community $community, Unit $unit): array

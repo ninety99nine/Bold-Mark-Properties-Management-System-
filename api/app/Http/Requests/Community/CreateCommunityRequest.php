@@ -33,8 +33,13 @@ class CreateCommunityRequest extends FormRequest
             'registration_number'       => ['nullable', 'string', 'max:100'],
             'csos_registration_number'  => ['nullable', 'string', 'max:100'],
             'income_tax_number'         => ['nullable', 'string', 'max:100'],
+            'merchant_number'           => ['nullable', 'string', 'max:100'],
+            'pdf_passwords'             => ['nullable', 'boolean'],
+            'community_manager_id'      => ['nullable', 'integer', Rule::exists('users', 'id')],
+            'previous_managing_agent'   => ['nullable', 'string', 'max:255'],
+            'opening_balance_date'      => ['nullable', 'date'],
             'user_ids'                  => ['nullable', 'array'],
-            'user_ids.*'                => ['string', Rule::exists('users', 'id')],
+            'user_ids.*'                => ['integer', Rule::exists('users', 'id')],
         ];
     }
 

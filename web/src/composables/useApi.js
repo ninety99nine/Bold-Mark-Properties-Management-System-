@@ -45,10 +45,14 @@ api.interceptors.response.use(
 
         const current = router.currentRoute.value
         if (current.name !== 'login') {
-          await router.replace({
-            name: 'login',
-            query: { redirect: current.fullPath, expired: '1' },
-          })
+          // The server flags a genuine inactivity timeout with a specific
+          // message (EnforceSessionTimeout). Any other 401 — revoked/invalid
+          // token, etc. — is shown with neutral wording rather than mislabelled
+          // as inactivity.
+          const serverMessage = error.response?.data?.message || ''
+          const query = { redirect: current.fullPath, expired: '1' }
+          if (/inactivity/i.test(serverMessage)) query.reason = 'inactivity'
+          await router.replace({ name: 'login', query })
         }
       } finally {
         redirecting = false
