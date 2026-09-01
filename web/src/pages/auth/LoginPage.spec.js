@@ -122,7 +122,10 @@ describe('LoginPage', () => {
     expect(mountLogin().text()).not.toContain('Your session expired due to inactivity')
   })
 
-  it('returns the user to the page they were on (redirect query) after completing 2FA', async () => {
+  it('always lands on /select-profile after 2FA, even when a redirect query is present', async () => {
+    // Profile-selection is the deliberate entry anchor (WeConnectU parity): a
+    // fresh login always shows it first, even off a deep-link/session-expiry
+    // bounce. The redirect query is intentionally not honoured here.
     routeQuery = { redirect: '/billing/invoices/42', expired: '1' }
     const wrapper = mountLogin()
 
@@ -131,7 +134,7 @@ describe('LoginPage', () => {
     await completeLoginWith2fa(wrapper)
 
     expect(loginWithTwoFactorMock).toHaveBeenCalled()
-    expect(pushMock).toHaveBeenCalledWith('/billing/invoices/42')
+    expect(pushMock).toHaveBeenCalledWith('/select-profile')
   })
 
   it('falls back to /select-profile when there is no redirect target', async () => {
