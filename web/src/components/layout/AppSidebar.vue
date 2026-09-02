@@ -269,7 +269,8 @@ function openChild(child) {
 <template>
   <!-- ── WeConnectU-style icon rail — used for BOTH the global & community levels ── -->
   <aside
-    class="relative flex flex-col items-center bg-navy-dark text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28"
+    class="relative flex flex-col items-center text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28 transition-colors duration-300"
+    :class="inCommunity ? 'bg-navy-dark' : 'bg-[#1B3556]'"
   >
     <nav class="flex-1 flex flex-col items-center gap-1 py-4 w-full px-2">
       <!-- Global — exit button inside a community, active context indicator at the global level -->
