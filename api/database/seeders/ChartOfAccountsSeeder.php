@@ -51,6 +51,7 @@ class ChartOfAccountsSeeder extends Seeder
                     'financial_category' => $group['financial_category'],
                     'fund'               => $group['fund'],
                     'allow_sub_accounts' => true,
+                    'is_budget_item'     => false,
                     'parent_id'          => null,
                     'is_system'          => false,
                     'is_active'          => true,
@@ -70,6 +71,9 @@ class ChartOfAccountsSeeder extends Seeder
                         'financial_category' => $account['financial_category'] ?? $group['financial_category'],
                         'fund'               => $group['fund'],
                         'allow_sub_accounts' => false,
+                        // Income-statement leaves are budget items by default (the
+                        // WeConnectU green bar-chart toggle on the General Ledger).
+                        'is_budget_item'     => $group['account_type'] === 'income_statement',
                         'parent_id'          => $main->id,
                         'is_system'          => false,
                         'is_active'          => true,

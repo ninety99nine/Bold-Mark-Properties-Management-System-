@@ -6,14 +6,13 @@ use App\Models\Ledger;
 use App\Models\Community;
 use App\Models\CommunityBudget;
 use App\Models\CommunityBudgetLock;
-use App\Imports\RowsImport;
-use App\Exports\SimpleExport;
+use App\Enums\FinancialCategory;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
-use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -42,7 +41,9 @@ class BudgetService extends BaseService
         $fund  = $data['fund'] ?? 'main';
         $year  = (int) ($data['year'] ?? Carbon::today()->year);
 
-        $ledgers = $this->fundLedgers($orgId, $fund);
+        // Only leaf budget-item accounts are editable rows; the /000 parents are
+        // rendered by the frontend as computed group headers (sums of children).
+        $ledgers = $this->gridLedgers($orgId, $fund);
 
         $budgets = CommunityBudget::where('community_id', $community->id)
             ->where('year', $year)
@@ -58,8 +59,10 @@ class BudgetService extends BaseService
                 $months[$m] = $budget ? (float) $budget->{$m} : 0.0;
             }
 
+            // Equal Monthly is on (checked) when every month is the same amount —
+            // including a brand-new, all-zero row, matching WeConnectU's default.
             $distinct     = array_unique(array_map(fn ($v) => round($v, 2), array_values($months)));
-            $equalMonthly = count($distinct) === 1 && $distinct[array_key_first($distinct)] > 0;
+            $equalMonthly = count($distinct) === 1;
 
             return array_merge([
                 'ledger_id'          => $ledger->id,
@@ -69,6 +72,9 @@ class BudgetService extends BaseService
                 'account_type'       => $ledger->account_type,
                 'financial_category' => $ledger->financial_category?->value,
                 'fund'               => $ledger->fund,
+                'group_code'         => $ledger->parent?->code,
+                'group_name'         => $ledger->parent?->name,
+                'section'            => $this->isIncomeSide($ledger) ? 'income' : 'expense',
             ], $months, [
                 'per_year'      => $budget ? (float) $budget->per_year : 0.0,
                 'equal_monthly' => $equalMonthly,
@@ -167,21 +173,12 @@ class BudgetService extends BaseService
      */
     public function downloadTemplate(Community $community, array $data): Response
     {
-        $orgId = Auth::user()->organization_id;
-        $fund  = $data['fund'] ?? 'main';
-
-        $rows = $this->fundLedgers($orgId, $fund)->map(fn (Ledger $ledger): array => array_merge([
-            $ledger->code,
-            $ledger->name,
-        ], array_fill(0, 12, 0)))->all();
-
-        $headings = array_merge(['Account', 'Description'], array_map('ucfirst', self::MONTHS));
-
-        return $this->buildFileResponse(
-            $rows,
-            $headings,
-            'budget-template-' . $fund . '-' . $community->id,
-            'xlsx'
+        // Delegate to the single WeConnectU-format builder so every "Download
+        // Budget Template" button (take-on + Budget Setup) streams an identical file.
+        return app(BudgetImportService::class)->downloadTemplate(
+            $community,
+            $data['fund'] ?? 'main',
+            isset($data['year']) ? (int) $data['year'] : null,
         );
     }
 
@@ -207,34 +204,35 @@ class BudgetService extends BaseService
             ]);
         }
 
-        $sheets = Excel::toArray(new RowsImport, $file);
-        $rows   = $sheets[0] ?? [];
+        // Parse the WeConnectU-format file with the shared parser (same one that
+        // powers the take-on upload), then upsert into the SELECTED period. We
+        // match existing leaf ledgers by code and never create ledgers here.
+        [, $lines] = app(BudgetImportService::class)->parseFile($file);
 
-        // Map account code → ledger id for this fund.
-        $ledgers = $this->fundLedgers($orgId, $fund)->keyBy('code');
-
+        $ledgers  = $this->fundLedgers($orgId, $fund)->keyBy('code');
         $imported = 0;
 
-        DB::transaction(function () use ($rows, $ledgers, $community, $orgId, $year, &$imported) {
-            foreach ($rows as $index => $row) {
-                if ($index === 0) {
-                    continue; // heading row
-                }
-
-                $code = trim((string) ($row[0] ?? ''));
-                if ($code === '' || !$ledgers->has($code)) {
+        DB::transaction(function () use ($lines, $ledgers, $community, $orgId, $year, &$imported) {
+            foreach ($lines as $line) {
+                // Skip the /000 group-header rows and anything not in this fund.
+                if ($line['is_group'] || !$ledgers->has($line['code'])) {
                     continue;
                 }
 
+                $ledger = $ledgers->get($line['code']);
+                if ($ledger->parent_id === null) {
+                    continue; // never store a budget against a group/parent account
+                }
+
                 $months = [];
-                foreach (self::MONTHS as $i => $key) {
-                    $months[$key] = round((float) ($row[$i + 2] ?? 0), 2);
+                foreach (self::MONTHS as $key) {
+                    $months[$key] = round((float) ($line['months'][$key] ?? 0), 2);
                 }
 
                 CommunityBudget::updateOrCreate(
                     [
                         'community_id' => $community->id,
-                        'ledger_id'    => $ledgers->get($code)->id,
+                        'ledger_id'    => $ledger->id,
                         'year'         => $year,
                     ],
                     array_merge($months, [
@@ -250,6 +248,8 @@ class BudgetService extends BaseService
         return [
             'message'  => "{$imported} budget rows imported",
             'imported' => $imported,
+            'year'     => $year,
+            'fund'     => $fund,
         ];
     }
 
@@ -262,7 +262,7 @@ class BudgetService extends BaseService
      * @param string $fund
      * @return \Illuminate\Support\Collection
      */
-    protected function fundLedgers(string $orgId, string $fund): \Illuminate\Support\Collection
+    protected function fundLedgers(string $orgId, string $fund): Collection
     {
         return Ledger::query()
             ->where('organization_id', $orgId)
@@ -270,6 +270,42 @@ class BudgetService extends BaseService
             ->when($fund === 'main', fn ($q) => $q->where('account_type', 'income_statement'))
             ->orderBy('code')
             ->get();
+    }
+
+    /**
+     * The editable rows of a fund's budget grid: leaf budget-item accounts only
+     * (the /000 parents become computed group headers on the frontend), each with
+     * its parent eager-loaded for the group code/name.
+     *
+     * @param string $orgId
+     * @param string $fund
+     * @return Collection<int,Ledger>
+     */
+    protected function gridLedgers(string $orgId, string $fund): Collection
+    {
+        return Ledger::query()
+            ->with('parent:id,code,name')
+            ->where('organization_id', $orgId)
+            ->where('fund', $fund)
+            ->whereNotNull('parent_id')
+            ->where('is_budget_item', true)
+            ->when($fund === 'main', fn ($q) => $q->where('account_type', 'income_statement'))
+            ->orderBy('code')
+            ->get();
+    }
+
+    /**
+     * Whether a ledger sits on the income side of the budget (vs the expense side).
+     *
+     * @param Ledger $ledger
+     * @return bool
+     */
+    protected function isIncomeSide(Ledger $ledger): bool
+    {
+        return in_array($ledger->financial_category, [
+            FinancialCategory::SALES,
+            FinancialCategory::OTHER_INCOME,
+        ], true);
     }
 
     /**

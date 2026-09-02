@@ -231,7 +231,7 @@ it('downloads the budget template as an xlsx', function (): void {
         ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 });
 
-it('round-trips: the budget template downloads pre-filled with the exact 80-line chart and re-imports', function (): void {
+it('round-trips: the budget template downloads pre-filled with the full income-statement chart and re-imports', function (): void {
     Storage::fake('public');
     $user      = adminUser();
     $community = takeOnCommunity($user);
@@ -240,12 +240,18 @@ it('round-trips: the budget template downloads pre-filled with the exact 80-line
     $path = tempnam(sys_get_temp_dir(), 'bt') . '.xlsx';
     file_put_contents($path, $content);
 
-    // The organisation is pre-seeded with the standard chart of accounts, so the
-    // budget import upserts those ledgers rather than creating them all anew.
+    // The template is built from the community's actual chart of accounts — one
+    // line per main-fund income-statement ledger (group parents + leaves) — so the
+    // round-trip re-imports exactly that many lines onto the pre-seeded ledgers.
+    $expected = \App\Models\Ledger::where('organization_id', $community->organization_id)
+        ->where('fund', 'main')
+        ->where('account_type', 'income_statement')
+        ->count();
+
     $this->actingAs($user, 'api')
         ->post(route('api.v1.community.budget.import', $community), ['file' => new UploadedFile($path, 'budget.xlsx', null, null, true)])
         ->assertOk()
-        ->assertJsonPath('imported_lines', 80);
+        ->assertJsonPath('imported_lines', $expected);
 
     $this->assertDatabaseHas('ledgers', ['organization_id' => $community->organization_id, 'code' => '1000/001', 'name' => 'Levies']);
     $this->assertDatabaseHas('ledgers', ['organization_id' => $community->organization_id, 'code' => '4000/009', 'name' => 'WCA']);

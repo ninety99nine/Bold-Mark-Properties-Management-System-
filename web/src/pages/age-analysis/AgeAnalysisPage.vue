@@ -55,15 +55,16 @@ const excludeDebitArrear = ref(false)
 
 // ── Toolbar filters ──────────────────────────────────────────────────────
 const search          = ref('')
-const filterType      = ref('no_status')
+const filterType      = ref('')
 const debtStatus      = ref('')
 const customerGroupId = ref('')
 const debitOrder      = ref(false)
 const groups          = ref([])
 
-// First filter — the collection-status dropdown (WeConnectU: exactly these three,
-// mutually exclusive, defaulting to "No Status"). Red flag = handed over, orange
-// flag = payment arrangement, no flag = no status.
+// First filter — the collection-status "Filter Type" dropdown. WeConnectU starts
+// UNSELECTED (placeholder), showing the whole customer roll; picking Handed Over
+// or Payment Arrangement narrows it. Red flag = handed over, orange flag =
+// payment arrangement, no flag = no status.
 const FILTER_TYPE_OPTIONS = [
   { value: 'no_status',           label: 'No Status' },
   { value: 'handed_over',         label: 'Handed Over' },

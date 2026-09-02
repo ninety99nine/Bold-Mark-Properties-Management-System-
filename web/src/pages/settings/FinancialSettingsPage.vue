@@ -313,7 +313,7 @@ async function confirmDelete() {
       <GeneralLedgerTab v-else-if="activeTab === 'general-ledger'" fund="main" />
 
       <!-- ── Budget tab (shared component) ─────────────────────────────── -->
-      <BudgetTab v-else-if="activeTab === 'budget'" :year="selectedYear" fund="main" />
+      <BudgetTab v-else-if="activeTab === 'budget'" :year="selectedYear" fund="main" @finalized="loadYears" />
 
       <!-- ── Reserve Fund Ledger tab ───────────────────────────────────── -->
       <ReserveFundLedgerTab v-else-if="activeTab === 'reserve-ledger'" />

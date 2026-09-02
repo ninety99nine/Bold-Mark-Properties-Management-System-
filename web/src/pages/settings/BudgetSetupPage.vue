@@ -72,7 +72,7 @@ watch(cid, loadYears)
         </span>
       </div>
 
-      <BudgetTab :year="selectedYear" fund="main" />
+      <BudgetTab :year="selectedYear" fund="main" @finalized="loadYears" />
     </template>
   </div>
 </template>

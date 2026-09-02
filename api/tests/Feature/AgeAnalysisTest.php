@@ -141,11 +141,12 @@ it('aggregates multiple invoices for the same unit into one row', function () {
         ->and((float) $response->json('rows.0.balance'))->toBe(1400.0);
 });
 
-it('excludes fully paid units', function () {
+it('lists fully paid units by default and hides them only when Hide Zero Values is on', function () {
     $user      = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     // An invoice (AR debit) fully settled by an allocated receipt (AR credit)
-    // nets to a zero GL balance, so the customer drops off the age analysis.
+    // nets to a zero GL balance. WeConnectU still LISTS the customer (zero row);
+    // the "Hide Zero Values" checkbox is what removes it.
     $unit = arrearsUnit($user->organization_id, $community, 500, 45);
 
     $bank = \App\Models\BankAccount::factory()->create([
@@ -161,7 +162,13 @@ it('excludes fully paid units', function () {
         'ledger_type' => 'customer', 'unit_id' => $unit->id,
     ]);
 
-    expect($this->actingAs($user, 'api')->getJson(ageRoute($community))->json('totals.customer_count'))->toBe(0);
+    // Default: the paid-up customer is listed with a zero balance.
+    $default = $this->actingAs($user, 'api')->getJson(ageRoute($community))->assertOk();
+    expect($default->json('totals.customer_count'))->toBe(1)
+        ->and((float) $default->json('rows.0.balance'))->toBe(0.0);
+
+    // Hide Zero Values removes it.
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['hide_zero' => 'true']))->json('totals.customer_count'))->toBe(0);
 });
 
 it('nets credits oldest-first and can produce a negative balance', function () {
@@ -232,6 +239,19 @@ it('filters by debt status, debit order and hide-negative', function () {
     expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['debt_status' => 'first_notice']))->json('totals.customer_count'))->toBe(1);
     expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['filter_type' => 'handed_over']))->json('totals.customer_count'))->toBe(1);
     expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['debit_order' => 'true']))->json('totals.customer_count'))->toBe(1);
+});
+
+it('treats filter_type=no_status as neutral (shows the whole arrears book, not only status-less customers)', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    arrearsUnit($user->organization_id, $community, 500, 45, ['collection_status' => CollectionStatus::FIRST_NOTICE->value]);
+    arrearsUnit($user->organization_id, $community, 500, 45, ['collection_status' => CollectionStatus::HANDED_OVER->value]);
+
+    // "No Status" is the default toolbar state — it must NOT hide customers under
+    // collection, otherwise the whole arrears book disappears (BM Age Analysis bug).
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['filter_type' => 'no_status']))->json('totals.customer_count'))->toBe(2);
+    // The genuine "customers with no collection status" filter lives on Debt Status.
+    expect($this->actingAs($user, 'api')->getJson(ageRoute($community, ['debt_status' => 'none']))->json('totals.customer_count'))->toBe(0);
 });
 
 it('scopes results to the community', function () {

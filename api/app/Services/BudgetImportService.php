@@ -4,14 +4,40 @@ namespace App\Services;
 
 use Exception;
 use App\Enums\LedgerAppliesTo;
+use App\Enums\FinancialCategory;
 use App\Models\Community;
 use App\Models\CommunityBudget;
 use App\Models\Ledger;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
+/**
+ * The single source of truth for the WeConnectU "Budget" spreadsheet — the file
+ * behind every "Download Budget Template" / "Click here to download the budget
+ * template" button (take-on page, Budget Setup page, and the Budget Excel Import
+ * modal all stream the identical file) and the parser behind every upload.
+ *
+ * The template is built dynamically from the community's actual chart of accounts
+ * so it reflects any custom ledgers, and it is pre-filled with the currently
+ * captured budget (0.00 everywhere for a brand-new community). Layout — byte
+ * faithful to WeConnectU:
+ *
+ *   A1: "Actual Budget"   B1: "YYYY-01-01 to YYYY-12-31"
+ *   A2: <community name>
+ *   (blank)
+ *   A4: ""  B4..M4: Jan..Dec   N4: "Per Year"
+ *   A5: ""  B5..M5: <year>      N5: " "
+ *   A6: "TOTAL INCOME"
+ *        1000/000 - INCOME               (group header = sum of its children)
+ *        1000/001 - Levies …             (leaf accounts)
+ *   (blank)
+ *   "TOTAL EXPENSES"
+ *        2000/000 - ADMINISTRATIVE EXPENSES …
+ */
 class BudgetImportService extends BaseService
 {
     /**
@@ -20,109 +46,27 @@ class BudgetImportService extends BaseService
     private const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
     /**
-     * The exact WeConnectU budget income accounts (in file order), "code - name".
-     */
-    private const INCOME_LINES = [
-        '1000/000 - INCOME',
-        '1000/001 - Levies',
-        '1000/002 - Special Levy',
-        '1000/003 - Interest Received Arrears',
-        '1000/004 - Interest Received Bank',
-        '1000/005 - Rental Income',
-        '1000/006 - Laundry Room Water',
-        '1000/007 - Additional Levy',
-        '1000/008 - Additional insurance',
-        '1000/009 - Remotes Income',
-        '1000/010 - Penalty Income',
-        '1000/011 - Water Recovered',
-        '1000/012 - Sewerage Recovered',
-        '1000/013 - Electricity Recovered',
-        '1000/014 - Other Income',
-        '1000/015 - Costs Recovered',
-    ];
-
-    /**
-     * The exact WeConnectU budget expense accounts (in file order), "code - name".
-     */
-    private const EXPENSE_LINES = [
-        '2000/000 - ADMINISTRATIVE EXPENSES',
-        '2000/001 - Bank Charges',
-        '2000/002 - Management Fee',
-        '2000/003 - Cleaning & Materials',
-        '2000/004 - Computer Expenses',
-        '2000/005 - General Expenses',
-        '2000/006 - Keys & Remotes',
-        '2000/007 - Legal & Professional Fees',
-        '2000/008 - Telephone: Mobile(s)',
-        '2000/009 - Telephone: Landline(s)',
-        '2000/010 - Telephone: Gate access',
-        '2000/011 - Audit & Tax Fees',
-        '2000/012 - Trustee Expense',
-        '2000/013 - Rent Paid: Garage',
-        '2000/014 - Rent Paid: Office Space',
-        '2000/015 - Security',
-        '2000/016 - Insurance',
-        '2000/017 - Interest Paid',
-        '2000/018 - Health & Safety',
-        '2000/019 - Income Tax Expense',
-        '2000/020 - Depreciation',
-        '2000/021 - Diverse/Sundry Expenses',
-        '2000/022 - CSOS Admin Fees',
-        '2100/000 - MUNICIPAL EXPENSES',
-        '2100/001 - Water',
-        '2100/002 - Refuse',
-        '2100/003 - Sewerage',
-        '2100/004 - Electricity',
-        '2100/005 - Rates',
-        '2100/006 - Sundry Municipal Expenses',
-        '2100/007 - Fixed Basic Charge - Water',
-        '2100/008 - Electricity - Home User Charge',
-        '2200/000 - MAINTENANCE',
-        '2200/001 - Fire Equipment & Services',
-        '2200/002 - General Building',
-        '2200/003 - Sewerage & Plumbing',
-        '2200/004 - Gate & Intercom',
-        '2200/005 - Electrical',
-        '2200/006 - Electric Fence & Monitoring',
-        '2200/007 - DSTV / TV',
-        '2200/008 - Turnstile & Access Control',
-        '2200/009 - Gardening Expense General',
-        '2200/010 - Gardening Equipment',
-        '2200/011 - Cameras',
-        '2200/012 - Swimming Pool',
-        '2200/013 - Lifts',
-        '2200/014 - Cleaning and Maintenance Contracts',
-        '2200/015 - Other Maintenance',
-        '2200/016 - Pest Control',
-        '2300/000 - SPECIAL PROJECTS',
-        '2300/001 - Buildings',
-        '2300/002 - Gardens',
-        '2300/003 - Improvements',
-        '2300/004 - Valuations - 3 Year Cycle',
-        '4000/000 - PERSONNEL',
-        '4000/001 - Complex Manager Salary',
-        '4000/002 - Operational Admin',
-        '4000/003 - Casual / Relief Wages',
-        '4000/004 - PAYE',
-        '4000/005 - UIF',
-        '4000/006 - Travel',
-        '4000/007 - Bonusses & Overtime',
-        '4000/008 - Security',
-        '4000/009 - WCA',
-    ];
-
-    /**
-     * Stream the WeConnectU-format budget template, pre-populated with the exact
-     * standard chart of accounts and a zeroed grid (a byte-for-byte-faithful
-     * replica of WeConnectU's downloadable budget).
+     * Stream the WeConnectU-format budget spreadsheet for a community, fund and
+     * year — one row per chart-of-accounts line (income first under TOTAL INCOME,
+     * then expenses under TOTAL EXPENSES), pre-filled with the captured budget.
      *
      * @param Community $community
-     * @param string $format  'xlsx'
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse
+     * @param string $fund   'main' | 'reserve'
+     * @param int|null $year  defaults to the current calendar year
+     * @return StreamedResponse
      */
-    public function downloadTemplate(Community $community, string $format = 'xlsx'): \Symfony\Component\HttpFoundation\StreamedResponse
+    public function downloadTemplate(Community $community, string $fund = 'main', ?int $year = null): StreamedResponse
     {
-        $year = (int) date('Y');
+        $year = $year ?: (int) date('Y');
+
+        $ledgers = $this->fundLedgers($community->organization_id, $fund);
+        $budgets = CommunityBudget::where('community_id', $community->id)
+            ->where('year', $year)
+            ->get()
+            ->keyBy('ledger_id');
+
+        // Pre-compute each parent's monthly aggregate from its children's budgets.
+        $childTotals = $this->aggregateByParent($ledgers, $budgets);
 
         $spreadsheet = new Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
@@ -134,10 +78,10 @@ class BudgetImportService extends BaseService
         $sheet->setCellValue('A2', $community->name);
 
         // Row 4: month headers (B–M) + Per Year (N). Row 5: the year under each month.
-        $months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        $monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         $col = 'B';
-        foreach ($months as $m) {
-            $sheet->setCellValue($col . '4', $m);
+        foreach ($monthLabels as $label) {
+            $sheet->setCellValue($col . '4', $label);
             $sheet->setCellValue($col . '5', $year);
             $col++;
         }
@@ -151,17 +95,17 @@ class BudgetImportService extends BaseService
             $sheet->getColumnDimension($c)->setWidth(20);
         }
 
-        // Row 6: TOTAL INCOME (label only) → income accounts (each with 13 zeros).
+        // Split the fund's chart into income vs expense, preserving code order.
+        [$income, $expense] = $ledgers->partition(fn (Ledger $l) => $this->isIncomeSide($l));
+
+        // TOTAL INCOME section, then a blank row, then TOTAL EXPENSES section.
         $rowNum = 6;
         $sheet->setCellValue('A' . $rowNum, 'TOTAL INCOME');
-        $rowNum++;
-        $rowNum = $this->writeChartLines($sheet, self::INCOME_LINES, $rowNum);
+        $rowNum = $this->writeLedgerRows($sheet, $income, $budgets, $childTotals, $rowNum + 1);
 
-        // Blank row, then TOTAL EXPENSES (label only) → expense accounts.
-        $rowNum++;
+        $rowNum++; // blank spacer row
         $sheet->setCellValue('A' . $rowNum, 'TOTAL EXPENSES');
-        $rowNum++;
-        $this->writeChartLines($sheet, self::EXPENSE_LINES, $rowNum);
+        $this->writeLedgerRows($sheet, $expense, $budgets, $childTotals, $rowNum + 1);
 
         $writer = new XlsxWriter($spreadsheet);
 
@@ -173,26 +117,118 @@ class BudgetImportService extends BaseService
     }
 
     /**
-     * Write account rows (label in A, twelve months + per-year zeros in B–N),
-     * returning the next free row number.
+     * Write a block of ledger rows (label "code - name" in A, twelve months + the
+     * per-year total in B–N). Parent (/000) rows carry the sum of their children;
+     * leaf rows carry their own captured budget (0.00 when none). Returns the next
+     * free row number.
      *
      * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
-     * @param array $lines
+     * @param Collection $ledgers
+     * @param Collection $budgets       ledger_id => CommunityBudget
+     * @param array $childTotals        parent ledger_id => ['months' => [...], 'per_year' => float]
      * @param int $rowNum
      * @return int
      */
-    private function writeChartLines($sheet, array $lines, int $rowNum): int
+    private function writeLedgerRows($sheet, Collection $ledgers, Collection $budgets, array $childTotals, int $rowNum): int
     {
-        foreach ($lines as $label) {
-            $sheet->setCellValue('A' . $rowNum, $label);
-            foreach (range('B', 'N') as $c) {
-                $sheet->setCellValue($c . $rowNum, 0);
+        foreach ($ledgers as $ledger) {
+            $isParent = $ledger->parent_id === null;
+
+            if ($isParent) {
+                $months  = $childTotals[$ledger->id]['months'] ?? array_fill_keys(self::MONTHS, 0.0);
+                $perYear = $childTotals[$ledger->id]['per_year'] ?? 0.0;
+            } else {
+                $budget = $budgets->get($ledger->id);
+                $months = [];
+                foreach (self::MONTHS as $m) {
+                    $months[$m] = $budget ? (float) $budget->{$m} : 0.0;
+                }
+                $perYear = $budget ? (float) $budget->per_year : 0.0;
             }
+
+            $sheet->setCellValue('A' . $rowNum, $ledger->code . ' - ' . $ledger->name);
+
+            $col = 'B';
+            foreach (self::MONTHS as $m) {
+                $sheet->setCellValue($col . $rowNum, round($months[$m], 2));
+                $col++;
+            }
+            $sheet->setCellValue('N' . $rowNum, round($perYear, 2));
             $sheet->getStyle('B' . $rowNum . ':N' . $rowNum)->getAlignment()->setHorizontal('right');
+
             $rowNum++;
         }
 
         return $rowNum;
+    }
+
+    /**
+     * Sum each parent ledger's children budgets into a monthly + per-year total,
+     * so the /000 group rows in the template mirror the grid's computed headers.
+     *
+     * @param Collection $ledgers
+     * @param Collection $budgets  ledger_id => CommunityBudget
+     * @return array<string, array{months: array<string,float>, per_year: float}>
+     */
+    private function aggregateByParent(Collection $ledgers, Collection $budgets): array
+    {
+        $totals = [];
+
+        foreach ($ledgers as $ledger) {
+            if ($ledger->parent_id === null) {
+                continue;
+            }
+
+            $budget = $budgets->get($ledger->id);
+            if (!$budget) {
+                continue;
+            }
+
+            $parentId = $ledger->parent_id;
+            if (!isset($totals[$parentId])) {
+                $totals[$parentId] = ['months' => array_fill_keys(self::MONTHS, 0.0), 'per_year' => 0.0];
+            }
+
+            foreach (self::MONTHS as $m) {
+                $totals[$parentId]['months'][$m] += (float) $budget->{$m};
+            }
+            $totals[$parentId]['per_year'] += (float) $budget->per_year;
+        }
+
+        return $totals;
+    }
+
+    /**
+     * The fund's chart of accounts (parents + leaves) in code order — income
+     * statement accounts for the main fund, the RFI/RFE chart for the reserve fund.
+     *
+     * @param string $organizationId
+     * @param string $fund
+     * @return Collection<int,Ledger>
+     */
+    private function fundLedgers(string $organizationId, string $fund): Collection
+    {
+        return Ledger::query()
+            ->where('organization_id', $organizationId)
+            ->where('fund', $fund)
+            ->when($fund === 'main', fn ($q) => $q->where('account_type', 'income_statement'))
+            ->orderBy('code')
+            ->get();
+    }
+
+    /**
+     * Whether a ledger sits on the income side of the budget (TOTAL INCOME block)
+     * rather than the expense side (TOTAL EXPENSES block).
+     *
+     * @param Ledger $ledger
+     * @return bool
+     */
+    private function isIncomeSide(Ledger $ledger): bool
+    {
+        return in_array($ledger->financial_category, [
+            FinancialCategory::SALES,
+            FinancialCategory::OTHER_INCOME,
+        ], true);
     }
 
     /**
@@ -302,6 +338,23 @@ class BudgetImportService extends BaseService
     }
 
     /**
+     * Parse a WeConnectU budget file into [year, lines] for callers that upsert
+     * into an existing chart of accounts (the Budget Setup page import) without
+     * creating ledgers or recording a take-on upload. Each line carries a
+     * `is_group` flag so callers can skip the /000 group-header rows.
+     *
+     * @param mixed $file
+     * @return array{0:int,1:array}
+     * @throws Exception
+     */
+    public function parseFile(mixed $file): array
+    {
+        [$year, $lines] = $this->extractLines($file);
+
+        return [$year, $lines];
+    }
+
+    /**
      * Read the budget sheet, derive the year, and pull each account line
      * (code, name, category, 12 months, per-year). Returns [year, lines, errors].
      *
@@ -324,7 +377,7 @@ class BudgetImportService extends BaseService
 
         foreach ($rows as $idx => $row) {
             $label = trim((string) ($row[0] ?? ''));
-            if ($label === '' || !preg_match('/^(\d+\/\d+)\s*-\s*(.+)$/', $label, $m)) {
+            if ($label === '' || !preg_match('/^(\d+\/\d+|RF[IE]\/\d+)\s*-\s*(.+)$/', $label, $m)) {
                 continue;
             }
 
@@ -338,7 +391,6 @@ class BudgetImportService extends BaseService
             }
 
             $months = [];
-            $perYear = 0.0;
             foreach (self::MONTHS as $i => $key) {
                 $months[$key] = $this->decimal($row[$i + 1] ?? '');
             }
@@ -354,6 +406,7 @@ class BudgetImportService extends BaseService
                 'category'  => $currentCategory ?? ($code[0] === '1' ? 'INCOME' : 'EXPENSES'),
                 'months'    => $months,
                 'per_year'  => $perYear,
+                'is_group'  => str_ends_with($code, '/000'),
                 'row'       => $idx + 1,
             ];
         }
@@ -374,7 +427,17 @@ class BudgetImportService extends BaseService
      */
     private function readRows(mixed $file): array
     {
-        $spreadsheet = IOFactory::load($file->getRealPath());
+        $path   = $file->getRealPath();
+        $reader = IOFactory::createReaderForFile($path);
+
+        // The budget's header rows contain spaces, which trips PhpSpreadsheet's CSV
+        // delimiter auto-detection — pin comma so a .csv export parses like the xlsx.
+        if ($reader instanceof \PhpOffice\PhpSpreadsheet\Reader\Csv) {
+            $reader->setDelimiter(',');
+            $reader->setEnclosure('"');
+        }
+
+        $spreadsheet = $reader->load($path);
 
         $sheet = null;
         for ($i = 0; $i < $spreadsheet->getSheetCount(); $i++) {

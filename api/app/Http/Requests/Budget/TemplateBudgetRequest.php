@@ -25,6 +25,7 @@ class TemplateBudgetRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'year' => ['sometimes', 'integer', 'min:2000', 'max:2100'],
             'fund' => ['sometimes', 'in:main,reserve'],
         ];
     }

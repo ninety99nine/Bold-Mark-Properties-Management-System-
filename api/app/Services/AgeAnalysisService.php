@@ -94,11 +94,21 @@ class AgeAnalysisService extends BaseService
      */
     private function buildRows(Community $community, array $data, Carbon $ageingDate): array
     {
-        $unitIds = Unit::where('community_id', $community->id)->pluck('id');
+        // WeConnectU lists EVERY customer (unit) in the community — not only those
+        // in arrears. A fully paid-up owner shows with all-zero buckets and a zero
+        // balance; the "Hide Zero Values" / "Hide Negative Values" toolbar
+        // checkboxes are what trim the list. This keeps Age Analysis in lock-step
+        // with the Status Management grid (same customer set).
+        $units = Unit::where('community_id', $community->id)
+            ->with(['owner.customerGroups', 'currentOccupant', 'community'])
+            ->withCount('collectionNotes')
+            ->get();
 
-        if ($unitIds->isEmpty()) {
+        if ($units->isEmpty()) {
             return [];
         }
+
+        $unitIds = $units->pluck('id')->all();
 
         // ── Customer subledger (GL) aged as at the ageing date ───────────
         // Every customer transaction — invoice AR debit, credit note, allocated
@@ -109,7 +119,7 @@ class AgeAnalysisService extends BaseService
         $bucketsByUnit = [];
         $creditsByUnit = [];
 
-        $journalByUnit = (new JournalPostingService())->agedCustomerByUnit($unitIds->all(), $ageingDate->toDateString());
+        $journalByUnit = (new JournalPostingService())->agedCustomerByUnit($unitIds, $ageingDate->toDateString());
         foreach ($journalByUnit as $uid => $effect) {
             if ($effect['credit'] > 0) {
                 $creditsByUnit[$uid] = ($creditsByUnit[$uid] ?? 0) + $effect['credit'];
@@ -121,23 +131,8 @@ class AgeAnalysisService extends BaseService
             }
         }
 
-        // ── Load the units that have arrears or credits ──────────────────
-        $affectedUnitIds = array_values(array_unique(array_merge(
-            array_keys($bucketsByUnit),
-            array_keys($creditsByUnit),
-        )));
-
-        if (empty($affectedUnitIds)) {
-            return [];
-        }
-
-        $units = Unit::whereIn('id', $affectedUnitIds)
-            ->with(['owner.customerGroups', 'currentOccupant', 'community'])
-            ->withCount('collectionNotes')
-            ->get();
-
         // Who applied each customer's current collection status (acting user).
-        $statusActors = UnitStatusHistory::latestActorsByUnit($affectedUnitIds);
+        $statusActors = UnitStatusHistory::latestActorsByUnit($unitIds);
 
         $customerGroupId = $data['customer_group_id'] ?? null;
 
@@ -169,9 +164,8 @@ class AgeAnalysisService extends BaseService
             $arrears = array_sum($buckets);
             $balance = round($arrears - $credit, 2); // leftover credit → negative balance
 
-            if (abs($balance) < 0.005 && $arrears < 0.005) {
-                continue; // fully settled, nothing to show
-            }
+            // NB: fully paid-up customers (zero balance) are NOT skipped — WeConnectU
+            // lists them. The "Hide Zero Values" checkbox (applyRowFilters) removes them.
 
             $person = $unit->owner ?: $unit->currentOccupant;
             $status = $unit->collection_status instanceof CollectionStatus
@@ -229,10 +223,15 @@ class AgeAnalysisService extends BaseService
      */
     private function applyRowFilters(array $rows, array $data): array
     {
-        // Filter Type: No Status / Handed Over / Payment Arrangement.
-        if (!empty($data['filter_type']) && $data['filter_type'] !== 'all') {
-            $type = $data['filter_type'] === 'no_status' ? 'none' : $data['filter_type'];
-            $rows = array_filter($rows, fn ($r) => $r['collection_status'] === $type);
+        // Filter Type: quick collection-status filter (WeConnectU). "No Status"
+        // is the NEUTRAL default (show the whole arrears book, matching the Status
+        // Management grid) — it is NOT a filter to collection_status='none', which
+        // would hide every customer already under collection. Only the explicit
+        // Handed Over / Payment Arrangement choices narrow the grid. The genuine
+        // "customers with no status" filter lives on Debt Status (debt_status='none').
+        if (!empty($data['filter_type'])
+            && !in_array($data['filter_type'], ['all', 'no_status'], true)) {
+            $rows = array_filter($rows, fn ($r) => $r['collection_status'] === $data['filter_type']);
         }
 
         // Filter Debt Status: exact collection status.
