@@ -37,7 +37,7 @@ return new class extends Migration
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
             $table->foreignUuid('community_id')->constrained('communities')->cascadeOnDelete();
             $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
-            $table->foreignUuid('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamps();
 

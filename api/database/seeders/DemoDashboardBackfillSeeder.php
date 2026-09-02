@@ -35,6 +35,8 @@ class DemoDashboardBackfillSeeder extends Seeder
 {
     private string $organizationId;
 
+    private int $augustCounter = 0;
+
     public function run(): void
     {
         $organization = Organization::where('name', 'Bold Mark Properties')->firstOrFail();
@@ -48,6 +50,11 @@ class DemoDashboardBackfillSeeder extends Seeder
         $this->command->info('Recalculating unit balances...');
         app(UnitBalanceService::class);
         \Artisan::call('units:recalculate-balances');
+
+        // Re-derive collection statuses now that arrears have accumulated, so the
+        // Age Analysis markers reflect each debtor's final arrears depth.
+        $this->command->info('Re-aligning collection statuses with accumulated arrears...');
+        $this->call(DemoCollectionStatusSeeder::class);
 
         $this->command->info('Dashboard backfill complete.');
     }
@@ -153,26 +160,44 @@ class DemoDashboardBackfillSeeder extends Seeder
         $this->command->info('Seeding accumulating monthly arrears...');
 
         $counter = 0;
-        $endMonth = Carbon::create(2026, 8, 1); // fill through Aug 2026
+        $endMonth = Carbon::create(2026, 8, 1); // most-recent arrears month
 
-        // Anchor on each existing debtor's earliest overdue invoice; a unit in
-        // arrears since month X realistically hasn't paid the months since.
+        // Anchor on each existing debtor's overdue invoices. A unit in arrears
+        // extends its unpaid run forward into the recent months (so the age
+        // buckets fill), but by a VARIED number of months so the portfolio shows
+        // the full notice ladder — a few just one notice behind, some handed over
+        // — rather than every debtor collapsing to the deepest status.
         $anchors = Invoice::where('organization_id', $this->organizationId)
             ->where('status', 'overdue')
             ->with('unit')
             ->get()
-            ->groupBy('unit_id');
+            ->groupBy('unit_id')
+            // Shallowest existing arrears first, so the extra months we add keep
+            // the debtors monotonically spread across the notice stages.
+            ->sortBy(fn ($invoices) => $invoices->count())
+            ->values();
 
-        foreach ($anchors as $unitId => $invoices) {
+        foreach ($anchors as $index => $invoices) {
             $anchor = $invoices->sortBy('billing_period')->first();
             if (! $anchor || ! $anchor->unit) continue;
 
+            // Give each debtor a target total-overdue that fans evenly across the
+            // six notice stages (1 → 1st-notice … 6 → handed-over), then top up
+            // from their existing depth. Debtors are sorted shallowest-first so
+            // the target rises with (and never falls below) what they already owe.
+            $total       = max(1, $anchors->count());
+            $target      = 1 + intdiv($index * 6, $total);           // 1..6
+            $extraMonths = max(0, $target - $invoices->count());
+
+            // Walk the most-recent months backward from Aug 2026, skipping any
+            // period the unit already has, until we've added $extraMonths.
+            $added  = 0;
+            $cursor = $endMonth->copy();
             $existingMonths = $invoices
                 ->map(fn ($inv) => Carbon::parse($inv->billing_period)->format('Y-m'))
                 ->flip();
 
-            $cursor = Carbon::parse($anchor->billing_period)->startOfMonth()->addMonth();
-            while ($cursor->lte($endMonth)) {
+            while ($added < $extraMonths && $cursor->gte(Carbon::create(2026, 1, 1))) {
                 $key = $cursor->format('Y-m');
                 if (! $existingMonths->has($key)) {
                     $counter++;
@@ -191,8 +216,9 @@ class DemoDashboardBackfillSeeder extends Seeder
                         'ledger_id'         => $anchor->ledger_id,
                         'organization_id'   => $this->organizationId,
                     ]);
+                    $added++;
                 }
-                $cursor->addMonth();
+                $cursor->subMonth();
             }
         }
 
@@ -236,16 +262,48 @@ class DemoDashboardBackfillSeeder extends Seeder
                 ?? 2500);
             if ($amount <= 0) $amount = 2500;
 
+            // Copy billing recipient + ledger from an existing invoice on this unit
+            // so the August levy is billed exactly like the historical months.
+            $template = Invoice::where('unit_id', $unit->id)
+                ->where('organization_id', $this->organizationId)
+                ->latest('billing_period')
+                ->first();
+            if (! $template) continue;
+
             $day = rand(1, 18); // demo "now" is Aug 18
+            $paidOn = $monthStart->copy()->addDays($day - 1);
+
+            // Back the receipt with a matching PAID August invoice and allocate the
+            // payment to it, so the unit balance nets to zero (no phantom credit)
+            // while "Collected This Month" still reflects the receipt.
+            $this->augustCounter++;
+            $invoice = Invoice::create([
+                'invoice_number'    => 'INV-AUG-' . str_pad((string) $this->augustCounter, 5, '0', STR_PAD_LEFT),
+                'status'            => 'paid',
+                'billed_to_type'    => $template->billed_to_type,
+                'billed_to_id'      => $template->billed_to_id,
+                'amount'            => $amount,
+                'billing_period'    => $monthStart->toDateString(),
+                'due_date'          => $monthStart->copy()->addMonth()->toDateString(),
+                'sent_at'           => $monthStart->copy()->addDays(2),
+                'issued_by_type'    => 'system',
+                'issued_by_user_id' => null,
+                'unit_id'           => $unit->id,
+                'ledger_id'         => $template->ledger_id,
+                'organization_id'   => $this->organizationId,
+            ]);
+
             CashbookEntry::create([
                 'description'      => 'Levy payment received — ' . $unit->unit_number,
                 'amount'           => $amount,
                 'type'             => 'credit',
-                'date'             => $monthStart->copy()->addDays($day - 1)->toDateString(),
+                'date'             => $paidOn->toDateString(),
                 'notes'            => 'August 2026 levy',
                 'community_id'     => $unit->community_id,
                 'organization_id'  => $this->organizationId,
+                'ledger_id'        => $template->ledger_id,
                 'unit_id'          => $unit->id,
+                'invoice_id'       => $invoice->id,
             ]);
             $count++;
         }

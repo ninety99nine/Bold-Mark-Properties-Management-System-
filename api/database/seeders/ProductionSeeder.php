@@ -9,6 +9,7 @@ use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Passport\ClientRepository;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -179,7 +180,7 @@ class ProductionSeeder extends Seeder
     {
         $this->command?->info('Seeding Bold Mark Properties organization...');
 
-        Organization::updateOrCreate(
+        $organization = Organization::updateOrCreate(
             ['slug' => 'boldmark'],
             [
                 'name'            => 'Bold Mark Properties',
@@ -187,7 +188,6 @@ class ProductionSeeder extends Seeder
                 'company_slogan'  => 'Moving People Forward',
                 'company_reg_no'  => '2021/147096/07',
                 'transfer_clearance_fee' => 1100.00,
-                'logo_url'        => '/assets/logo2-CB_yk5b_.png',
                 'contact_email'   => 'info@boldmarkprop.co.za',
                 'outgoing_email'  => 'noreply@boldmarkprop.co.za',
                 'contact_phone'   => '010 824 9671',
@@ -207,6 +207,43 @@ class ProductionSeeder extends Seeder
                 'is_active'       => true,
             ]
         );
+
+        $this->seedOrganizationLogos($organization);
+    }
+
+    /**
+     * Copy the bundled Bold Mark brand assets onto the "public" disk and point
+     * the Company Details logo columns at them, exactly as an upload would. The
+     * header logo doubles as the default email header. Runs idempotently.
+     */
+    private function seedOrganizationLogos(Organization $organization): void
+    {
+        $disk   = Storage::disk('public');
+        $dir    = "organization/{$organization->id}";
+        $assets = database_path('seeders/assets');
+
+        $disk->deleteDirectory($dir);
+
+        $files = [
+            ['src' => "{$assets}/boldmark-logo.png", 'name' => 'header-logo.png',   'column' => 'logo_url'],
+            ['src' => "{$assets}/boldmark-icon.jpg", 'name' => 'top-left-icon.jpg', 'column' => 'icon_url'],
+            ['src' => "{$assets}/boldmark-logo.png", 'name' => 'email-header.png',   'column' => 'email_header_url'],
+        ];
+
+        $update = [];
+        foreach ($files as $file) {
+            if (! is_file($file['src'])) {
+                $this->command?->warn("  ⚠ Brand asset missing: {$file['src']}");
+                continue;
+            }
+            $path = "{$dir}/{$file['name']}";
+            $disk->put($path, file_get_contents($file['src']), 'public');
+            $update[$file['column']] = $disk->url($path);
+        }
+
+        if ($update) {
+            $organization->forceFill($update)->save();
+        }
     }
 
     /* ------------------------------------------------------------------ */

@@ -15,6 +15,9 @@ services:
     volumes:
       - certbot_certs:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
+      # Shared with the app container so nginx can serve user-uploaded files
+      # (logos, proof-of-payment, documents) at /storage/* — read-only.
+      - app_storage:/var/www/html/storage/app:ro
     depends_on:
       - app
     restart: unless-stopped

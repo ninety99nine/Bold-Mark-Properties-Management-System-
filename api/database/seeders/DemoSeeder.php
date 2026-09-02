@@ -125,6 +125,11 @@ class DemoSeeder extends Seeder
         $this->seedComplianceTemplates();
         $this->seedLedgerReports();
 
+        // Legal Notices batches (grouped 1st / 2nd / Letter of Demand) so the
+        // Customer Notices page has data for every seeded community.
+        $this->command?->info('Seeding legal notice batches...');
+        $this->call(NoticeBatchDemoSeeder::class);
+
         $this->command?->info('Demo seed complete.');
     }
 
@@ -251,7 +256,7 @@ class DemoSeeder extends Seeder
     private function seedOrganization(): void
     {
         $this->command?->info('Seeding Bold Mark Properties organization...');
-        Organization::updateOrCreate(
+        $organization = Organization::updateOrCreate(
             ['slug' => 'boldmark'],
             [
                 'name'            => 'Bold Mark Properties',
@@ -259,7 +264,6 @@ class DemoSeeder extends Seeder
                 'company_slogan'  => 'Moving People Forward',
                 'company_reg_no'  => '2021/147096/07',
                 'transfer_clearance_fee' => 1100.00,
-                'logo_url'        => '/assets/logo2-CB_yk5b_.png',
                 'contact_email'   => 'info@boldmarkprop.co.za',
                 'outgoing_email'  => 'noreply@boldmarkprop.co.za',
                 'contact_phone'   => '010 824 9671',
@@ -279,6 +283,43 @@ class DemoSeeder extends Seeder
                 'is_active'       => true,
             ]
         );
+
+        $this->seedOrganizationLogos($organization);
+    }
+
+    /**
+     * Copy the bundled Bold Mark brand assets onto the "public" disk and point
+     * the Company Details logo columns at them, exactly as an upload would. The
+     * header logo doubles as the default email header. Runs idempotently.
+     */
+    private function seedOrganizationLogos(Organization $organization): void
+    {
+        $disk    = Storage::disk('public');
+        $dir     = "organization/{$organization->id}";
+        $assets  = database_path('seeders/assets');
+
+        $disk->deleteDirectory($dir);
+
+        $files = [
+            'logo'   => ['src' => "{$assets}/boldmark-logo.png", 'name' => 'header-logo.png',  'column' => 'logo_url'],
+            'icon'   => ['src' => "{$assets}/boldmark-icon.jpg", 'name' => 'top-left-icon.jpg', 'column' => 'icon_url'],
+            'header' => ['src' => "{$assets}/boldmark-logo.png", 'name' => 'email-header.png',  'column' => 'email_header_url'],
+        ];
+
+        $update = [];
+        foreach ($files as $file) {
+            if (! is_file($file['src'])) {
+                $this->command?->warn("  ⚠ Brand asset missing: {$file['src']}");
+                continue;
+            }
+            $path = "{$dir}/{$file['name']}";
+            $disk->put($path, file_get_contents($file['src']), 'public');
+            $update[$file['column']] = $disk->url($path);
+        }
+
+        if ($update) {
+            $organization->forceFill($update)->save();
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -391,8 +432,8 @@ class DemoSeeder extends Seeder
         // Continue invoice numbering from any already-seeded invoices
         $this->invoiceCounter = Invoice::where('organization_id', $this->organizationId)->count();
 
-        // ── Botswana Communities ──
-        foreach ($this->botswanaCommunityDefinitions() as $def) {
+        // ── Botswana Communities ── (3 richest-history schemes for the demo)
+        foreach (array_slice($this->botswanaCommunityDefinitions(), 0, 3) as $def) {
             $this->command?->info("Seeding community: {$def['name']}");
             $community = $this->createCommunity($def);
             $this->enableCommunityLedgers($community, $def['type']);
@@ -400,8 +441,8 @@ class DemoSeeder extends Seeder
             $this->seedCustomerGroups($community);
         }
 
-        // ── South Africa Communities ──
-        foreach ($this->southAfricaCommunityDefinitions() as $def) {
+        // ── South Africa Communities ── (3 richest-history schemes for the demo)
+        foreach (array_slice($this->southAfricaCommunityDefinitions(), 0, 3) as $def) {
             $this->command?->info("Seeding community: {$def['name']}");
             $community = $this->createCommunity($def);
             $this->enableCommunityLedgers($community, $def['type']);
@@ -599,6 +640,11 @@ class DemoSeeder extends Seeder
         foreach ($def['units'] as $unitDef) {
             $unit  = $this->createUnit($community, $unitDef);
             $owner = $this->createOwner($unit, $unitDef['owner']);
+
+            // The "customer" is the unit+owner pairing, so the canonical
+            // customer_code lives on the unit (what Age Analysis, ledgers,
+            // statements and notices read) and mirrors the owner's code.
+            $unit->forceFill(['customer_code' => $owner->customer_code])->save();
 
             $currentOccupant = null;
             if ($unitDef['occupancy'] === 'occupant_occupied') {
