@@ -5,11 +5,11 @@ name: AWS CI/CD Pipeline
 # Actions, pushing them to ECR, and pulling them on the server.
 #
 # Triggers:
-#   - push to Redesign        → test → build/push ECR → deploy to EC2
+#   - push to main            → test → build/push ECR → deploy to EC2
 #   - manual dispatch         → test → build/push ECR → deploy to EC2
 #
-# Deploys the Redesign branch (the app the team is testing). When Redesign
-# eventually merges to main, change the branch below to `main`.
+# main is the single source of truth: the branch the team runs and the
+# branch that deploys to production (portal.boldmarkprop.co.za).
 #
 # The DigitalOcean channel lives in do-ci-cd.yml (phase-2 branch) and
 # never overlaps with this one.
@@ -17,7 +17,7 @@ name: AWS CI/CD Pipeline
 
 on:
   push:
-    branches: [Redesign]
+    branches: [main]
   workflow_dispatch:
 
 env:
