@@ -114,7 +114,9 @@ describe('LoginPage', () => {
 
   // ── BM-006 — expired session UX ─────────────────────────────────────────────
   it('shows a session-expired notice when arriving with ?expired=1', () => {
-    routeQuery = { expired: '1' }
+    // The idle-logout flow (useIdleLogout) bounces here with reason=inactivity,
+    // which surfaces the dedicated inactivity copy.
+    routeQuery = { expired: '1', reason: 'inactivity' }
     expect(mountLogin().text()).toContain('Your session expired due to inactivity')
   })
 
