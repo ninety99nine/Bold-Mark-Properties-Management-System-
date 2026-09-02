@@ -2,217 +2,403 @@
 
 namespace App\Services;
 
-use App\Models\Invoice;
-use App\Enums\BilledToType;
+use App\Enums\CashbookEntryType;
+use App\Enums\CollectionStatus;
 use App\Enums\InvoiceStatus;
+use App\Enums\UnitStatus;
+use App\Models\CashbookEntry;
+use App\Models\Community;
+use App\Models\Invoice;
+use App\Models\Ledger;
+use App\Models\Unit;
+use App\Exports\AgeAnalysisExport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 
+/**
+ * WeConnectU-style Customer Age Analysis (per community).
+ *
+ * Produces one row per customer (unit): the aged-arrears breakdown across the
+ * buckets 120+ / 90 / 60 / 30 / Current, the net Balance, and the customer's
+ * collection status / debit-order flag / notes count — exactly like the
+ * WeConnectU "Customer Age Analysis" table. A totals row sums every column.
+ *
+ * Ageing is computed "as at" an Ageing Date (defaults to today): only invoices
+ * raised on/before that date and payments received on/before that date are
+ * considered, so a past period reflects the balances as they were then. Each
+ * invoice is aged by its due_date relative to the Ageing Date:
+ *   current  → not yet due (or due on the ageing date)
+ *   30_days  → 1–30 days overdue
+ *   60_days  → 31–60 days overdue
+ *   90_days  → 61–90 days overdue
+ *   120_plus → 90+ days overdue
+ * Unallocated credits are netted oldest-bucket-first.
+ */
 class AgeAnalysisService extends BaseService
 {
-    public function __construct()
+    /** Bucket keys, oldest → newest (credits net oldest-first). */
+    private const BUCKETS = ['120_plus', '90_days', '60_days', '30_days', 'current'];
+
+    /** Ledger name/category keywords excluded by "Exclude Debit/Arrear charges". */
+    private const DEBIT_ARREAR_KEYWORDS = ['interest', 'arrear', 'penalty', 'debit order'];
+
+    /**
+     * Build the age-analysis table for a community.
+     *
+     * Filters: ageing_date, ledger_id, exclude_debit_arrear, hide_zero,
+     * hide_negative, filter_type, debt_status, customer_group_id, debit_order,
+     * _search.
+     *
+     * @param Community $community
+     * @param array $data
+     * @return array{rows: array, totals: array, ageing_date: string}
+     */
+    public function getAgeAnalysis(Community $community, array $data): array
     {
-        parent::__construct();
+        $ageingDate = $this->resolveAgeingDate($data);
+        $rows       = $this->buildRows($community, $data, $ageingDate);
+
+        // ── Row-level filters (WeConnectU toolbar) ───────────────────────
+        $rows = $this->applyRowFilters($rows, $data);
+
+        // ── Totals ───────────────────────────────────────────────────────
+        $totals = [
+            '120_plus'       => 0.0,
+            '90_days'        => 0.0,
+            '60_days'        => 0.0,
+            '30_days'        => 0.0,
+            'current'        => 0.0,
+            'balance'        => 0.0,
+            'customer_count' => count($rows),
+        ];
+        foreach ($rows as $r) {
+            foreach (self::BUCKETS as $b) {
+                $totals[$b] += $r[$b];
+            }
+            $totals['balance'] += $r['balance'];
+        }
+        foreach ($totals as $k => $v) {
+            if ($k !== 'customer_count') {
+                $totals[$k] = round($v, 2);
+            }
+        }
+
+        return [
+            'rows'        => $rows,
+            'totals'      => $totals,
+            'ageing_date' => $ageingDate->toDateString(),
+        ];
     }
 
     /**
-     * Compute the age analysis report for the authenticated tenant.
+     * Assemble one row per unit (customer) with aged buckets + net balance,
+     * reconstructed as at the ageing date.
      *
-     * Ageing buckets (based on due_date):
-     *   current    → due_date >= today (not yet late)
-     *   30_days    → due 1–30 days ago
-     *   60_days    → due 31–60 days ago
-     *   90_days    → due 61–90 days ago
-     *   120_plus   → due more than 90 days ago
-     *
-     * @param array $data  Optional filters: estate_id, charge_type_id, billed_to_type
+     * @param Community $community
+     * @param array $data
+     * @param Carbon $ageingDate
      * @return array
      */
-    public function getAgeAnalysis(array $data): array
+    private function buildRows(Community $community, array $data, Carbon $ageingDate): array
     {
-        $user     = Auth::user();
-        $tenantId = $user->tenant_id;
-        $today    = Carbon::today();
+        $organizationId = Auth::user()->organization_id;
+        $unitIds        = Unit::where('community_id', $community->id)->pluck('id');
 
-        // Only include invoices that have an outstanding balance
-        $query = Invoice::where('tenant_id', $tenantId)
+        if ($unitIds->isEmpty()) {
+            return [];
+        }
+
+        // Ledgers excluded by "Exclude Debit/Arrear charges".
+        $excludeLedgerIds = $this->excludedLedgerIds($organizationId, $data);
+
+        // ── Outstanding invoices that existed as at the ageing date ──────
+        $invoiceQuery = Invoice::whereIn('unit_id', $unitIds)
+            ->where('organization_id', $organizationId)
             ->whereIn('status', [
                 InvoiceStatus::UNPAID->value,
                 InvoiceStatus::OVERDUE->value,
                 InvoiceStatus::PARTIALLY_PAID->value,
             ])
-            ->with(['unit', 'chargeType', 'billedToOwner', 'billedToUnitTenant', 'cashbookEntries']);
+            ->whereRaw('DATE(COALESCE(invoice_date, created_at)) <= ?', [$ageingDate->toDateString()]);
 
-        if (!empty($data['estate_id'])) {
-            $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
+        if (!empty($data['ledger_id'])) {
+            $invoiceQuery->where('ledger_id', $data['ledger_id']);
+        }
+        if (!empty($excludeLedgerIds)) {
+            $invoiceQuery->whereNotIn('ledger_id', $excludeLedgerIds);
         }
 
-        if (!empty($data['charge_type_id'])) {
-            $query->where('charge_type_id', $data['charge_type_id']);
-        }
+        $invoices   = $invoiceQuery->get(['id', 'unit_id', 'due_date', 'amount', 'status']);
+        $invoiceIds = $invoices->pluck('id');
 
-        if (!empty($data['billed_to_type'])) {
-            $query->where('billed_to_type', $data['billed_to_type']);
-        }
+        // Payments allocated to those invoices, received on/before the ageing date.
+        $paidByInvoice = $invoiceIds->isEmpty()
+            ? collect()
+            : CashbookEntry::whereIn('invoice_id', $invoiceIds)
+                ->where('type', CashbookEntryType::CREDIT->value)
+                ->whereRaw('DATE(COALESCE(date, created_at)) <= ?', [$ageingDate->toDateString()])
+                ->selectRaw('invoice_id, SUM(amount) as total')
+                ->groupBy('invoice_id')
+                ->pluck('total', 'invoice_id');
 
-        $invoices = $query->get();
-
-        $owners  = [];
-        $tenants = [];
-
-        // Ageing bucket totals
-        $summary = [
-            'current'          => 0.0,
-            '30_days'          => 0.0,
-            '60_days'          => 0.0,
-            '90_days'          => 0.0,
-            '120_plus'         => 0.0,
-            'total_outstanding'=> 0.0,
-        ];
-
+        $bucketsByUnit = [];
         foreach ($invoices as $invoice) {
-            $outstanding = $invoice->outstanding;
-
+            $outstanding = round((float) $invoice->amount - (float) ($paidByInvoice[$invoice->id] ?? 0), 2);
             if ($outstanding <= 0) {
                 continue;
             }
 
-            // Determine ageing bucket
-            $dueDate = $invoice->due_date instanceof Carbon
-                ? $invoice->due_date
-                : Carbon::parse($invoice->due_date);
-
-            $daysLate = $today->diffInDays($dueDate, false);
-            // diffInDays with false: positive = future (not yet due), negative = past (overdue)
-
-            if ($daysLate >= 0) {
-                $bucket = 'current';
-            } elseif ($daysLate >= -30) {
-                $bucket = '30_days';
-            } elseif ($daysLate >= -60) {
-                $bucket = '60_days';
-            } elseif ($daysLate >= -90) {
-                $bucket = '90_days';
-            } else {
-                $bucket = '120_plus';
+            $bucket = $this->bucketFor($invoice->due_date, $ageingDate);
+            if (!isset($bucketsByUnit[$invoice->unit_id])) {
+                $bucketsByUnit[$invoice->unit_id] = array_fill_keys(self::BUCKETS, 0.0);
             }
-
-            $summary[$bucket]          += $outstanding;
-            $summary['total_outstanding'] += $outstanding;
-
-            // Build the row entry
-            $row = [
-                'invoice_id'     => $invoice->id,
-                'invoice_number' => $invoice->invoice_number,
-                'unit_number'    => $invoice->unit?->unit_number,
-                'charge_type'    => $invoice->chargeType?->name,
-                'billing_period' => $invoice->billing_period?->format('Y-m'),
-                'due_date'       => $invoice->due_date?->format('Y-m-d'),
-                'outstanding'    => $outstanding,
-                'current'        => $bucket === 'current' ? $outstanding : 0,
-                '30_days'        => $bucket === '30_days' ? $outstanding : 0,
-                '60_days'        => $bucket === '60_days' ? $outstanding : 0,
-                '90_days'        => $bucket === '90_days' ? $outstanding : 0,
-                '120_plus'       => $bucket === '120_plus' ? $outstanding : 0,
-            ];
-
-            $billedToType = $invoice->billed_to_type instanceof BilledToType
-                ? $invoice->billed_to_type->value
-                : (string) $invoice->billed_to_type;
-
-            if ($billedToType === BilledToType::OWNER->value) {
-                $person = $invoice->billedToOwner;
-                $row['person_id']   = $person?->id;
-                $row['person_name'] = $person?->full_name;
-                $row['person_email']= $person?->email;
-                $owners[]           = $row;
-            } else {
-                $person = $invoice->billedToUnitTenant;
-                $row['person_id']   = $person?->id;
-                $row['person_name'] = $person?->full_name;
-                $row['person_email']= $person?->email;
-                $tenants[]          = $row;
-            }
+            $bucketsByUnit[$invoice->unit_id][$bucket] += $outstanding;
         }
 
-        // Sort each list by total outstanding descending
-        usort($owners, fn($a, $b) => $b['outstanding'] <=> $a['outstanding']);
-        usort($tenants, fn($a, $b) => $b['outstanding'] <=> $a['outstanding']);
+        // ── Unallocated credits per unit, received on/before the ageing date ──
+        $creditsByUnit = CashbookEntry::whereIn('unit_id', $unitIds)
+            ->whereNull('invoice_id')
+            ->where('type', CashbookEntryType::CREDIT->value)
+            ->whereRaw('DATE(COALESCE(date, created_at)) <= ?', [$ageingDate->toDateString()])
+            ->selectRaw('unit_id, SUM(amount) as total')
+            ->groupBy('unit_id')
+            ->pluck('total', 'unit_id')
+            ->map(fn ($v) => (float) $v)
+            ->toArray();
 
-        return [
-            'owners'  => $owners,
-            'tenants' => $tenants,
-            'summary' => [
-                'current'          => round($summary['current'], 2),
-                '30_days'          => round($summary['30_days'], 2),
-                '60_days'          => round($summary['60_days'], 2),
-                '90_days'          => round($summary['90_days'], 2),
-                '120_plus'         => round($summary['120_plus'], 2),
-                'total_outstanding'=> round($summary['total_outstanding'], 2),
-            ],
-        ];
+        // ── Load the units that have arrears or credits ──────────────────
+        $affectedUnitIds = array_values(array_unique(array_merge(
+            array_keys($bucketsByUnit),
+            array_keys($creditsByUnit),
+        )));
+
+        if (empty($affectedUnitIds)) {
+            return [];
+        }
+
+        $units = Unit::whereIn('id', $affectedUnitIds)
+            ->with(['owner.customerGroups', 'currentOccupant', 'community'])
+            ->withCount('collectionNotes')
+            ->get();
+
+        $customerGroupId = $data['customer_group_id'] ?? null;
+
+        // ── Build a row per unit ─────────────────────────────────────────
+        $rows = [];
+        foreach ($units as $unit) {
+            // Customer-group filter (owner belongs to the selected group).
+            if (!empty($customerGroupId)) {
+                $inGroup = $unit->owner
+                    && $unit->owner->customerGroups->contains('id', $customerGroupId);
+                if (!$inGroup) {
+                    continue;
+                }
+            }
+
+            $buckets = $bucketsByUnit[$unit->id] ?? array_fill_keys(self::BUCKETS, 0.0);
+            $credit  = (float) ($creditsByUnit[$unit->id] ?? 0);
+
+            // Net credits oldest-bucket-first.
+            foreach (self::BUCKETS as $b) {
+                if ($credit <= 0) {
+                    break;
+                }
+                $reduce       = min($credit, $buckets[$b]);
+                $buckets[$b] -= $reduce;
+                $credit      -= $reduce;
+            }
+
+            $arrears = array_sum($buckets);
+            $balance = round($arrears - $credit, 2); // leftover credit → negative balance
+
+            if (abs($balance) < 0.005 && $arrears < 0.005) {
+                continue; // fully settled, nothing to show
+            }
+
+            $person = $unit->owner ?: $unit->currentOccupant;
+            $status = $unit->collection_status instanceof CollectionStatus
+                ? $unit->collection_status
+                : CollectionStatus::from($unit->collection_status ?? 'none');
+
+            $isSold = $unit->status === UnitStatus::VACATED
+                || ($unit->status instanceof UnitStatus ? false : ($unit->status === 'vacated'));
+
+            $rows[] = [
+                'unit_id'                 => $unit->id,
+                'unit_number'             => $unit->unit_number,
+                'unit_no'                 => $isSold ? '_' : $this->unitSortKey($unit->unit_number),
+                'community_id'            => $unit->community_id,
+                'community_name'          => $unit->community?->name,
+                'customer_code'           => $unit->customer_code,
+                'customer_name'           => $person?->full_name ?? '—',
+                'customer_email'          => $person?->email,
+                'person_id'               => $person?->id,
+                'person_role'             => $unit->owner ? 'owner' : ($unit->currentOccupant ? 'occupant' : null),
+                'collection_status'       => $status->value,
+                'collection_status_label' => $status->label(),
+                'debit_order'             => (bool) $unit->debit_order,
+                'transfer_active'         => (bool) $unit->transfer_active,
+                'is_sold'                 => $isSold,
+                'notes_count'             => (int) ($unit->collection_notes_count ?? 0),
+                '120_plus'                => round($buckets['120_plus'], 2),
+                '90_days'                 => round($buckets['90_days'], 2),
+                '60_days'                 => round($buckets['60_days'], 2),
+                '30_days'                 => round($buckets['30_days'], 2),
+                'current'                 => round($buckets['current'], 2),
+                'balance'                 => $balance,
+            ];
+        }
+
+        // Active units first (natural unit-number order); sold units to the bottom.
+        usort($rows, function ($a, $b) {
+            if ($a['is_sold'] !== $b['is_sold']) {
+                return $a['is_sold'] <=> $b['is_sold'];
+            }
+            return $this->unitSortKey($a['unit_number']) <=> $this->unitSortKey($b['unit_number'])
+                ?: strcmp((string) $a['unit_number'], (string) $b['unit_number']);
+        });
+
+        return $rows;
     }
 
     /**
-     * Export the age analysis report as CSV, Excel, or PDF.
+     * Apply the WeConnectU toolbar filters to the assembled rows.
      *
-     * Extra parameters in $data:
-     *   _format  — 'csv' | 'xlsx' | 'pdf'  (required)
+     * @param array $rows
+     * @param array $data
+     * @return array
+     */
+    private function applyRowFilters(array $rows, array $data): array
+    {
+        // Filter Type: No Status / Handed Over / Payment Arrangement.
+        if (!empty($data['filter_type']) && $data['filter_type'] !== 'all') {
+            $type = $data['filter_type'] === 'no_status' ? 'none' : $data['filter_type'];
+            $rows = array_filter($rows, fn ($r) => $r['collection_status'] === $type);
+        }
+
+        // Filter Debt Status: exact collection status.
+        if (!empty($data['debt_status']) && $data['debt_status'] !== 'all') {
+            $rows = array_filter($rows, fn ($r) => $r['collection_status'] === $data['debt_status']);
+        }
+
+        // Debit Order Customers.
+        if (!empty($data['debit_order']) && filter_var($data['debit_order'], FILTER_VALIDATE_BOOLEAN)) {
+            $rows = array_filter($rows, fn ($r) => $r['debit_order']);
+        }
+
+        // Hide Zero Values.
+        if (!empty($data['hide_zero']) && filter_var($data['hide_zero'], FILTER_VALIDATE_BOOLEAN)) {
+            $rows = array_filter($rows, fn ($r) => abs($r['balance']) >= 0.005);
+        }
+
+        // Hide Negative Values.
+        if (!empty($data['hide_negative']) && filter_var($data['hide_negative'], FILTER_VALIDATE_BOOLEAN)) {
+            $rows = array_filter($rows, fn ($r) => $r['balance'] >= -0.005);
+        }
+
+        // Free-text search (name / unit number / customer code).
+        if (!empty($data['_search'])) {
+            $term = mb_strtolower(trim($data['_search']));
+            $rows = array_filter($rows, function ($r) use ($term) {
+                return str_contains(mb_strtolower($r['customer_name'] ?? ''), $term)
+                    || str_contains(mb_strtolower((string) $r['unit_number'] ?? ''), $term)
+                    || str_contains(mb_strtolower($r['customer_code'] ?? ''), $term);
+            });
+        }
+
+        return array_values($rows);
+    }
+
+    /**
+     * Export the age analysis as a WeConnectU-faithful Excel workbook.
      *
+     * @param Community $community
      * @param array $data
      * @return \Symfony\Component\HttpFoundation\Response
      */
-    public function exportAgeAnalysis(array $data): \Symfony\Component\HttpFoundation\Response
+    public function exportAgeAnalysis(Community $community, array $data): \Symfony\Component\HttpFoundation\Response
     {
-        $result = $this->getAgeAnalysis($data);
+        $result   = $this->getAgeAnalysis($community, $data);
+        $filename = 'customer age analysis-' . mb_strtolower($community->name) . '-' . $result['ageing_date'] . '.xlsx';
 
-        $headings = ['Role', 'Name', 'Unit', 'Charge Type', 'Current', '30 Days', '60 Days', '90 Days', '120+ Days', 'Total Outstanding'];
-
-        $rows = [];
-
-        foreach ($result['owners'] as $row) {
-            $rows[] = [
-                'Owner',
-                $row['person_name'] ?? '—',
-                $row['unit_number'] ?? '—',
-                $row['charge_type'] ?? '—',
-                number_format((float) ($row['current'] ?? 0), 2),
-                number_format((float) ($row['30_days'] ?? 0), 2),
-                number_format((float) ($row['60_days'] ?? 0), 2),
-                number_format((float) ($row['90_days'] ?? 0), 2),
-                number_format((float) ($row['120_plus'] ?? 0), 2),
-                number_format((float) ($row['outstanding'] ?? 0), 2),
-            ];
-        }
-
-        foreach ($result['tenants'] as $row) {
-            $rows[] = [
-                'Tenant',
-                $row['person_name'] ?? '—',
-                $row['unit_number'] ?? '—',
-                $row['charge_type'] ?? '—',
-                number_format((float) ($row['current'] ?? 0), 2),
-                number_format((float) ($row['30_days'] ?? 0), 2),
-                number_format((float) ($row['60_days'] ?? 0), 2),
-                number_format((float) ($row['90_days'] ?? 0), 2),
-                number_format((float) ($row['120_plus'] ?? 0), 2),
-                number_format((float) ($row['outstanding'] ?? 0), 2),
-            ];
-        }
-
-        $format = $data['_format'] ?? 'csv';
-
-        return $this->buildFileResponse(
-            $rows,
-            $headings,
-            'age-analysis-' . now()->format('Y-m-d'),
-            $format,
-            'Age Analysis Export',
-            [
-                'Generated'         => now()->format('d M Y'),
-                'Total Outstanding' => number_format((float) ($result['summary']['total_outstanding'] ?? 0), 2),
-                'Records'           => count($rows),
-            ]
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new AgeAnalysisExport($community->name, $result['ageing_date'], $result['rows'], $result['totals']),
+            $filename
         );
+    }
+
+    /**
+     * Resolve the ledger ids excluded by "Exclude Debit/Arrear charges".
+     *
+     * @param string $organizationId
+     * @param array $data
+     * @return array
+     */
+    private function excludedLedgerIds(string $organizationId, array $data): array
+    {
+        if (empty($data['exclude_debit_arrear']) || !filter_var($data['exclude_debit_arrear'], FILTER_VALIDATE_BOOLEAN)) {
+            return [];
+        }
+
+        return Ledger::where('organization_id', $organizationId)
+            ->where(function ($q) {
+                foreach (self::DEBIT_ARREAR_KEYWORDS as $kw) {
+                    $q->orWhere('name', 'like', "%{$kw}%")
+                      ->orWhere('category', 'like', "%{$kw}%");
+                }
+            })
+            ->pluck('id')
+            ->all();
+    }
+
+    /**
+     * Resolve the ageing "as at" date from the request (defaults to today).
+     *
+     * @param array $data
+     * @return Carbon
+     */
+    private function resolveAgeingDate(array $data): Carbon
+    {
+        if (!empty($data['ageing_date'])) {
+            return Carbon::parse($data['ageing_date'])->startOfDay();
+        }
+
+        return Carbon::today();
+    }
+
+    /**
+     * Resolve the ageing bucket for an invoice due date relative to the ageing date.
+     *
+     * @param mixed $dueDate
+     * @param Carbon $ageingDate
+     * @return string
+     */
+    private function bucketFor($dueDate, Carbon $ageingDate): string
+    {
+        $due      = $dueDate instanceof Carbon ? $dueDate : Carbon::parse($dueDate);
+        $daysLate = $ageingDate->diffInDays($due, false); // negative = overdue
+
+        return match (true) {
+            $daysLate >= 0   => 'current',
+            $daysLate >= -30 => '30_days',
+            $daysLate >= -60 => '60_days',
+            $daysLate >= -90 => '90_days',
+            default          => '120_plus',
+        };
+    }
+
+    /**
+     * Numeric sort key from a unit number (e.g. "U12" → 12, "MML-A09" → 9).
+     *
+     * @param string|null $unitNumber
+     * @return int
+     */
+    private function unitSortKey(?string $unitNumber): int
+    {
+        if (!$unitNumber) {
+            return PHP_INT_MAX;
+        }
+        preg_match('/(\d+)(?!.*\d)/', $unitNumber, $m); // last run of digits
+        return isset($m[1]) ? (int) $m[1] : PHP_INT_MAX;
     }
 }

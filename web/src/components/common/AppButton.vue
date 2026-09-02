@@ -2,12 +2,13 @@
   AppButton — Platform-wide reusable button.
 
   Variants:
-    primary      — amber/accent fill          (Run Billing, Save, Create, Add Estate)
+    primary      — amber/accent fill          (Run Billing, Save, Create, Add Community)
     secondary    — navy fill                  (Upload Cashbook)
     outline      — border only               (Bulk Import, Cancel, Allocate, Edit Entry, Print)
     ghost        — transparent, hover reveal  (back nav, View All, icon-only toolbar actions)
-    danger       — red fill                  (destructive primary actions)
-    danger-ghost — transparent, red text     (icon-only delete: trash, remove proof)
+    danger         — red fill                  (destructive primary actions)
+    danger-ghost   — transparent, red text     (icon-only delete: trash, remove proof)
+    outline-danger — red border/text, red fill on hover (secondary destructive actions)
     link         — no border/bg, muted text  (View All → inline text links)
 
   Sizes:
@@ -66,8 +67,9 @@ defineProps({
       variant === 'secondary'    && 'bg-primary text-primary-foreground hover:bg-navy-light shadow-sm',
       variant === 'outline'      && 'border border-border bg-card text-foreground hover:bg-muted',
       variant === 'ghost'        && 'text-foreground bg-transparent hover:bg-muted',
-      variant === 'danger'       && 'bg-destructive text-destructive-foreground hover:opacity-90 shadow-sm',
-      variant === 'danger-ghost' && 'text-destructive bg-transparent hover:bg-destructive/10',
+      variant === 'danger'         && 'bg-destructive text-destructive-foreground hover:opacity-90 shadow-sm',
+      variant === 'danger-ghost'   && 'text-destructive bg-transparent hover:bg-destructive/10',
+      variant === 'outline-danger' && 'border border-destructive/40 text-destructive bg-transparent hover:bg-destructive hover:text-white hover:border-destructive',
       variant === 'link'         && 'text-muted-foreground bg-transparent hover:text-foreground px-0 underline-offset-4 hover:underline',
 
       // ── Full width ────────────────────────────────────────────────────

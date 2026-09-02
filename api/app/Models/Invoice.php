@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\BilledToType;
+use App\Enums\InvoiceSource;
 use App\Enums\InvoiceStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,11 +25,17 @@ class Invoice extends Model
      */
     protected $casts = [
         'status'         => InvoiceStatus::class,
+        'source'         => InvoiceSource::class,
         'billed_to_type' => BilledToType::class,
         'amount'         => 'float',
+        'subtotal'       => 'float',
+        'vat_amount'     => 'float',
         'billing_period' => 'date',
+        'invoice_date'   => 'date',
         'due_date'       => 'date',
-        'sent_at'        => 'datetime',
+        'sent_at'            => 'datetime',
+        'email_failed_at'    => 'datetime',
+        'reminder_sent_at'   => 'datetime',
     ];
 
     /**
@@ -39,17 +46,25 @@ class Invoice extends Model
     protected $fillable = [
         'invoice_number',
         'status',
+        'source',
         'billed_to_type',
         'billed_to_id',
         'amount',
+        'subtotal',
+        'vat_amount',
         'billing_period',
+        'invoice_date',
         'due_date',
+        'attachment_path',
         'sent_at',
+        'email_failed_at',
+        'reminder_sent_at',
         'issued_by_type',
         'issued_by_user_id',
         'unit_id',
-        'charge_type_id',
-        'tenant_id',
+        'ledger_id',
+        'bank_account_id',
+        'organization_id',
     ];
 
     /**
@@ -62,7 +77,13 @@ class Invoice extends Model
     #[Scope]
     protected function search(Builder $query, string $searchTerm): void
     {
-        $query->where('invoice_number', 'like', '%' . $searchTerm . '%');
+        // Also match when the user omits dashes/spaces (e.g. "inv 2025 0005" → "INV-2025-0005")
+        $normalized = '%' . strtolower(str_replace([' ', '-'], '', $searchTerm)) . '%';
+
+        $query->where(function (Builder $q) use ($searchTerm, $normalized) {
+            $q->whereLike('invoice_number', $searchTerm)
+              ->orWhereRaw("lower(REPLACE(REPLACE(invoice_number, '-', ''), ' ', '')) like ?", [$normalized]);
+        });
     }
 
     /**
@@ -113,23 +134,43 @@ class Invoice extends Model
     }
 
     /**
-     * Get the charge type for this invoice.
+     * Get the ledger for this invoice.
      *
      * @return BelongsTo
      */
-    public function chargeType(): BelongsTo
+    public function ledger(): BelongsTo
     {
-        return $this->belongsTo(ChargeType::class);
+        return $this->belongsTo(Ledger::class);
     }
 
     /**
-     * Get the tenant (organisation) this invoice belongs to.
+     * Get the bank account nominated for payment of this invoice.
      *
      * @return BelongsTo
      */
-    public function tenant(): BelongsTo
+    public function bankAccount(): BelongsTo
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(BankAccount::class);
+    }
+
+    /**
+     * Get the line items for this invoice (WeConnectU-style multi-line customer invoice).
+     *
+     * @return HasMany
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Get the occupant (organisation) this invoice belongs to.
+     *
+     * @return BelongsTo
+     */
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
     }
 
     /**
@@ -163,7 +204,7 @@ class Invoice extends Model
     }
 
     /**
-     * Get the billed-to entity: either an Owner or a UnitTenant.
+     * Get the billed-to entity: either an Owner or a Occupant.
      * Uses manual resolution since the FK points to two different tables.
      *
      * @return BelongsTo
@@ -174,25 +215,25 @@ class Invoice extends Model
     }
 
     /**
-     * Get the billed-to entity when it is a unit tenant.
+     * Get the billed-to entity when it is a unit occupant.
      *
      * @return BelongsTo
      */
-    public function billedToUnitTenant(): BelongsTo
+    public function billedToUnitOccupant(): BelongsTo
     {
-        return $this->belongsTo(UnitTenant::class, 'billed_to_id');
+        return $this->belongsTo(Occupant::class, 'billed_to_id');
     }
 
     /**
-     * Get the billed-to person (Owner or UnitTenant) resolved from billed_to_type.
+     * Get the billed-to person (Owner or Occupant) resolved from billed_to_type.
      *
-     * @return Owner|UnitTenant|null
+     * @return Owner|Occupant|null
      */
-    public function getBilledToAttribute(): Owner|UnitTenant|null
+    public function getBilledToAttribute(): Owner|Occupant|null
     {
         return match ($this->billed_to_type) {
             BilledToType::OWNER  => $this->billedToOwner,
-            BilledToType::TENANT => $this->billedToUnitTenant,
+            BilledToType::OCCUPANT => $this->billedToUnitOccupant,
             default              => null,
         };
     }

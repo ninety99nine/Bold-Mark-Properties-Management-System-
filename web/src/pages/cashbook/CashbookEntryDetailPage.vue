@@ -9,10 +9,14 @@ import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import api from '@/composables/useApi.js'
 import { useBack } from '@/composables/useBack.js'
 import AllocationModal from '@/components/common/AllocationModal.vue'
+import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const route  = useRoute()
 const router = useRouter()
 const { goBack } = useBack('/cashbook')
+const countryStore = useCountryStore()
+const { success, error: toastError } = useToast()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const entry   = ref(null)
@@ -42,8 +46,7 @@ const isAllocated = computed(() => entry.value?.is_allocated ?? false)
 const formattedAmount = computed(() => {
   if (!entry.value) return '—'
   const prefix    = isCredit.value ? '+' : '-'
-  const formatted = Number(entry.value.amount).toLocaleString('en-ZA')
-  return `${prefix}R ${formatted}`
+  return `${prefix}${countryStore.formatCurrency(entry.value.amount)}`
 })
 
 const amountClass = computed(() =>
@@ -100,11 +103,11 @@ function onFileChange(e) {
 async function handleProofFile(file) {
   const allowed = ['application/pdf', 'image/jpeg', 'image/png']
   if (!allowed.includes(file.type)) {
-    alert('Only PDF, JPG, and PNG files are supported.')
+    toastError('Only PDF, JPG, and PNG files are supported.')
     return
   }
   if (file.size > 10 * 1024 * 1024) {
-    alert('File must be under 10 MB.')
+    toastError('File must be under 10 MB.')
     return
   }
   proofUploading.value = true
@@ -115,8 +118,9 @@ async function handleProofFile(file) {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     entry.value = res.data.data
+    success('Proof of payment uploaded.')
   } catch (e) {
-    alert(e.response?.data?.message ?? 'Upload failed. Please try again.')
+    toastError(e.response?.data?.message ?? 'Upload failed. Please try again.')
   } finally {
     proofUploading.value = false
   }
@@ -128,8 +132,9 @@ async function removeProof() {
   try {
     await api.delete(`/cashbook/${route.params.entryId}/proof-of-payment`)
     entry.value = { ...entry.value, proof_of_payment_url: null }
+    success('Proof of payment removed.')
   } catch (e) {
-    alert(e.response?.data?.message ?? 'Delete failed.')
+    toastError(e.response?.data?.message ?? 'Delete failed.')
   } finally {
     proofDeleting.value = false
   }
@@ -180,10 +185,10 @@ const ENTRY_TYPE_OPTS = [
   { value: 'debit',  label: 'Debit (Paid Out)'  },
 ]
 
-async function fetchUnitsForEstate() {
-  if (!entry.value?.estate_id) return
+async function fetchUnitsForCommunity() {
+  if (!entry.value?.community_id) return
   try {
-    const res = await api.get(`/estates/${entry.value.estate_id}/units`, {
+    const res = await api.get(`/communities/${entry.value.community_id}/units`, {
       params: { per_page: 200 },
     })
     unitOptions.value = [
@@ -206,7 +211,7 @@ async function enterEditMode() {
   }
   editMode.value = true
   editError.value = null
-  await fetchUnitsForEstate()
+  await fetchUnitsForCommunity()
 }
 
 function cancelEdit() {
@@ -228,6 +233,7 @@ async function saveEdit() {
     })
     await fetchEntry()
     editMode.value = false
+    success('Entry updated successfully.')
   } catch (e) {
     editError.value = e.response?.data?.message ?? 'Failed to save changes.'
   } finally {
@@ -351,12 +357,6 @@ async function saveEdit() {
                       <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Description</p>
                       <p class="text-sm font-medium text-foreground">{{ entry.description }}</p>
                     </div>
-                    <div>
-                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Type</p>
-                      <AppBadge :variant="isCredit ? 'success' : 'danger'" bordered size="sm">
-                        {{ isCredit ? 'Credit (Received)' : 'Debit (Paid Out)' }}
-                      </AppBadge>
-                    </div>
                     <div v-if="entry.notes">
                       <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Notes</p>
                       <p class="text-sm text-foreground">{{ entry.notes }}</p>
@@ -369,14 +369,14 @@ async function saveEdit() {
                       <p :class="['text-xl font-bold font-body', amountClass]">{{ formattedAmount }}</p>
                     </div>
                     <div>
-                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Allocation Status</p>
-                      <AppBadge :variant="isAllocated ? 'success' : 'warning'" bordered size="sm">
-                        {{ isAllocated ? 'Allocated' : 'Unallocated' }}
+                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Type</p>
+                      <AppBadge :variant="isCredit ? 'success' : 'danger'" bordered size="sm">
+                        {{ isCredit ? 'Credit (Received)' : 'Debit (Paid Out)' }}
                       </AppBadge>
                     </div>
-                    <div v-if="entry.charge_type">
-                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Charge Type</p>
-                      <p class="text-sm font-medium text-foreground">{{ entry.charge_type.name }}</p>
+                    <div v-if="entry.ledger">
+                      <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">Ledger</p>
+                      <p class="text-sm font-medium text-foreground">{{ entry.ledger.name }}</p>
                     </div>
                   </div>
                 </div>
@@ -395,7 +395,9 @@ async function saveEdit() {
                     label="Amount"
                     type="number"
                     placeholder="0.00"
-                    prefix="R"
+                    :prefix="countryStore.currencySymbol"
+                    :min="0.01"
+                    :max="9999999999.99"
                   />
                   <div class="col-span-2">
                     <AppInput
@@ -566,7 +568,7 @@ async function saveEdit() {
           <!-- Context card -->
           <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
             <div class="p-5 space-y-3">
-              <!-- Estate -->
+              <!-- Community -->
               <div class="flex items-center gap-2 text-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <rect width="16" height="20" x="4" y="2" rx="2" ry="2"/>
@@ -574,11 +576,11 @@ async function saveEdit() {
                   <path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/>
                   <path d="M8 10h.01"/><path d="M8 14h.01"/>
                 </svg>
-                <span class="text-muted-foreground">Estate:</span>
+                <span class="text-muted-foreground">Community:</span>
                 <router-link
-                  :to="`/estates/${entry.estate_id}`"
+                  :to="`/communities/${entry.community_id}`"
                   class="text-primary font-medium hover:underline"
-                >{{ entry.estate?.name ?? entry.estate_id }}</router-link>
+                >{{ entry.community?.name ?? entry.community_id }}</router-link>
               </div>
 
               <!-- Unit -->
@@ -589,7 +591,7 @@ async function saveEdit() {
                 </svg>
                 <span class="text-muted-foreground">Unit:</span>
                 <router-link
-                  :to="`/estates/${entry.unit?.estate_id ?? entry.estate_id}/units/${entry.unit_id}`"
+                  :to="`/communities/${entry.unit?.community_id ?? entry.community_id}/units/${entry.unit_id}`"
                   class="text-primary font-medium hover:underline"
                 >{{ entry.unit?.unit_number ?? entry.unit_id }}</router-link>
               </div>

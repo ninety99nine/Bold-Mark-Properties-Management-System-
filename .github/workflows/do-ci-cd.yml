@@ -1,0 +1,152 @@
+name: DigitalOcean CI/CD Pipeline
+
+# ─────────────────────────────────────────────────────────────────────
+# DigitalOcean channel — builds images on the Droplet (no registry) and
+# restarts services via rsync + SSH.
+#
+# Triggers:
+#   - push to phase-2   → test → deploy to DigitalOcean
+#   - manual dispatch   → test → deploy
+#
+# The AWS/EC2 channel lives in aws-ci-cd.yml (main branch). The two
+# never overlap: main deploys to EC2, phase-2 deploys to DigitalOcean.
+# ─────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [phase-2]
+  workflow_dispatch:
+
+env:
+  PHP_VERSION: '8.4'
+  NODE_VERSION: '20'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 1: Test
+  # Runs on every push & PR. Validates:
+  #   - PHP/Composer installs cleanly
+  #   - Vue/Vite frontend builds without errors
+  #   - Pest test suite passes (against in-memory SQLite)
+  # ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Pest + Vite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ env.PHP_VERSION }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo, pdo_sqlite, sqlite3, pdo_mysql, mbstring, xml, bcmath, zip, gd, intl, opcache, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: api/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        working-directory: api
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend (Vite)
+        working-directory: web
+        run: npm run build
+        env:
+          VITE_API_URL: ''
+          VITE_APP_NAME: 'BoldMark PMS'
+          VITE_SESSION_INACTIVITY_MINUTES: '30'
+
+      - name: Prepare test environment
+        working-directory: api
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php artisan passport:keys --force
+
+      - name: Run Pest tests
+        working-directory: api
+        run: php artisan test --parallel --processes=4
+
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 2: Deploy to DigitalOcean
+  # Runs on push to phase-2 (after tests pass).
+  # Rsyncs the full source to the Droplet, builds Docker images on-server,
+  # and restarts all services — no image registry required.
+  # ─────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to DigitalOcean
+    needs: test
+    if: github.ref == 'refs/heads/phase-2' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+
+    # Serialize deploys onto the single production Droplet. A fixed group means
+    # deploys from ANY branch queue behind one another instead of running
+    # concurrently (overlapping on-server builds is what exhausted memory and
+    # took the box down). cancel-in-progress is FALSE on purpose: cancelling a
+    # deploy mid-run orphans the remote build process — the exact failure we hit.
+    # New pushes wait for the in-flight deploy to finish; only the latest queued
+    # one survives (intermediate pending deploys are superseded).
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/do_key
+          chmod 600 ~/.ssh/do_key
+          ssh-keyscan -H "${{ secrets.DO_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync code to Droplet
+        run: |
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='api/vendor' \
+            --exclude='web/node_modules' \
+            -e "ssh -i ~/.ssh/do_key" \
+            ./ root@${{ secrets.DO_HOST }}:/opt/boldmark/
+
+      - name: Write production .env
+        run: |
+          echo "$PRODUCTION_ENV" | ssh -i ~/.ssh/do_key root@${{ secrets.DO_HOST }} \
+            'cat > /opt/boldmark/.env && chmod 600 /opt/boldmark/.env'
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+
+      - name: Build images and deploy
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          ssh -i ~/.ssh/do_key \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=10 \
+            root@${{ secrets.DO_HOST }} \
+            'DOCKER_BUILDKIT=1 chmod +x /opt/boldmark/docker/scripts/*.sh && bash /opt/boldmark/docker/scripts/deploy-do.sh'

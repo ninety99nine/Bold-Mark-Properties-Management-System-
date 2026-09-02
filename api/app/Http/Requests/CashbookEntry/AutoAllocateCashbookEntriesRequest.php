@@ -23,7 +23,7 @@ class AutoAllocateCashbookEntriesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'estate_id' => ['required', 'uuid', 'exists:estates,id'],
+            'community_id' => ['required', 'uuid', 'exists:communities,id'],
         ];
     }
 
@@ -35,9 +35,9 @@ class AutoAllocateCashbookEntriesRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'estate_id.required' => 'The estate is required for auto-allocation.',
-            'estate_id.uuid'     => 'The estate ID must be a valid UUID.',
-            'estate_id.exists'   => 'The selected estate does not exist.',
+            'community_id.required' => 'The community is required for auto-allocation.',
+            'community_id.uuid'     => 'The community ID must be a valid UUID.',
+            'community_id.exists'   => 'The selected community does not exist.',
         ];
     }
 }

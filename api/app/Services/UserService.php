@@ -16,7 +16,7 @@ use App\Http\Resources\UserResources;
 class UserService extends BaseService
 {
     /**
-     * Return a paginated, filtered list of users for the authenticated tenant.
+     * Return a paginated, filtered list of users for the authenticated occupant.
      *
      * @param array $data
      * @return UserResources
@@ -24,8 +24,8 @@ class UserService extends BaseService
     public function showUsers(array $data): UserResources
     {
         $user  = Auth::user();
-        $query = User::where('tenant_id', $user->tenant_id)
-            ->with(['roles', 'estates']);
+        $query = User::where('organization_id', $user->organization_id)
+            ->with(['roles', 'communities']);
 
         if (!empty($data['role'])) {
             $query->whereHas('roles', fn($q) => $q->where('name', $data['role']));
@@ -51,9 +51,9 @@ class UserService extends BaseService
     public function showUsersSummary(array $data): array
     {
         $user     = Auth::user();
-        $tenantId = $user->tenant_id;
+        $organizationId = $user->organization_id;
 
-        $query = User::where('tenant_id', $tenantId);
+        $query = User::where('organization_id', $organizationId);
 
         $total    = (clone $query)->count();
         $active   = (clone $query)->where('status', UserStatus::ACTIVE->value)->count();
@@ -79,7 +79,7 @@ class UserService extends BaseService
     }
 
     /**
-     * Invite a new user to the tenant: create the record and assign their role.
+     * Invite a new user to the occupant: create the record and assign their role.
      *
      * @param array $data
      * @return array
@@ -94,7 +94,7 @@ class UserService extends BaseService
             'email'     => $data['email'],
             'phone'     => $data['phone'] ?? null,
             'password'  => Hash::make(Str::random(16)),
-            'tenant_id' => $admin->tenant_id,
+            'organization_id' => $admin->organization_id,
             'status'    => UserStatus::INVITED->value,
         ]);
 
@@ -140,7 +140,7 @@ class UserService extends BaseService
         $ids = array_filter($ids, fn($id) => $id !== $admin->id);
 
         $users = User::whereIn('id', $ids)
-            ->where('tenant_id', $admin->tenant_id)
+            ->where('organization_id', $admin->organization_id)
             ->get();
 
         $total = $users->count();
@@ -166,22 +166,22 @@ class UserService extends BaseService
      */
     public function showUser(User $user): UserResource
     {
-        $user->load(['roles', 'estates']);
+        $user->load(['roles', 'communities']);
 
         return $this->showResource($user);
     }
 
     /**
-     * Sync the estates assigned to a user.
+     * Sync the communities assigned to a user.
      *
      * @param User  $user
-     * @param array $estateIds
+     * @param array $communityIds
      * @return array
      */
-    public function syncUserEstates(User $user, array $estateIds): array
+    public function syncUserCommunities(User $user, array $communityIds): array
     {
-        $user->estates()->sync($estateIds);
-        $user->load(['roles', 'estates']);
+        $user->communities()->sync($communityIds);
+        $user->load(['roles', 'communities']);
 
         return $this->showUpdatedResource($user);
     }
@@ -228,6 +228,71 @@ class UserService extends BaseService
             'message' => $status === Password::RESET_LINK_SENT
                 ? 'Password reset link sent to ' . $user->email
                 : 'Failed to send password reset link. Please try again.',
+        ];
+    }
+
+    /**
+     * Reset a user's two-factor authentication (admin recovery for a lost
+     * device). Clears their TOTP secret and revokes all of their tokens and
+     * sessions so they must sign in again and re-enrol 2FA — it is never
+     * disabled, only reset.
+     *
+     * @param User $user
+     * @return array
+     */
+    public function resetTwoFactor(User $user): array
+    {
+        $user->update([
+            'two_factor_secret'       => null,
+            'two_factor_confirmed_at' => null,
+        ]);
+
+        $user->tokens()->delete();
+        $user->sessions()->delete();
+
+        return [
+            'message' => "Two-factor authentication reset for {$user->name}. They will be required to set it up again at their next login.",
+        ];
+    }
+
+    /**
+     * Change the authenticated user's own password and notify them by email.
+     *
+     * @param array $data  ['current_password', 'password']
+     * @return array
+     */
+    public function changePassword(array $data): array
+    {
+        $user = Auth::user();
+
+        if (!Hash::check($data['current_password'], $user->password)) {
+            return [
+                'success' => false,
+                'message' => 'Current password is incorrect.',
+                'errors'  => ['current_password' => ['Current password is incorrect.']],
+            ];
+        }
+
+        $user->update(['password' => Hash::make($data['password'])]);
+
+        $changedAt = now()->format('d M Y, H:i T');
+
+        try {
+            Mail::send('emails.password-changed', [
+                'name'      => $user->name,
+                'email'     => $user->email,
+                'changedAt' => $changedAt,
+            ], function ($message) use ($user) {
+                $message->to($user->email, $user->name)
+                        ->subject('Your BoldMark PMS password was changed');
+            });
+        } catch (\Exception $e) {
+            logger()->warning('Failed to send password-changed email to ' . $user->email . ': ' . $e->getMessage());
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Password updated successfully.',
         ];
     }
 

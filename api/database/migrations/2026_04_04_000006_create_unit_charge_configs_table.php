@@ -19,13 +19,13 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
 
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
-            $table->foreignUuid('charge_type_id')->constrained('charge_types')->cascadeOnDelete();
+            $table->foreignUuid('ledger_id')->constrained('ledgers')->cascadeOnDelete();
 
             $table->timestamps();
 
-            $table->unique(['unit_id', 'charge_type_id']);
+            $table->unique(['unit_id', 'ledger_id']);
             $table->index('unit_id');
-            $table->index('charge_type_id');
+            $table->index('ledger_id');
             $table->index('is_active');
             $table->index(['unit_id', 'is_active']);
         });

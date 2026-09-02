@@ -16,8 +16,7 @@ class UnitChargeConfigFactory extends Factory
     {
         return [
             'unit_id'        => null,
-            'tenant_id'      => null,
-            'charge_type_id' => null,
+            'ledger_id' => null,
             'amount'         => fake()->randomFloat(2, 100, 2000),
             'is_active'      => true,
         ];

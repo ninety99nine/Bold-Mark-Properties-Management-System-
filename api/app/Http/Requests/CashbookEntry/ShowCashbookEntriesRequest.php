@@ -23,14 +23,15 @@ class ShowCashbookEntriesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'estate_id'        => ['sometimes', 'uuid', 'exists:estates,id'],
+            'community_id'        => ['sometimes', 'uuid', 'exists:communities,id'],
             'unit_id'          => ['sometimes', 'uuid', 'exists:units,id'],
             'type'             => ['sometimes', 'string', 'in:credit,debit'],
             'allocation_status'=> ['sometimes', 'string', 'in:allocated,unallocated'],
-            'charge_type_id'   => ['sometimes', 'uuid', 'exists:charge_types,id'],
+            'ledger_id'   => ['sometimes', 'uuid', 'exists:ledgers,id'],
             'date_range'       => ['sometimes', 'string'],
             'date_range_start' => ['sometimes', 'date'],
             'date_range_end'   => ['sometimes', 'date'],
+            'country'          => ['nullable', 'string', 'max:3'],
         ];
     }
 }

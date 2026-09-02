@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Community\ShowAgeAnalysisRequest;
+use App\Models\Community;
 use App\Services\AgeAnalysisService;
-use Illuminate\Http\Request;
 
 class AgeAnalysisController extends Controller
 {
@@ -16,29 +17,26 @@ class AgeAnalysisController extends Controller
     }
 
     /**
-     * Return the age analysis report for the authenticated tenant.
+     * Return the WeConnectU-style Customer Age Analysis table for a community.
      *
-     * Query parameters (all optional):
-     *   - estate_id:       Filter to a specific estate
-     *   - charge_type_id:  Filter to a specific charge type
-     *   - billed_to_type:  Filter to 'owner' or 'tenant'
-     *
-     * @param Request $request
+     * @param ShowAgeAnalysisRequest $request
+     * @param Community $community
      * @return array
      */
-    public function getAgeAnalysis(Request $request): array
+    public function getAgeAnalysis(ShowAgeAnalysisRequest $request, Community $community): array
     {
-        return $this->service->getAgeAnalysis($request->all());
+        return $this->service->getAgeAnalysis($community, $request->validated());
     }
 
     /**
-     * Export the age analysis report as a file download (CSV, Excel, or PDF).
+     * Download the age analysis as a WeConnectU-faithful Excel workbook.
      *
-     * @param Request $request
+     * @param ShowAgeAnalysisRequest $request
+     * @param Community $community
      * @return \Symfony\Component\HttpFoundation\Response
      */
-    public function exportAgeAnalysis(Request $request): \Symfony\Component\HttpFoundation\Response
+    public function exportAgeAnalysis(ShowAgeAnalysisRequest $request, Community $community): \Symfony\Component\HttpFoundation\Response
     {
-        return $this->service->exportAgeAnalysis($request->all());
+        return $this->service->exportAgeAnalysis($community, $request->validated());
     }
 }

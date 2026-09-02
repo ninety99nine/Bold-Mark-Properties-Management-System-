@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/composables/useApi.js'
+import { useToast } from '@/composables/useToast'
 import AppButton    from '@/components/common/AppButton.vue'
 import AppBadge     from '@/components/common/AppBadge.vue'
 import AppStatCard  from '@/components/common/AppStatCard.vue'
@@ -21,7 +22,7 @@ const ROLE_DISPLAY = {
   'portfolio-assistant':  'Portfolio Assistant',
   'trustee':              'Trustee / Director',
   'owner':                'Owner',
-  'tenant':               'Tenant',
+  'occupant':               'Occupant',
   'contractor':           'Contractor',
 }
 
@@ -36,7 +37,7 @@ const INTERNAL_ROLE_OPTS = [
 const EXTERNAL_ROLE_OPTS = [
   { value: 'trustee',    label: 'Trustee / Director' },
   { value: 'owner',      label: 'Owner' },
-  { value: 'tenant',     label: 'Tenant' },
+  { value: 'occupant',     label: 'Occupant' },
   { value: 'contractor', label: 'Contractor' },
 ]
 const ALL_ROLE_OPTS = [...INTERNAL_ROLE_OPTS, ...EXTERNAL_ROLE_OPTS]
@@ -59,7 +60,7 @@ const ROLE_BADGE_STYLES = {
   'portfolio-assistant':  'bg-purple-50 text-purple-700 border-purple-200',
   'trustee':              'bg-amber-50 text-amber-700 border-amber-200',
   'owner':                'bg-teal-50 text-teal-700 border-teal-200',
-  'tenant':               'bg-sky-50 text-sky-700 border-sky-200',
+  'occupant':               'bg-sky-50 text-sky-700 border-sky-200',
   'contractor':           'bg-orange-50 text-orange-700 border-orange-200',
 }
 function getRoleBadgeClass(slug) {
@@ -72,7 +73,8 @@ const summary     = ref({ total: 0, active: 0, invited: 0, inactive: 0, internal
 const loading     = ref(true)
 const activeTab   = ref('all')
 const searchQuery = ref('')
-const openMenuId  = ref(null)
+const openMenuId     = ref(null)
+const menuPosition   = ref({ top: 0, right: 0 })
 
 // Pagination
 const currentPage = ref(1)
@@ -96,16 +98,14 @@ const showDeleteConfirm = ref(false)
 const deleteLoading     = ref(false)
 const deletingUser      = ref(null)
 
-// Estate assignment modal
-const showEstatesModal  = ref(false)
-const estatesLoading    = ref(false)
-const estatesUser       = ref(null)
-const selectedEstateIds = ref([])
-const allEstates        = ref([])
+// Community assignment modal
+const showCommunitiesModal  = ref(false)
+const communitiesLoading    = ref(false)
+const communitiesUser       = ref(null)
+const selectedCommunityIds = ref([])
+const allCommunities        = ref([])
 
-// Resend / password reset feedback
-const toastMessage = ref('')
-const toastType    = ref('success')
+const { success: toastSuccess, error: toastError } = useToast()
 
 // ─── Computed ────────────────────────────────────────────────────────────────
 const tabs = computed(() => [
@@ -190,9 +190,8 @@ function formatDate(str) {
 }
 
 function showToast(msg, type = 'success') {
-  toastMessage.value = msg
-  toastType.value = type
-  setTimeout(() => { toastMessage.value = '' }, 4000)
+  if (type === 'error') toastError(msg)
+  else toastSuccess(msg)
 }
 
 // ─── API calls ───────────────────────────────────────────────────────────────
@@ -217,13 +216,13 @@ async function loadUsers() {
   }
 }
 
-async function loadEstates() {
-  if (allEstates.value.length) return
+async function loadCommunities() {
+  if (allCommunities.value.length) return
   try {
-    const res = await api.get('/estates', { params: { _per_page: 500 } })
-    allEstates.value = res.data.data ?? []
+    const res = await api.get('/communities', { params: { _per_page: 500 } })
+    allCommunities.value = res.data.data ?? []
   } catch (e) {
-    console.error('Failed to load estates', e)
+    console.error('Failed to load communities', e)
   }
 }
 
@@ -246,7 +245,16 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 // ─── Menu ────────────────────────────────────────────────────────────────────
 function toggleMenu(id, e) {
   e.stopPropagation()
-  openMenuId.value = openMenuId.value === id ? null : id
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    return
+  }
+  const rect = e.currentTarget.getBoundingClientRect()
+  menuPosition.value = {
+    top: rect.bottom + 4,
+    right: window.innerWidth - rect.right,
+  }
+  openMenuId.value = id
 }
 
 // ─── Invite ──────────────────────────────────────────────────────────────────
@@ -370,41 +378,41 @@ async function resendInvite(user) {
   }
 }
 
-// ─── Estate Assignment ───────────────────────────────────────────────────────
-async function openEstatesModal(user) {
-  estatesUser.value = user
-  selectedEstateIds.value = (user.estates ?? []).map(e => e.id)
+// ─── Community Assignment ───────────────────────────────────────────────────────
+async function openCommunitiesModal(user) {
+  communitiesUser.value = user
+  selectedCommunityIds.value = (user.communities ?? []).map(e => e.id)
   openMenuId.value = null
-  showEstatesModal.value = true
-  await loadEstates()
+  showCommunitiesModal.value = true
+  await loadCommunities()
 }
 
-function closeEstatesModal() {
-  showEstatesModal.value = false
-  estatesUser.value = null
-  selectedEstateIds.value = []
+function closeCommunitiesModal() {
+  showCommunitiesModal.value = false
+  communitiesUser.value = null
+  selectedCommunityIds.value = []
 }
 
-function toggleEstate(estateId) {
-  const idx = selectedEstateIds.value.indexOf(estateId)
+function toggleCommunity(communityId) {
+  const idx = selectedCommunityIds.value.indexOf(communityId)
   if (idx === -1) {
-    selectedEstateIds.value.push(estateId)
+    selectedCommunityIds.value.push(communityId)
   } else {
-    selectedEstateIds.value.splice(idx, 1)
+    selectedCommunityIds.value.splice(idx, 1)
   }
 }
 
-async function saveEstates() {
-  estatesLoading.value = true
+async function saveCommunities() {
+  communitiesLoading.value = true
   try {
-    await api.put(`/users/${estatesUser.value.id}/estates`, { estate_ids: selectedEstateIds.value })
-    closeEstatesModal()
+    await api.put(`/users/${communitiesUser.value.id}/communities`, { community_ids: selectedCommunityIds.value })
+    closeCommunitiesModal()
     await reload()
-    showToast('Estate assignments updated.')
+    showToast('Community assignments updated.')
   } catch (e) {
-    showToast('Failed to update estate assignments. Please try again.', 'error')
+    showToast('Failed to update community assignments. Please try again.', 'error')
   } finally {
-    estatesLoading.value = false
+    communitiesLoading.value = false
   }
 }
 
@@ -444,26 +452,6 @@ function onToolbarUpdate(state) {
 <template>
   <div>
   <div class="space-y-6 pb-8">
-
-    <!-- ── Toast ───────────────────────────────────────────────────────────── -->
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 -translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2"
-    >
-      <div
-        v-if="toastMessage"
-        :class="[
-          'fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-lg shadow-lg text-sm font-medium',
-          toastType === 'error' ? 'bg-danger text-white' : 'bg-success text-white',
-        ]"
-      >
-        {{ toastMessage }}
-      </div>
-    </Transition>
 
     <!-- ── Page header ─────────────────────────────────────────────────────── -->
     <div class="flex items-center justify-between">
@@ -560,7 +548,7 @@ function onToolbarUpdate(state) {
             <tr class="border-b border-border text-[11px] text-muted-foreground uppercase tracking-wider">
               <th class="text-left py-3 px-4 font-medium">User</th>
               <th class="text-left py-3 px-4 font-medium">Role</th>
-              <th class="text-left py-3 px-4 font-medium">Assigned Estates</th>
+              <th class="text-left py-3 px-4 font-medium">Assigned Communities</th>
               <th class="text-left py-3 px-4 font-medium">Status</th>
               <th class="text-left py-3 px-4 font-medium">Last Login</th>
               <th class="py-3 px-4"></th>
@@ -631,20 +619,20 @@ function onToolbarUpdate(state) {
                   </span>
                 </td>
 
-                <!-- ASSIGNED ESTATES -->
+                <!-- ASSIGNED COMMUNITIES -->
                 <td class="py-3 px-4">
                   <template v-if="isInternalUser(user)">
-                    <span v-if="!user.estates?.length" class="text-xs text-muted-foreground">—</span>
+                    <span v-if="!user.communities?.length" class="text-xs text-muted-foreground">—</span>
                     <div v-else class="flex flex-wrap gap-1">
                       <span
-                        v-for="estate in user.estates.slice(0, 2)"
-                        :key="estate.id"
+                        v-for="community in user.communities.slice(0, 2)"
+                        :key="community.id"
                         class="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted text-foreground border border-border"
-                      >{{ estate.name }}</span>
+                      >{{ community.name }}</span>
                       <span
-                        v-if="user.estates.length > 2"
+                        v-if="user.communities.length > 2"
                         class="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted text-muted-foreground border border-border"
-                      >+{{ user.estates.length - 2 }} more</span>
+                      >+{{ user.communities.length - 2 }} more</span>
                     </div>
                   </template>
                   <span v-else class="text-xs text-muted-foreground">—</span>
@@ -685,7 +673,8 @@ function onToolbarUpdate(state) {
                     >
                       <div
                         v-if="openMenuId === user.id"
-                        class="absolute right-0 top-full mt-1 z-20 w-44 rounded-lg border border-border bg-card shadow-lg py-1"
+                        class="fixed z-50 w-44 rounded-lg border border-border bg-card shadow-lg py-1"
+                        :style="{ top: menuPosition.top + 'px', right: menuPosition.right + 'px' }"
                         @click.stop
                       >
                         <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors" @click="goToUser(user)">
@@ -704,13 +693,13 @@ function onToolbarUpdate(state) {
                           v-if="isInternalUser(user)"
                           type="button"
                           class="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
-                          @click="openEstatesModal(user)"
+                          @click="openCommunitiesModal(user)"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-muted-foreground">
                             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                             <polyline points="9 22 9 12 15 12 15 22"/>
                           </svg>
-                          Manage Estates
+                          Manage Communities
                         </button>
                         <button
                           v-if="user.status === 'invited'"
@@ -904,22 +893,22 @@ function onToolbarUpdate(state) {
     </template>
   </AppModal>
 
-  <!-- ── Manage Estates modal ───────────────────────────────────────────────── -->
+  <!-- ── Manage Communities modal ───────────────────────────────────────────────── -->
   <AppModal
-    :show="showEstatesModal"
-    :title="`Manage Estates — ${estatesUser?.name ?? ''}`"
+    :show="showCommunitiesModal"
+    :title="`Manage Communities — ${communitiesUser?.name ?? ''}`"
     size="md"
-    @close="closeEstatesModal"
+    @close="closeCommunitiesModal"
   >
     <div class="space-y-3">
       <p class="text-sm text-muted-foreground">
-        Select which estates this staff member is assigned to. They will be able to manage and view data for their assigned estates.
+        Select which communities this staff member is assigned to. They will be able to manage and view data for their assigned communities.
       </p>
 
-      <!-- Estate list -->
+      <!-- Community list -->
       <div class="border border-border rounded-lg divide-y divide-border max-h-80 overflow-y-auto">
         <!-- Loading state -->
-        <template v-if="!allEstates.length">
+        <template v-if="!allCommunities.length">
           <div v-for="n in 3" :key="n" class="flex items-center gap-3 px-4 py-3 animate-pulse">
             <div class="w-4 h-4 rounded bg-muted shrink-0"></div>
             <div class="space-y-1.5 flex-1">
@@ -929,44 +918,44 @@ function onToolbarUpdate(state) {
           </div>
         </template>
 
-        <!-- Estate rows -->
+        <!-- Community rows -->
         <label
-          v-for="estate in allEstates"
-          :key="estate.id"
+          v-for="community in allCommunities"
+          :key="community.id"
           class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/40 transition-colors"
         >
           <input
             type="checkbox"
-            :value="estate.id"
-            :checked="selectedEstateIds.includes(estate.id)"
+            :value="community.id"
+            :checked="selectedCommunityIds.includes(community.id)"
             class="w-4 h-4 rounded border-border text-primary accent-primary cursor-pointer"
-            @change="toggleEstate(estate.id)"
+            @change="toggleCommunity(community.id)"
           />
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-foreground truncate">{{ estate.name }}</p>
-            <p class="text-xs text-muted-foreground truncate">{{ estate.address || 'No address' }}</p>
+            <p class="text-sm font-medium text-foreground truncate">{{ community.name }}</p>
+            <p class="text-xs text-muted-foreground truncate">{{ community.address || 'No address' }}</p>
           </div>
           <span
-            v-if="selectedEstateIds.includes(estate.id)"
+            v-if="selectedCommunityIds.includes(community.id)"
             class="shrink-0 text-[11px] font-medium text-primary"
           >Assigned</span>
         </label>
 
         <!-- Empty state -->
-        <div v-if="allEstates.length === 0 && !estatesLoading" class="px-4 py-8 text-center">
-          <p class="text-sm text-muted-foreground">No estates found.</p>
+        <div v-if="allCommunities.length === 0 && !communitiesLoading" class="px-4 py-8 text-center">
+          <p class="text-sm text-muted-foreground">No communities found.</p>
         </div>
       </div>
 
       <!-- Summary -->
       <p class="text-xs text-muted-foreground">
-        {{ selectedEstateIds.length }} estate{{ selectedEstateIds.length !== 1 ? 's' : '' }} selected
+        {{ selectedCommunityIds.length }} community{{ selectedCommunityIds.length !== 1 ? 's' : '' }} selected
       </p>
     </div>
 
     <template #footer>
-      <AppButton variant="outline" @click="closeEstatesModal">Cancel</AppButton>
-      <AppButton :loading="estatesLoading" @click="saveEstates">Save Assignments</AppButton>
+      <AppButton variant="outline" @click="closeCommunitiesModal">Cancel</AppButton>
+      <AppButton :loading="communitiesLoading" @click="saveCommunities">Save Assignments</AppButton>
     </template>
   </AppModal>
 

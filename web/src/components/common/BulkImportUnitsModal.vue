@@ -20,7 +20,7 @@
     <!-- ─── Step 0: Upload ─── -->
     <div v-if="step === 0">
       <p class="text-sm text-[#717B99] mb-5">
-        Download the <strong class="text-[#1E2740]">{{ estateTypeLabel }}</strong> template, fill in your unit data, then upload the completed file.
+        Download the <strong class="text-[#1E2740]">{{ communityTypeLabel }}</strong> template, fill in your unit data, then upload the completed file.
         The template includes 5 example rows showing different scenarios — delete them before importing.
       </p>
 
@@ -58,21 +58,21 @@
         <p class="text-sm font-medium text-[#1E2740] mb-3">2. Upload your completed file</p>
 
         <!-- Empty state: drop zone -->
-        <div
+        <label
           v-if="!selectedFile"
-          class="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer"
+          for="bulk-units-file-input"
+          class="block border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer"
           :class="isDragOver ? 'border-[#D89B4B] bg-amber-50' : 'border-[#DCDEE8] hover:border-[#1F3A5C]'"
           @dragover.prevent="isDragOver = true"
           @dragleave.prevent="isDragOver = false"
           @drop.prevent="handleDrop"
-          @click="fileInputRef?.click()"
         >
           <svg class="w-10 h-10 mx-auto text-[#717B99] mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
           <p class="text-sm text-[#1E2740] font-medium mb-1">Drop your file here or click to browse</p>
           <p class="text-xs text-[#717B99]">Supports .csv, .xlsx (max 5MB)</p>
-        </div>
+        </label>
 
         <!-- File attached state -->
         <div
@@ -106,6 +106,7 @@
         </div>
 
         <input
+          id="bulk-units-file-input"
           ref="fileInputRef"
           type="file"
           accept=".csv,.xlsx,.xls"
@@ -181,28 +182,87 @@
 
     <!-- ─── Step 2: Preview ─── -->
     <div v-else-if="step === 2">
-      <!-- Summary cards -->
-      <div class="grid grid-cols-3 gap-3 mb-5">
-        <div class="border border-[#DCDEE8] rounded p-3 text-center">
-          <p class="text-2xl font-bold text-[#1E2740]">{{ previewRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Total rows</p>
-        </div>
-        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50">
-          <p class="text-2xl font-bold text-[#22c55e]">{{ validRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Valid</p>
-        </div>
-        <div class="border border-[#F75A68] rounded p-3 text-center" :class="invalidRows.length ? 'bg-red-50' : ''">
-          <p class="text-2xl font-bold" :class="invalidRows.length ? 'text-[#F75A68]' : 'text-[#717B99]'">{{ invalidRows.length }}</p>
-          <p class="text-xs text-[#717B99] mt-1">Errors</p>
-        </div>
+      <!-- Filter tabs — only shown when there are issues or duplicates -->
+      <div v-if="invalidRows.length > 0 || duplicateRows.length > 0" class="flex gap-2 mb-4">
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'all'
+            ? 'border-[#1F3A5C] bg-[#1F3A5C] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#1F3A5C] hover:text-[#1F3A5C]'"
+          @click="setPreviewFilter('all')"
+        >
+          All
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#EDEFF5] text-[#1E2740]'">
+            {{ previewRows.length }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'valid'
+            ? 'border-[#22c55e] bg-[#22c55e] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#22c55e] hover:text-[#22c55e]'"
+          @click="setPreviewFilter('valid')"
+        >
+          Valid
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'valid' ? 'bg-white/20 text-white' : 'bg-[#EDEFF5] text-[#1E2740]'">
+            {{ validRows.length }}
+          </span>
+        </button>
+        <button
+          v-if="invalidRows.length > 0"
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'errors'
+            ? 'border-[#F75A68] bg-[#F75A68] text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-[#F75A68] hover:text-[#F75A68]'"
+          @click="setPreviewFilter('errors')"
+        >
+          Issues
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'errors' ? 'bg-white/20 text-white' : 'bg-red-100 text-[#F75A68]'">
+            {{ invalidRows.length }}
+          </span>
+        </button>
+        <button
+          v-if="duplicateRows.length > 0"
+          type="button"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer"
+          :class="previewFilter === 'duplicates'
+            ? 'border-amber-500 bg-amber-500 text-white'
+            : 'border-[#DCDEE8] text-[#717B99] hover:border-amber-500 hover:text-amber-600'"
+          @click="setPreviewFilter('duplicates')"
+        >
+          Duplicates
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+            :class="previewFilter === 'duplicates' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-600'">
+            {{ duplicateRows.length }}
+          </span>
+        </button>
       </div>
 
-      <p v-if="invalidRows.length" class="text-xs text-[#F75A68] mb-3 flex items-center gap-1.5">
-        <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        Fix the <strong>{{ invalidRows.length }} error{{ invalidRows.length > 1 ? 's' : '' }}</strong> in your file and re-upload before importing.
-      </p>
+      <!-- Error banner -->
+      <div v-if="invalidRows.length" class="mb-3 rounded border border-[#F75A68]/30 bg-red-50 px-3 py-2.5 text-xs space-y-1.5">
+        <p class="font-semibold text-[#F75A68] flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {{ invalidRows.length }} row{{ invalidRows.length > 1 ? 's have' : ' has' }} validation errors — fix your file and re-upload.
+        </p>
+        <ul class="space-y-0.5 pl-5">
+          <li v-for="e in errorCounts" :key="e.message" class="text-[#1E2740] list-disc">
+            <strong>{{ e.count }} row{{ e.count > 1 ? 's' : '' }}</strong>: {{ e.message }}
+          </li>
+        </ul>
+      </div>
+      <!-- Duplicate banner -->
+      <div v-else-if="duplicateRows.length" class="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+        <strong>{{ duplicateRows.length }} duplicate row{{ duplicateRows.length > 1 ? 's' : '' }} will be skipped.</strong>
+        The first occurrence of each unit number will be imported. Remove the duplicates from your file to avoid this.
+      </div>
       <p v-else class="text-xs text-[#717B99] mb-3">
         All <strong class="text-[#22c55e]">{{ validRows.length }} rows</strong> passed validation and are ready to import.
       </p>
@@ -217,7 +277,7 @@
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Occupancy</th>
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Owner</th>
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Owner Email</th>
-              <th v-if="hasTenantFields" class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Tenant</th>
+              <th v-if="hasOccupantFields" class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Occupant</th>
               <th class="text-left px-3 py-2 font-medium text-[#717B99] uppercase tracking-wide">Status</th>
             </tr>
           </thead>
@@ -225,7 +285,7 @@
             <tr
               v-for="row in paginatedPreviewRows"
               :key="row.__rowIndex"
-              :class="row.__errors.length ? 'bg-red-50' : 'hover:bg-[#F8FBFF]'"
+              :class="row.__errors.length ? 'bg-red-50' : row.__isDuplicate ? 'bg-amber-50' : row.__warnings?.length ? 'bg-amber-50/40' : 'hover:bg-[#F8FBFF]'"
             >
               <td class="px-3 py-2 text-[#717B99]">{{ row.__rowIndex }}</td>
               <td class="px-3 py-2 font-medium text-[#1E2740]">{{ row.unit_number || '—' }}</td>
@@ -237,21 +297,16 @@
               </td>
               <td class="px-3 py-2 text-[#1E2740]">{{ row.owner_full_name || '—' }}</td>
               <td class="px-3 py-2 text-[#717B99]">{{ row.owner_email || '—' }}</td>
-              <td v-if="hasTenantFields" class="px-3 py-2 text-[#717B99]">{{ row.tenant_full_name || '—' }}</td>
+              <td v-if="hasOccupantFields" class="px-3 py-2 text-[#717B99]">{{ row.occupant_full_name || '—' }}</td>
               <td class="px-3 py-2">
-                <span v-if="!row.__errors.length" class="text-[#22c55e] flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Valid
-                </span>
-                <AppPoptip v-else position="top" max-width="280px">
+                <!-- Red: validation errors (row will be skipped) -->
+                <AppPoptip v-if="row.__errors.length" position="top" max-width="280px">
                   <template #trigger>
                     <span class="text-[#F75A68] flex items-center gap-1 cursor-default underline decoration-dotted underline-offset-2">
                       <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      {{ row.__errors.length }} error{{ row.__errors.length > 1 ? 's' : '' }}
+                      {{ row.__errors.length }} issue{{ row.__errors.length > 1 ? 's' : '' }}
                     </span>
                   </template>
                   <div class="p-3">
@@ -259,20 +314,73 @@
                       <svg class="w-3.5 h-3.5 text-[#F75A68] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      Validation errors
+                      Validation issues
                     </p>
                     <ul class="space-y-1.5">
-                      <li
-                        v-for="error in row.__errors"
-                        :key="error"
-                        class="flex items-start gap-2 text-xs text-[#1E2740]"
-                      >
+                      <li v-for="error in row.__errors" :key="error" class="flex items-start gap-2 text-xs text-[#1E2740]">
                         <span class="mt-1 w-1.5 h-1.5 rounded-full bg-[#F75A68] shrink-0" />
                         {{ error }}
                       </li>
                     </ul>
                   </div>
                 </AppPoptip>
+                <!-- Amber: duplicate row that will be SKIPPED -->
+                <AppPoptip v-else-if="row.__isDuplicate" position="top" max-width="280px">
+                  <template #trigger>
+                    <span class="text-amber-600 flex items-center gap-1 cursor-default underline decoration-dotted underline-offset-2">
+                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      Duplicate
+                    </span>
+                  </template>
+                  <div class="p-3">
+                    <p class="text-xs font-semibold text-[#1E2740] mb-2 flex items-center gap-1.5">
+                      <svg class="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      Duplicate warning
+                    </p>
+                    <ul class="space-y-1.5">
+                      <li v-for="warn in row.__warnings" :key="warn" class="flex items-start gap-2 text-xs text-[#1E2740]">
+                        <span class="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        {{ warn }}
+                      </li>
+                    </ul>
+                  </div>
+                </AppPoptip>
+                <!-- Green + poptip: first occurrence of a duplicated unit — will be IMPORTED -->
+                <AppPoptip v-else-if="row.__warnings?.length" position="top" max-width="280px">
+                  <template #trigger>
+                    <span class="text-[#22c55e] flex items-center gap-1 cursor-default underline decoration-dotted underline-offset-2">
+                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Valid
+                    </span>
+                  </template>
+                  <div class="p-3">
+                    <p class="text-xs font-semibold text-[#1E2740] mb-2 flex items-center gap-1.5">
+                      <svg class="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      Duplicate warning
+                    </p>
+                    <ul class="space-y-1.5">
+                      <li v-for="warn in row.__warnings" :key="warn" class="flex items-start gap-2 text-xs text-[#1E2740]">
+                        <span class="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        {{ warn }}
+                      </li>
+                    </ul>
+                  </div>
+                </AppPoptip>
+                <!-- Green: valid -->
+                <span v-else class="text-[#22c55e] flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Valid
+                </span>
               </td>
             </tr>
           </tbody>
@@ -281,7 +389,7 @@
 
       <!-- Pagination -->
       <div v-if="totalPreviewPages > 1" class="flex items-center justify-between mt-3 text-xs text-[#717B99]">
-        <span>Showing {{ previewPageStart }}–{{ previewPageEnd }} of {{ previewRows.length }}</span>
+        <span>Showing {{ previewPageStart }}–{{ previewPageEnd }} of {{ filteredPreviewRows.length }}</span>
         <div class="flex gap-2">
           <button
             type="button"
@@ -313,23 +421,18 @@
         <p class="text-sm text-[#717B99] mt-1">{{ importResult?.message }}</p>
       </div>
 
-      <div class="grid grid-cols-3 gap-3 mb-5">
-        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50">
+      <div v-if="importResult?.duplicates || importResult?.error_count" class="flex gap-3 mb-5">
+        <div class="border border-[#22c55e] rounded p-3 text-center bg-green-50 flex-1">
           <p class="text-2xl font-bold text-[#22c55e]">{{ importResult?.imported ?? 0 }}</p>
           <p class="text-xs text-[#717B99] mt-1">Imported</p>
         </div>
-        <div class="border border-[#D89B4B] rounded p-3 text-center bg-amber-50">
-          <p class="text-2xl font-bold text-[#D89B4B]">{{ importResult?.duplicates ?? 0 }}</p>
+        <div v-if="importResult?.duplicates" class="border border-[#D89B4B] rounded p-3 text-center bg-amber-50 flex-1">
+          <p class="text-2xl font-bold text-[#D89B4B]">{{ importResult.duplicates }}</p>
           <p class="text-xs text-[#717B99] mt-1">Duplicates skipped</p>
         </div>
-        <div
-          class="border rounded p-3 text-center"
-          :class="importResult?.error_count ? 'border-[#F75A68] bg-red-50' : 'border-[#DCDEE8]'"
-        >
-          <p class="text-2xl font-bold" :class="importResult?.error_count ? 'text-[#F75A68]' : 'text-[#717B99]'">
-            {{ importResult?.error_count ?? 0 }}
-          </p>
-          <p class="text-xs text-[#717B99] mt-1">Errors</p>
+        <div v-if="importResult?.error_count" class="border border-[#F75A68] rounded p-3 text-center bg-red-50 flex-1">
+          <p class="text-2xl font-bold text-[#F75A68]">{{ importResult.error_count }}</p>
+          <p class="text-xs text-[#717B99] mt-1">Issues</p>
         </div>
       </div>
 
@@ -361,7 +464,8 @@
         <AppButton variant="outline" @click="handleClose">Cancel</AppButton>
         <AppButton
           variant="primary"
-          :disabled="!selectedFile || parsing"
+          :disabled="!selectedFile"
+          :loading="parsing"
           @click="parseFile"
         >
           {{ parsing ? 'Parsing...' : 'Next: Map Columns' }}
@@ -386,6 +490,7 @@
         <AppButton
           variant="primary"
           :disabled="validRows.length === 0 || invalidRows.length > 0 || importing"
+          :title="invalidRows.length > 0 ? 'Fix validation errors before importing' : ''"
           @click="runImport"
         >
           {{ importing ? 'Importing...' : `Import ${validRows.length} unit${validRows.length === 1 ? '' : 's'}` }}
@@ -408,11 +513,13 @@ import AppModal from './AppModal.vue'
 import AppButton from './AppButton.vue'
 import AppPoptip from './AppPoptip.vue'
 import AppSelect from './AppSelect.vue'
+import { getToken } from '@/composables/authStorage'
+import { billingBasis, isLevyOnly, entityTypeLabel } from '@/utils/communityEntityType'
 
 const props = defineProps<{
   show: boolean
-  estateId: string
-  estateType?: string  // 'sectional_title' | 'residential_rental' | 'commercial_rental' | 'mixed'
+  communityId: string
+  communityType?: string  // a CommunityEntityType value (e.g. 'body_corporate', 'residential_rental', 'mixed')
 }>()
 
 const emit = defineEmits<{
@@ -422,117 +529,115 @@ const emit = defineEmits<{
 
 const API_URL = import.meta.env.VITE_API_URL ?? ''
 
-// ─── Field definitions (estate-type-aware) ───────────────────────────────────
+// ─── Field definitions (community-type-aware) ───────────────────────────────────
 
 const ALL_FIELDS = [
   { key: 'unit_number',        label: 'Unit Number',        required: true },
-  { key: 'occupancy_type',     label: 'Occupancy Type',     required: true },
+  { key: 'section',            label: 'Section',            required: false },
+  { key: 'address',            label: 'Unit Address',       required: false },
+  { key: 'occupancy_type',     label: 'Occupancy Type',     required: false },
   { key: 'levy_override',      label: 'Levy Override',      required: false },
   { key: 'rent_amount',        label: 'Rent Amount',        required: false },
   { key: 'owner_full_name',    label: 'Owner Full Name',    required: true },
   { key: 'owner_id_number',    label: 'Owner ID Number',    required: false },
-  { key: 'owner_email',        label: 'Owner Email',        required: true },
+  { key: 'owner_email',        label: 'Owner Email',        required: false },
   { key: 'owner_phone',        label: 'Owner Phone',        required: false },
   { key: 'owner_address',      label: 'Owner Address',      required: false },
-  { key: 'tenant_full_name',   label: 'Tenant Full Name',   required: false },
-  { key: 'tenant_email',       label: 'Tenant Email',       required: false },
-  { key: 'tenant_phone',       label: 'Tenant Phone',       required: false },
-  { key: 'tenant_lease_start', label: 'Tenant Lease Start', required: false },
-  { key: 'tenant_lease_end',   label: 'Tenant Lease End',   required: false },
+  { key: 'occupant_full_name',   label: 'Occupant Full Name',   required: false },
+  { key: 'occupant_email',       label: 'Occupant Email',       required: false },
+  { key: 'occupant_phone',       label: 'Occupant Phone',       required: false },
+  { key: 'occupant_lease_start', label: 'Occupant Lease Start', required: false },
+  { key: 'occupant_lease_end',   label: 'Occupant Lease End',   required: false },
 ]
 
-const TENANT_KEYS = ['tenant_full_name', 'tenant_email', 'tenant_phone', 'tenant_lease_start', 'tenant_lease_end']
+const OCCUPANT_KEYS = ['occupant_full_name', 'occupant_email', 'occupant_phone', 'occupant_lease_start', 'occupant_lease_end']
 
 const systemFields = computed(() => {
-  const type = props.estateType
-  if (type === 'sectional_title') {
-    // Sectional title: levy-focused. Owners can rent out units (tenant_occupied) but
-    // tenant personal details are not captured at this stage — only owner info + levy config.
-    return ALL_FIELDS.filter(f => !TENANT_KEYS.includes(f.key) && f.key !== 'rent_amount')
+  if (!props.communityType) return ALL_FIELDS
+  const basis = billingBasis(props.communityType)
+  if (basis === 'levy') {
+    // Levy-billed scheme: levy-focused. Owners can rent out units (occupant_occupied) but
+    // occupant personal details are not captured at this stage — only owner info + levy config.
+    return ALL_FIELDS.filter(f => !OCCUPANT_KEYS.includes(f.key) && f.key !== 'rent_amount')
   }
-  if (type === 'residential_rental' || type === 'commercial_rental') {
+  if (basis === 'rent') {
     // Rental portfolio: rent-focused. No levies.
     return ALL_FIELDS.filter(f => f.key !== 'levy_override')
   }
-  // mixed or unknown: all fields
+  // mixed: all fields
   return ALL_FIELDS
 })
 
-const hasTenantFields = computed(() =>
-  props.estateType !== 'sectional_title'
+const hasOccupantFields = computed(() =>
+  !!props.communityType && !isLevyOnly(props.communityType)
 )
 
-const estateTypeLabel = computed(() => {
-  const labels: Record<string, string> = {
-    sectional_title: 'Sectional Title',
-    residential_rental: 'Residential Rental',
-    commercial_rental: 'Commercial Rental',
-    mixed: 'Mixed',
-  }
-  return labels[props.estateType ?? ''] ?? 'All Types'
-})
+const communityTypeLabel = computed(() =>
+  props.communityType ? entityTypeLabel(props.communityType) : 'All Types'
+)
 
 function allowedOccupancyTypes(): string[] {
-  const type = props.estateType
-  if (type === 'sectional_title') {
-    // Tenants are added per-unit after import — occupancy during bulk import is owner or vacant
+  if (!props.communityType) return ['owner_occupied', 'occupant_occupied', 'vacant']
+  const basis = billingBasis(props.communityType)
+  if (basis === 'levy') {
+    // Occupants are added per-unit after import — occupancy during bulk import is owner or vacant
     return ['owner_occupied', 'vacant']
   }
-  if (type === 'residential_rental' || type === 'commercial_rental') {
+  if (basis === 'rent') {
     // Pure rental portfolios don't have owner-occupied units
-    return ['tenant_occupied', 'vacant']
+    return ['occupant_occupied', 'vacant']
   }
-  return ['owner_occupied', 'tenant_occupied', 'vacant']
+  return ['owner_occupied', 'occupant_occupied', 'vacant']
 }
 
-// ─── Example rows (estate-type-aware) ────────────────────────────────────────
+// ─── Example rows (community-type-aware) ────────────────────────────────────────
 
 function buildExampleRows(): Record<string, string>[] {
-  const type = props.estateType
+  const basis = props.communityType ? billingBasis(props.communityType) : null
 
-  if (type === 'sectional_title') {
-    // Sectional title only has owner_occupied and vacant — tenant details are added separately after import
+  if (basis === 'levy') {
+    // Levy-billed schemes only have owner_occupied and vacant — occupant details are added separately after import
     return [
       // Row 1: fully complete, owner_occupied, custom levy override
-      { unit_number: 'A01', occupancy_type: 'owner_occupied', levy_override: '3000', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg' },
-      // Row 2: owner_occupied, uses estate default levy, partial info
-      { unit_number: 'A02', occupancy_type: 'owner_occupied', levy_override: '', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '' },
+      { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '3000', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg' },
+      // Row 2: owner_occupied, uses community default levy, partial info
+      { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'owner_occupied', levy_override: '', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '' },
       // Row 3: vacant unit, levy override set, minimal info
-      { unit_number: 'B01', occupancy_type: 'vacant', levy_override: '2850', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '' },
+      { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '2850', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '' },
       // Row 4: vacant, only required fields
-      { unit_number: 'B02', occupancy_type: 'vacant', levy_override: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '' },
+      { unit_number: 'B02', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '' },
       // Row 5: fully complete, owner_occupied with custom levy
-      { unit_number: 'C01', occupancy_type: 'owner_occupied', levy_override: '2850', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton' },
+      { unit_number: 'C01', section: 'C', address: 'Unit C01, 8 Linden Drive, Sandton', occupancy_type: 'owner_occupied', levy_override: '2850', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton' },
     ]
   }
 
-  if (type === 'residential_rental' || type === 'commercial_rental') {
+  if (basis === 'rent') {
     return [
-      // Row 1: fully complete, tenant_occupied, all tenant details
-      { unit_number: '101', occupancy_type: 'tenant_occupied', rent_amount: '9500', owner_full_name: 'Peter Johnson', owner_id_number: '7801015800082', owner_email: 'peter@example.com', owner_phone: '+27 82 111 2233', owner_address: '5 Park Lane, Cape Town', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
-      // Row 2: tenant_occupied, partial tenant info, no lease end
-      { unit_number: '102', occupancy_type: 'tenant_occupied', rent_amount: '8500', owner_full_name: 'Susan van der Berg', owner_id_number: '', owner_email: 'susan@example.com', owner_phone: '+27 83 333 4455', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
-      // Row 3: vacant, only owner details (no tenant)
-      { unit_number: '103', occupancy_type: 'vacant', rent_amount: '7500', owner_full_name: 'Anele Zulu', owner_id_number: '', owner_email: 'anele@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
-      // Row 4: tenant_occupied, fully complete
-      { unit_number: '201', occupancy_type: 'tenant_occupied', rent_amount: '12000', owner_full_name: 'Raj Patel', owner_id_number: '8503026200089', owner_email: 'raj@example.com', owner_phone: '+27 79 444 5566', owner_address: '22 Business Park, Sandton', tenant_full_name: 'Nomsa Khumalo', tenant_email: 'nomsa@example.com', tenant_phone: '+27 65 555 6677', tenant_lease_start: '2026-01-01', tenant_lease_end: '2026-12-31' },
-      // Row 5: tenant_occupied, minimal tenant info
-      { unit_number: '202', occupancy_type: 'tenant_occupied', rent_amount: '10500', owner_full_name: 'David Botha', owner_id_number: '', owner_email: 'david@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Rachel Naidoo', tenant_email: 'rachel@example.com', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+      // Row 1: fully complete, occupant_occupied, all occupant details
+      { unit_number: '101', section: '', address: 'Unit 101, 5 Park Lane, Cape Town', occupancy_type: 'occupant_occupied', rent_amount: '9500', owner_full_name: 'Peter Johnson', owner_id_number: '7801015800082', owner_email: 'peter@example.com', owner_phone: '+27 82 111 2233', owner_address: '5 Park Lane, Cape Town', occupant_full_name: 'Lisa Mokoena', occupant_email: 'lisa@example.com', occupant_phone: '+27 71 222 3344', occupant_lease_start: '2025-03-01', occupant_lease_end: '2026-02-28' },
+      // Row 2: occupant_occupied, partial occupant info, no lease end
+      { unit_number: '102', section: '', address: '', occupancy_type: 'occupant_occupied', rent_amount: '8500', owner_full_name: 'Susan van der Berg', owner_id_number: '', owner_email: 'susan@example.com', owner_phone: '+27 83 333 4455', owner_address: '', occupant_full_name: 'Sipho Dlamini', occupant_email: 'sipho@example.com', occupant_phone: '', occupant_lease_start: '2025-06-01', occupant_lease_end: '' },
+      // Row 3: vacant, only owner details (no occupant)
+      { unit_number: '103', section: '', address: '', occupancy_type: 'vacant', rent_amount: '7500', owner_full_name: 'Anele Zulu', owner_id_number: '', owner_email: 'anele@example.com', owner_phone: '', owner_address: '', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
+      // Row 4: occupant_occupied, fully complete
+      { unit_number: '201', section: '', address: 'Unit 201, 22 Business Park, Sandton', occupancy_type: 'occupant_occupied', rent_amount: '12000', owner_full_name: 'Raj Patel', owner_id_number: '8503026200089', owner_email: 'raj@example.com', owner_phone: '+27 79 444 5566', owner_address: '22 Business Park, Sandton', occupant_full_name: 'Nomsa Khumalo', occupant_email: 'nomsa@example.com', occupant_phone: '+27 65 555 6677', occupant_lease_start: '2026-01-01', occupant_lease_end: '2026-12-31' },
+      // Row 5: occupant_occupied, minimal occupant info
+      { unit_number: '202', section: '', address: '', occupancy_type: 'occupant_occupied', rent_amount: '10500', owner_full_name: 'David Botha', owner_id_number: '', owner_email: 'david@example.com', owner_phone: '', owner_address: '', occupant_full_name: 'Rachel Naidoo', occupant_email: 'rachel@example.com', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
     ]
   }
 
   // mixed or unknown: all fields
   return [
-    // Row 1: sectional-title-style, owner_occupied with levy, no tenant
-    { unit_number: 'A01', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
-    // Row 2: tenant_occupied, both levy and rent, full tenant info
-    { unit_number: 'A02', occupancy_type: 'tenant_occupied', levy_override: '2850', rent_amount: '9500', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '', tenant_full_name: 'Lisa Mokoena', tenant_email: 'lisa@example.com', tenant_phone: '+27 71 222 3344', tenant_lease_start: '2025-03-01', tenant_lease_end: '2026-02-28' },
-    // Row 3: tenant_occupied, rental only (no levy override), partial tenant
-    { unit_number: 'B01', occupancy_type: 'tenant_occupied', levy_override: '', rent_amount: '8000', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '', tenant_full_name: 'Sipho Dlamini', tenant_email: 'sipho@example.com', tenant_phone: '', tenant_lease_start: '2025-06-01', tenant_lease_end: '' },
-    // Row 4: vacant, levy only, no tenant
-    { unit_number: 'B02', occupancy_type: 'vacant', levy_override: '3000', rent_amount: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
-    // Row 5: owner_occupied, fully complete, no tenant
-    { unit_number: 'C01', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton', tenant_full_name: '', tenant_email: '', tenant_phone: '', tenant_lease_start: '', tenant_lease_end: '' },
+    // Row 1: sectional-title-style, owner_occupied with levy, no occupant
+    { unit_number: 'A01', section: 'A', address: 'Unit A01, 12 Oak Street, Johannesburg', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'Sarah van der Merwe', owner_id_number: '8801015800085', owner_email: 'sarah@example.com', owner_phone: '+27 82 555 0101', owner_address: '12 Oak Street, Johannesburg', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
+    // Row 2: occupant_occupied, both levy and rent, full occupant info
+    { unit_number: 'A02', section: 'A', address: '', occupancy_type: 'occupant_occupied', levy_override: '2850', rent_amount: '9500', owner_full_name: 'Michael Ndaba', owner_id_number: '', owner_email: 'michael@example.com', owner_phone: '+27 73 444 0202', owner_address: '', occupant_full_name: 'Lisa Mokoena', occupant_email: 'lisa@example.com', occupant_phone: '+27 71 222 3344', occupant_lease_start: '2025-03-01', occupant_lease_end: '2026-02-28' },
+    // Row 3: occupant_occupied, rental only (no levy override), partial occupant
+    { unit_number: 'B01', section: 'B', address: '', occupancy_type: 'occupant_occupied', levy_override: '', rent_amount: '8000', owner_full_name: 'Johan Pretorius', owner_id_number: '', owner_email: 'johan@example.com', owner_phone: '', owner_address: '', occupant_full_name: 'Sipho Dlamini', occupant_email: 'sipho@example.com', occupant_phone: '', occupant_lease_start: '2025-06-01', occupant_lease_end: '' },
+    // Row 4: vacant, levy only, no occupant
+    { unit_number: 'B02', section: 'B', address: '', occupancy_type: 'vacant', levy_override: '3000', rent_amount: '', owner_full_name: 'Thandi Dlamini', owner_id_number: '', owner_email: 'thandi@example.com', owner_phone: '', owner_address: '', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
+    // Row 5: owner_occupied, fully complete, no occupant
+    { unit_number: 'C01', section: 'C', address: 'Unit C01, 8 Linden Drive, Sandton', occupancy_type: 'owner_occupied', levy_override: '2850', rent_amount: '', owner_full_name: 'James Motsepe', owner_id_number: '7505036800081', owner_email: 'james@example.com', owner_phone: '+27 61 333 0303', owner_address: '8 Linden Drive, Sandton', occupant_full_name: '', occupant_email: '', occupant_phone: '', occupant_lease_start: '', occupant_lease_end: '' },
   ]
 }
 
@@ -577,20 +682,59 @@ const missingRequiredFields = computed(() => {
     .map(f => f.label)
 })
 
-const validRows   = computed(() => previewRows.value.filter(r => r.__errors.length === 0))
-const invalidRows = computed(() => previewRows.value.filter(r => r.__errors.length > 0))
+const duplicateRows = computed(() => previewRows.value.filter(r => r.__isDuplicate))
+const validRows     = computed(() => previewRows.value.filter(r => r.__errors.length === 0 && !r.__isDuplicate))
+const invalidRows   = computed(() => previewRows.value.filter(r => r.__errors.length > 0))
 
-const totalPreviewPages    = computed(() => Math.ceil(previewRows.value.length / PREVIEW_PAGE_SIZE))
+// Count how many rows have each distinct error message
+const errorCounts = computed((): { message: string; count: number }[] => {
+  const tally = new Map<string, number>()
+  for (const row of invalidRows.value) {
+    for (const err of row.__errors) {
+      tally.set(err, (tally.get(err) ?? 0) + 1)
+    }
+  }
+  return [...tally.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([message, count]) => ({ message, count }))
+})
+
+type PreviewFilter = 'all' | 'errors' | 'valid' | 'duplicates'
+const previewFilter = ref<PreviewFilter>('all')
+
+function setPreviewFilter(f: PreviewFilter) {
+  previewFilter.value = f
+  previewPage.value   = 1
+}
+
+const filteredPreviewRows = computed(() => {
+  if (previewFilter.value === 'errors')     return invalidRows.value
+  if (previewFilter.value === 'valid')      return validRows.value
+  if (previewFilter.value === 'duplicates') return duplicateRows.value
+  return previewRows.value
+})
+
+const totalPreviewPages    = computed(() => Math.ceil(filteredPreviewRows.value.length / PREVIEW_PAGE_SIZE))
 const previewPageStart     = computed(() => (previewPage.value - 1) * PREVIEW_PAGE_SIZE + 1)
-const previewPageEnd       = computed(() => Math.min(previewPage.value * PREVIEW_PAGE_SIZE, previewRows.value.length))
+const previewPageEnd       = computed(() => Math.min(previewPage.value * PREVIEW_PAGE_SIZE, filteredPreviewRows.value.length))
 const paginatedPreviewRows = computed(() =>
-  previewRows.value.slice(previewPageStart.value - 1, previewPageEnd.value)
+  filteredPreviewRows.value.slice(previewPageStart.value - 1, previewPageEnd.value)
 )
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a   = Object.assign(document.createElement('a'), { href: url, download: filename })
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('auth_token')
+  const token = getToken()
   return { Authorization: `Bearer ${token}` }
 }
 
@@ -615,6 +759,12 @@ function autoDetectMapping(columns: string[]): Record<string, string> {
   return mapping
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function parseEmails(raw: string): string[] {
+  return (raw ?? '').split(';').map(e => e.trim()).filter(Boolean)
+}
+
 function validateRow(row: Record<string, string>): string[] {
   const errors: string[] = []
 
@@ -622,26 +772,22 @@ function validateRow(row: Record<string, string>): string[] {
 
   const ot      = row.occupancy_type?.trim()
   const allowed = allowedOccupancyTypes()
-  if (!ot) {
-    errors.push('Occupancy type is required')
-  } else if (!allowed.includes(ot)) {
+  if (ot && !allowed.includes(ot)) {
     errors.push(`Occupancy type must be: ${allowed.join(', ')}`)
   }
 
   if (!row.owner_full_name?.trim()) errors.push('Owner full name is required')
 
-  const ownerEmail = row.owner_email?.trim()
-  if (!ownerEmail) {
-    errors.push('Owner email is required')
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
-    errors.push('Owner email is invalid')
+  // Support multiple semicolon-separated emails — validate each one individually
+  const ownerEmails = parseEmails(row.owner_email ?? '')
+  if (ownerEmails.some(e => !EMAIL_RE.test(e))) {
+    errors.push('One or more owner emails are invalid')
   }
 
-  // Only validate tenant email if the field exists in this estate type's template
-  if (hasTenantFields.value) {
-    const tenantEmail = row.tenant_email?.trim()
-    if (tenantEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tenantEmail)) {
-      errors.push('Tenant email is invalid')
+  if (hasOccupantFields.value) {
+    const occupantEmails = parseEmails(row.occupant_email ?? '')
+    if (occupantEmails.some(e => !EMAIL_RE.test(e))) {
+      errors.push('One or more occupant emails are invalid')
     }
   }
 
@@ -649,13 +795,13 @@ function validateRow(row: Record<string, string>): string[] {
 }
 
 function occupancyLabel(type: string): string {
-  return { owner_occupied: 'Owner', tenant_occupied: 'Tenant', vacant: 'Vacant' }[type] ?? type
+  return { owner_occupied: 'Owner', occupant_occupied: 'Occupant', vacant: 'Vacant' }[type] ?? type
 }
 
 function occupancyClass(type: string): string {
   return ({
     owner_occupied:  'bg-green-100 text-green-700',
-    tenant_occupied: 'bg-blue-100 text-blue-700',
+    occupant_occupied: 'bg-blue-100 text-blue-700',
     vacant:          'bg-gray-100 text-gray-600',
   } as Record<string, string>)[type] ?? 'bg-gray-100 text-gray-600'
 }
@@ -671,7 +817,7 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
     const headers     = fields.map(f => f.label)
     const examples    = buildExampleRows()
     const dataRows    = examples.map(row => fields.map(f => row[f.key] ?? ''))
-    const typeSlug    = (props.estateType ?? 'units').replace(/_/g, '-')
+    const typeSlug    = (props.communityType ?? 'units').replace(/_/g, '-')
     const filename    = `units-import-template-${typeSlug}`
 
     if (format === 'csv') {
@@ -683,19 +829,13 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
         .map(row => row.map(escape).join(','))
         .join('\r\n')
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = `${filename}.csv`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      triggerDownload(
+        new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
+        `${filename}.csv`
+      )
     } else {
       const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
 
-      // Style header row bold (SheetJS community edition — basic cell metadata only)
       const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1')
       for (let c = range.s.c; c <= range.e.c; c++) {
         const cellAddr = XLSX.utils.encode_cell({ r: 0, c })
@@ -704,7 +844,6 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
         }
       }
 
-      // Auto-fit column widths based on content
       ws['!cols'] = headers.map((h, i) => {
         const maxLen = Math.max(
           h.length,
@@ -715,7 +854,11 @@ function downloadTemplate(format: 'csv' | 'xlsx') {
 
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Units Import')
-      XLSX.writeFile(wb, `${filename}.xlsx`)
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      triggerDownload(
+        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `${filename}.xlsx`
+      )
     }
   } catch (e) {
     console.error('Template download failed:', e)
@@ -769,7 +912,7 @@ async function parseFile() {
 
   try {
     const res  = await fetch(
-      `${API_URL}/api/v1/estates/${props.estateId}/units/bulk-import/parse`,
+      `${API_URL}/api/v1/communities/${props.communityId}/units/bulk-import/parse`,
       { method: 'POST', headers: authHeaders(), body: formData }
     )
     const json = await res.json()
@@ -791,6 +934,9 @@ async function parseFile() {
 }
 
 function applyMappingAndPreview() {
+  // Pass 1: map rows and collect unit_number → all row indices
+  const unitNumberRows = new Map<string, number[]>()
+
   const mapped = fileRows.value.map((rawRow, idx) => {
     const row: Record<string, string> = {}
 
@@ -798,13 +944,44 @@ function applyMappingAndPreview() {
       if (systemField) row[systemField] = rawRow[fileCol] ?? ''
     }
 
-    const errors = validateRow(row)
-    return { ...row, __rowIndex: idx + 1, __errors: errors }
+    if (!row.occupancy_type?.trim()) {
+      row.occupancy_type = allowedOccupancyTypes()[0]
+    }
+
+    const errors   = validateRow(row)
+    const warnings: string[] = []
+    const key      = row.unit_number?.trim().toLowerCase()
+
+    if (key) {
+      const existing = unitNumberRows.get(key) ?? []
+      existing.push(idx + 1)
+      unitNumberRows.set(key, existing)
+    }
+
+    return { ...row, __rowIndex: idx + 1, __errors: errors, __warnings: warnings, __isDuplicate: false }
   })
 
-  previewRows.value = mapped
-  previewPage.value = 1
-  step.value        = 2
+  // Pass 2: flag originals (amber warning) and duplicates (skipped, amber) for any unit number seen more than once
+  for (const rowIndices of unitNumberRows.values()) {
+    if (rowIndices.length < 2) continue
+    const [firstRow, ...dupeRows] = rowIndices
+
+    // Original: warn that duplicates exist but it will still be imported
+    mapped[firstRow - 1].__warnings.push(
+      `Duplicate on row${dupeRows.length > 1 ? 's' : ''} ${dupeRows.join(', ')} — ${dupeRows.length > 1 ? 'those rows' : 'that row'} will be skipped`
+    )
+
+    // Duplicates: excluded from import, shown with amber "Skipped" badge
+    for (const dupeRowNum of dupeRows) {
+      mapped[dupeRowNum - 1].__isDuplicate = true
+      mapped[dupeRowNum - 1].__warnings.push(`Same unit as row ${firstRow} — this row will be skipped`)
+    }
+  }
+
+  previewRows.value   = mapped
+  previewPage.value   = 1
+  previewFilter.value = 'all'
+  step.value          = 2
 }
 
 async function runImport() {
@@ -812,12 +989,12 @@ async function runImport() {
 
   try {
     const res  = await fetch(
-      `${API_URL}/api/v1/estates/${props.estateId}/units/bulk-import`,
+      `${API_URL}/api/v1/communities/${props.communityId}/units/bulk-import`,
       {
         method:  'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          rows: validRows.value.map(({ __rowIndex, __errors, ...data }) => data),
+          rows: validRows.value.map(({ __rowIndex, __errors, __warnings, __isDuplicate, ...data }) => data),
         }),
       }
     )

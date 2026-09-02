@@ -9,7 +9,7 @@ class ShowUnitsRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('viewAny', [Unit::class, $this->route('estate')]);
+        return $this->user()->can('viewAny', [Unit::class, $this->route('community')]);
     }
 
     public function rules(): array
@@ -30,7 +30,7 @@ class ShowUnitsRequest extends FormRequest
             '_per_page'         => ['nullable', 'integer', 'min:1', 'max:200'],
 
             // Filters
-            'occupancy_type'    => ['nullable', 'string', 'in:owner_occupied,tenant_occupied,vacant'],
+            'occupancy_type'    => ['nullable', 'string', 'in:owner_occupied,occupant_occupied,vacant'],
             'status'            => ['nullable', 'string', 'in:active,suspended,vacated'],
             'balance'           => ['nullable', 'string', 'in:in_arrears,clear'],
         ];

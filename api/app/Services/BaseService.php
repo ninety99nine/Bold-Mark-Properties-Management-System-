@@ -215,11 +215,105 @@ abstract class BaseService
      *
      * @return ResourceCollection
      */
+    /**
+     * Relationships that child services expose via the `_relationships` query parameter.
+     * Override in each service to list what can be eager-loaded on demand.
+     *
+     * @var array<string>
+     */
+    protected array $allowedRelationships = [];
+
+    protected array $allowedCountableRelationships = [];
+
+    /**
+     * Parse `_relationships` from the request and apply allowed ones to the query.
+     *
+     * @return static
+     */
+    public function applyRelationshipsFromRequest(): static
+    {
+        $param = $this->request->input('_relationships');
+
+        if ($param && !empty($this->allowedRelationships)) {
+            $requested = array_map('trim', explode(',', $param));
+            $toLoad    = array_intersect($requested, $this->allowedRelationships);
+
+            if (!empty($toLoad)) {
+                $this->query->with(array_values($toLoad));
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Load allowed relationships onto a single model from the `_relationships` request param.
+     *
+     * @param Model $model
+     * @return void
+     */
+    protected function loadRequestedRelationshipsOnModel(Model $model): void
+    {
+        $param = $this->request->input('_relationships');
+
+        if ($param && !empty($this->allowedRelationships)) {
+            $requested = array_map('trim', explode(',', $param));
+            $toLoad    = array_intersect($requested, $this->allowedRelationships);
+
+            if (!empty($toLoad)) {
+                $model->load(array_values($toLoad));
+            }
+        }
+    }
+
+    /**
+     * Parse `_countable_relationships` from the request and apply withCount() to the query.
+     *
+     * @return static
+     */
+    public function applyCountableRelationshipsFromRequest(): static
+    {
+        $param = $this->request->input('_countable_relationships');
+
+        if ($param && !empty($this->allowedCountableRelationships)) {
+            $requested = array_map('trim', explode(',', $param));
+            $toCount   = array_intersect($requested, $this->allowedCountableRelationships);
+
+            if (!empty($toCount)) {
+                $this->query->withCount(array_values($toCount));
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Load allowed relationship counts onto a single model from the `_countable_relationships` request param.
+     *
+     * @param Model $model
+     * @return void
+     */
+    protected function loadRequestedCountsOnModel(Model $model): void
+    {
+        $param = $this->request->input('_countable_relationships');
+
+        if ($param && !empty($this->allowedCountableRelationships)) {
+            $requested = array_map('trim', explode(',', $param));
+            $toCount   = array_intersect($requested, $this->allowedCountableRelationships);
+
+            if (!empty($toCount)) {
+                $model->loadCount(array_values($toCount));
+            }
+        }
+    }
+
     public function getOutput(): ResourceCollection
     {
         $this->applyDateRangeFromRequest();
         $this->applySearchOnQuery();
         $this->applySortOnQuery();
+        $this->applyRelationshipsFromRequest();
+        $this->applyCountableRelationshipsFromRequest();
 
         $perPage = (int) $this->request->input('_per_page', $this->defaultPerPage);
 
@@ -242,6 +336,9 @@ abstract class BaseService
      */
     public function showResource(Model $model): JsonResource
     {
+        $this->loadRequestedRelationshipsOnModel($model);
+        $this->loadRequestedCountsOnModel($model);
+
         $resourceClass = $this->resolveResourceClass();
 
         return new $resourceClass($model);
@@ -354,8 +451,8 @@ abstract class BaseService
      * Resolve the singular JsonResource class from the child service class name.
      *
      * Convention:
-     *   EstateService      → App\Http\Resources\EstateResource
-     *   UnitTenantService  → App\Http\Resources\UnitTenantResource
+     *   CommunityService      → App\Http\Resources\CommunityResource
+     *   OccupantService  → App\Http\Resources\OccupantResource
      *
      * Child classes may override `$resourceClass` to bypass the convention.
      *
@@ -370,7 +467,7 @@ abstract class BaseService
         }
 
         $basename = class_basename(static::class);
-        // Strip trailing "Service" → e.g. "EstateService" → "Estate"
+        // Strip trailing "Service" → e.g. "CommunityService" → "Community"
         $name  = preg_replace('/Service$/', '', $basename);
         $class = "App\\Http\\Resources\\{$name}Resource";
 
@@ -387,8 +484,8 @@ abstract class BaseService
      * Resolve the ResourceCollection class from the child service class name.
      *
      * Convention:
-     *   EstateService      → App\Http\Resources\EstateResources  (plural)
-     *   UnitTenantService  → App\Http\Resources\UnitTenantResources
+     *   CommunityService      → App\Http\Resources\CommunityResources  (plural)
+     *   OccupantService  → App\Http\Resources\OccupantResources
      *
      * Child classes may override `$resourceCollectionClass` to bypass the convention.
      *

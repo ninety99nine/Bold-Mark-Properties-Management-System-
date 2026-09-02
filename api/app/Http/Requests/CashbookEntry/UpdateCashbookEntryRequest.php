@@ -27,7 +27,7 @@ class UpdateCashbookEntryRequest extends FormRequest
             'date'        => ['sometimes', 'date'],
             'type'        => ['sometimes', Rule::in(CashbookEntryType::values())],
             'description' => ['sometimes', 'string', 'max:500'],
-            'amount'      => ['sometimes', 'numeric', 'min:0.01'],
+            'amount'      => ['sometimes', 'numeric', 'min:0.01', 'max:9999999999.99'],
             'notes'       => ['nullable', 'string', 'max:1000'],
             'unit_id'     => ['nullable', 'uuid', 'exists:units,id'],
         ];

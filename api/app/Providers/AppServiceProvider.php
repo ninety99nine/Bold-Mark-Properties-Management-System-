@@ -2,29 +2,43 @@
 
 namespace App\Providers;
 
+use App\Models\BankAccount;
 use App\Models\CashbookEntry;
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\ComplianceChecklist;
+use App\Models\ComplianceChecklistItem;
+use App\Models\ComplianceTemplate;
+use App\Models\Community;
+use App\Models\CustomerGroup;
 use App\Models\Invoice;
 use App\Models\Owner;
-use App\Models\Tenant;
+use App\Models\RiskRule;
+use App\Models\Organization;
 use App\Models\Unit;
 use App\Models\UnitChargeConfig;
-use App\Models\UnitTenant;
+use App\Models\Occupant;
 use App\Models\User;
+use App\Policies\BankAccountPolicy;
 use App\Policies\CashbookEntryPolicy;
-use App\Policies\ChargeTypePolicy;
-use App\Policies\EstatePolicy;
+use App\Policies\LedgerPolicy;
+use App\Policies\ComplianceChecklistItemPolicy;
+use App\Policies\ComplianceChecklistPolicy;
+use App\Policies\ComplianceTemplatePolicy;
+use App\Policies\CommunityPolicy;
+use App\Policies\CustomerGroupPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\OwnerPolicy;
-use App\Policies\TenantPolicy;
+use App\Policies\RiskRulePolicy;
+use App\Policies\OrganizationPolicy;
 use App\Policies\UnitChargeConfigPolicy;
 use App\Policies\UnitPolicy;
-use App\Policies\UnitTenantPolicy;
+use App\Policies\OccupantPolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -45,6 +59,21 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
         $this->registerRouteModelBindings();
+        $this->registerJobRateLimiters();
+
+        // Portable case-insensitive LIKE — works on SQLite, MySQL, and PostgreSQL.
+        \Illuminate\Database\Eloquent\Builder::macro('whereLike', function (string $column, string $value) {
+            return $this->whereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+        \Illuminate\Database\Eloquent\Builder::macro('orWhereLike', function (string $column, string $value) {
+            return $this->orWhereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+        \Illuminate\Database\Query\Builder::macro('whereLike', function (string $column, string $value) {
+            return $this->whereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
+        \Illuminate\Database\Query\Builder::macro('orWhereLike', function (string $column, string $value) {
+            return $this->orWhereRaw('LOWER(' . $column . ') LIKE ?', ['%' . strtolower($value) . '%']);
+        });
 
         ResetPassword::createUrlUsing(function ($notifiable, string $token) {
             $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
@@ -72,21 +101,34 @@ class AppServiceProvider extends ServiceProvider
         });
     }
 
+    protected function registerJobRateLimiters(): void
+    {
+        // Global Resend rate limit: 4/sec across all workers and billing runs.
+        RateLimiter::for('resend-emails', fn() => Limit::perSecond(4));
+    }
+
     /**
      * Register all model policies.
      */
     protected function registerPolicies(): void
     {
-        Gate::policy(Tenant::class, TenantPolicy::class);
+        Gate::policy(Organization::class, OrganizationPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
-        Gate::policy(ChargeType::class, ChargeTypePolicy::class);
-        Gate::policy(Estate::class, EstatePolicy::class);
+        Gate::policy(Ledger::class, LedgerPolicy::class);
+        Gate::policy(Community::class, CommunityPolicy::class);
+        Gate::policy(CustomerGroup::class, CustomerGroupPolicy::class);
         Gate::policy(Unit::class, UnitPolicy::class);
         Gate::policy(Owner::class, OwnerPolicy::class);
-        Gate::policy(UnitTenant::class, UnitTenantPolicy::class);
+        Gate::policy(Occupant::class, OccupantPolicy::class);
         Gate::policy(UnitChargeConfig::class, UnitChargeConfigPolicy::class);
         Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(\App\Models\CreditNote::class, \App\Policies\CreditNotePolicy::class);
+        Gate::policy(BankAccount::class, BankAccountPolicy::class);
         Gate::policy(CashbookEntry::class, CashbookEntryPolicy::class);
+        Gate::policy(RiskRule::class, RiskRulePolicy::class);
+        Gate::policy(ComplianceChecklist::class, ComplianceChecklistPolicy::class);
+        Gate::policy(ComplianceChecklistItem::class, ComplianceChecklistItemPolicy::class);
+        Gate::policy(ComplianceTemplate::class, ComplianceTemplatePolicy::class);
     }
 
     /**
@@ -95,23 +137,39 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function registerRouteModelBindings(): void
     {
-        Route::model('tenant', Tenant::class);
-        Route::model('estate', Estate::class);
+        Route::model('organization', Organization::class);
+        Route::model('community', Community::class);
         Route::model('unit', Unit::class);
         Route::model('owner', Owner::class);
-        Route::model('unitTenant', UnitTenant::class);
-        Route::model('chargeType', ChargeType::class);
+        Route::model('customerGroup', CustomerGroup::class);
+        Route::model('occupant', Occupant::class);
+        Route::model('ledger', Ledger::class);
         Route::model('chargeConfig', UnitChargeConfig::class);
         // Resolves {invoice} — includes soft-deleted so the detail page can show deleted invoices
         Route::bind('invoice', function (string $value) {
             return Invoice::withTrashed()->findOrFail($value);
         });
 
+        Route::model('creditNote', \App\Models\CreditNote::class);
+
         // Resolves {deletedInvoice} route parameters — includes soft-deleted records
         Route::bind('deletedInvoice', function (string $value) {
             return Invoice::withTrashed()->findOrFail($value);
         });
         Route::model('cashbookEntry', CashbookEntry::class);
+        Route::model('riskRule', RiskRule::class);
+        Route::model('complianceChecklist', ComplianceChecklist::class);
+        Route::model('complianceChecklistItem', ComplianceChecklistItem::class);
+        Route::model('complianceTemplate', ComplianceTemplate::class);
         Route::model('user', User::class);
+        Route::model('communication', \App\Models\UnitCommunication::class);
+        Route::model('offence', \App\Models\UnitOffence::class);
+        Route::model('task', \App\Models\UnitTask::class);
+        Route::model('note', \App\Models\UnitCollectionNote::class);
+        Route::model('document', \App\Models\UnitDocument::class);
+        Route::model('member', \App\Models\CommunityMember::class);
+        Route::model('communicationLog', \App\Models\Communication::class);
+        Route::model('messageTemplate', \App\Models\MessageTemplate::class);
+        Route::model('ledgerReport', \App\Models\LedgerReportBatch::class);
     }
 }

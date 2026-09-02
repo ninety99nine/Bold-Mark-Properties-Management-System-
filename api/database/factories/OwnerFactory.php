@@ -16,7 +16,7 @@ class OwnerFactory extends Factory
     {
         return [
             'unit_id'   => null,
-            'tenant_id' => null,
+            'organization_id' => null,
             'full_name' => fake()->name(),
             'email'     => fake()->unique()->safeEmail(),
             'phone'     => '+267 7' . fake()->numerify('#######'),

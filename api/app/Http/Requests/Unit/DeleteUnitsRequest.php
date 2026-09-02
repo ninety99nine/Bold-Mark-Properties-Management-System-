@@ -9,7 +9,7 @@ class DeleteUnitsRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('deleteAny', [Unit::class, $this->route('estate')]);
+        return $this->user()->can('deleteAny', [Unit::class, $this->route('community')]);
     }
 
     public function rules(): array

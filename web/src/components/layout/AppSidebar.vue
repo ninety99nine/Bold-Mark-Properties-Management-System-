@@ -1,183 +1,403 @@
 <script setup>
-import { ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
-import AppButton from '@/components/common/AppButton.vue'
+import { ref, computed } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import SidebarIcon from '@/components/layout/SidebarIcon.vue'
+import { useCommunityStore } from '@/stores/community'
 
-const route = useRoute()
-const collapsed = ref(false)
+const route          = useRoute()
+const router         = useRouter()
+const communityStore = useCommunityStore()
 
-// Main nav items — matches CLAUDE.md Phase 1 routes
-const navItems = [
-  {
-    name: 'Home',
-    to: '/dashboard',
-    icon: 'house',
-  },
-  {
-    name: 'Estates',
-    to: '/estates',
-    icon: 'building',
-  },
-  {
-    name: 'Billing',
-    to: '/billing',
-    icon: 'file-text',
-  },
-  {
-    name: 'Cashbook',
-    to: '/cashbook',
-    icon: 'wallet',
-  },
-  {
-    name: 'Age Analysis',
-    to: '/age-analysis',
-    icon: 'trending-down',
-  },
-  {
-    name: 'Users',
-    to: '/users',
-    icon: 'users',
-  },
-]
+// Which context are we in? null selection = Global / portfolio rail.
+const inCommunity   = computed(() => communityStore.selectedId != null)
+const communityId   = computed(() => communityStore.selectedId)
 
-function isActive(to) {
+// ── GLOBAL rail — portfolio-wide (mirrors WeConnectU's global sidebar) ──────────
+// Same WeConnectU icon-rail + fly-out pattern as the community rail below:
+// each parent slides out a panel; unbuilt destinations are flagged `soon`.
+const globalNav = computed(() => [
+  { name: 'Dashboard',   to: '/dashboard',   icon: 'line-chart' },
+  { name: 'Communities', to: '/communities', icon: 'grid' },
+  {
+    // Manage flyout — mirrors WeConnectU's global Manage menu.
+    // Rail icon = clipboard-check; flyout header icon = list-checks.
+    name: 'Manage', icon: 'clipboard-check', headerIcon: 'list-checks',
+    children: [
+      { name: 'Planner & Compliance', soon: true },
+      { name: 'Tasks',                soon: true },
+      { name: 'Offences',             soon: true },
+      { name: 'Transfers',            soon: true },
+    ],
+  },
+  {
+    // Finance flyout — mirrors WeConnectU's global Finance menu (sections + order).
+    name: 'Finance', icon: 'wallet',
+    groups: [
+      { title: 'Customers', icon: 'users', items: [
+        { name: 'Netcash Debit Orders', soon: true },
+        { name: 'Debit Order Batches',  soon: true },
+        { name: 'Customer Management',  to: '/customer-management' },
+      ] },
+      { title: 'Suppliers', icon: 'truck', items: [
+        { name: 'Payments',            soon: true },
+        { name: 'Invoice',             soon: true },
+        { name: 'Recurring Invoices',  soon: true },
+        { name: 'Supplier Management', soon: true },
+        { name: 'Supplier Balances',   soon: true },
+      ] },
+      { title: 'General', icon: 'building', items: [
+        { name: 'Cashbooks',              to: '/cashbook' },
+        { name: 'Journals',               soon: true },
+        { name: 'Lock Financial Periods', soon: true },
+      ] },
+      { title: 'Billing', icon: 'file-text', items: [
+        { name: 'Run Billing',            to: '/billing' },
+        { name: 'Import Utility Readings', soon: true },
+      ] },
+      { title: 'Reports', icon: 'line-chart', items: [
+        { name: 'Ledger Report',        soon: true },
+        { name: 'Custom Ledger Report', soon: true },
+        { name: 'Community Report',     soon: true },
+      ] },
+    ],
+  },
+  { name: 'Communicate', to: '/communications', icon: 'mail' },
+  {
+    // Reports flyout — mirrors WeConnectU's global Reports menu (Company section).
+    name: 'Reports', icon: 'file-text', headerIcon: 'line-chart',
+    groups: [
+      { title: 'Company', icon: 'line-chart', items: [
+        { name: 'Costs',         soon: true },
+        { name: 'Meeting Costs', soon: true },
+        { name: 'Audit Trail',   soon: true },
+      ] },
+    ],
+  },
+  {
+    // Settings flyout — mirrors WeConnectU's global Settings menu (grouped).
+    name: 'Settings', icon: 'sliders',
+    groups: [
+      { title: 'General Settings', icon: 'sliders', items: [
+        { name: 'Company', to: '/settings/company' },
+        { name: 'Users',   to: '/settings/users' },
+      ] },
+      { title: 'Operations Settings', icon: 'clipboard-check', items: [
+        { name: 'Compliance',            to: '/compliance' },
+        { name: 'Meetings',              soon: true },
+        { name: 'Communication',         to: '/settings/communication' },
+        { name: 'Community Roles Setup', soon: true },
+      ] },
+      { title: 'Finances Settings', icon: 'wallet', items: [
+        { name: 'Default Ledgers',       soon: true },
+        { name: 'Debt Collection',       soon: true },
+        { name: 'Utilities Schedule',    soon: true },
+        { name: 'Supplier Verification', soon: true },
+      ] },
+    ],
+  },
+])
+
+// ── COMMUNITY rail — a single community (mirrors WeConnectU's /app sidebar) ──────
+const communityNav = computed(() => {
+  const id = communityId.value
+  // Flat WeConnectU-style rail: each item is a single icon that lands on its
+  // section; deeper navigation (PQs, Cashbook, Age Analysis…) lives as in-page tabs.
+  return [
+    { name: 'Dashboard',   tab: 'overview',      icon: 'line-chart' },
+    {
+      name: 'Units', icon: 'building',
+      children: [
+        { name: 'Unit Details', tab: 'units', icon: 'list' },
+        { name: 'PQs',          tab: 'pq',    icon: 'percent' },
+      ],
+    },
+    {
+      // Manage flyout — mirrors WeConnectU exactly (soon = page not built yet).
+      // Rail icon = clipboard-check; flyout header icon = list-checks (like WeConnectU).
+      name: 'Manage', icon: 'clipboard-check', headerIcon: 'list-checks',
+      children: [
+        { name: 'Tasks',     soon: true },
+        { name: 'Offences',  soon: true },
+        { name: 'Transfers', soon: true },
+        { name: 'Documents', soon: true },
+      ],
+    },
+    {
+      // Finance flyout — mirrors WeConnectU's menu exactly (names, sections, order).
+      name: 'Finance', icon: 'wallet',
+      groups: [
+        { title: 'Customers', icon: 'users', items: [
+          { name: 'Invoice',                 to: '/customers/invoice' },
+          { name: 'Recurring Invoices',      soon: true },
+          { name: 'Credit Note',             to: '/customers/credit-note' },
+          { name: 'Detailed Customer Ledger', to: '/customers/ledger' },
+          { name: 'Age Analysis',            to: '/age-analysis' },
+          { name: 'Status Management',       to: '/customers/status' },
+          { name: 'Interest on Arrears',     soon: true },
+          { name: 'Manage Customers',        to: '/customers/manage' },
+          { name: 'Customer Statements',     to: '/customers/statements' },
+        ] },
+        { title: 'Suppliers', icon: 'truck', items: [
+          { name: 'Payments',                soon: true },
+          { name: 'Invoice',                 soon: true },
+          { name: 'Recurring Invoices',      soon: true },
+          { name: 'Debit Notes',             soon: true },
+          { name: 'Statements',              soon: true },
+          { name: 'Detailed Supplier Ledger', soon: true },
+          { name: 'Age Analysis',            soon: true },
+          { name: 'Manage Suppliers',        soon: true },
+        ] },
+        { title: 'General', icon: 'building', items: [
+          { name: 'Cashbooks', to: '/cashbook' },
+          { name: 'Journals',  soon: true },
+        ] },
+        { title: 'Reports', icon: 'line-chart', items: [
+          { name: 'Actual vs Budget',              soon: true },
+          { name: 'Trial Balance',                 soon: true },
+          { name: 'Detailed General Ledger',       soon: true },
+          { name: 'Reserve Fund Actual vs Budget', soon: true },
+          { name: 'Reserve Fund Income Statement', soon: true },
+          { name: 'Document Report',               soon: true },
+          { name: 'Levy Roll',                     soon: true },
+          { name: 'Basic Cash Movement Report',    soon: true },
+          { name: 'VAT 201 Report',                soon: true },
+        ] },
+        { title: 'Billing', icon: 'file-text', items: [
+          { name: 'Water Meters',          soon: true },
+          { name: 'Electricity Meters',    soon: true },
+          { name: 'Water Readings',        soon: true },
+          { name: 'Electricity Readings',  soon: true },
+          { name: 'Additional Recoveries', soon: true },
+          { name: 'Run Billing',           to: '/billing' },
+          { name: 'Batch Billing',         soon: true },
+        ] },
+        { title: 'Setup', icon: 'sliders', items: [
+          { name: 'Financial',           soon: true },
+          { name: 'Budget',              soon: true },
+          { name: 'Reserve Fund Budget', soon: true },
+        ] },
+      ],
+    },
+    { name: 'Communicate',      tab: 'communication', icon: 'mail' },
+    { name: 'Community Report', tab: 'report',        icon: 'file-text' },
+    {
+      // Settings flyout — mirrors WeConnectU's community Settings menu.
+      name: 'Settings', key: 'c-settings', icon: 'sliders',
+      children: [
+        { name: 'General',                   to: '/settings/general' },
+        { name: 'Address & Contact Details', to: '/settings/address-contact' },
+        { name: 'Charges',                   to: '/settings/charges' },
+        { name: 'Default Billing Setup',     to: '/settings/default-billing-setup' },
+        { name: 'Community Roles',           soon: true },
+        { name: 'Offences Clause Setup',     soon: true },
+        { name: 'Compliance',                to: '/compliance' },
+        { name: 'Users',                     to: '/settings/users' },
+      ],
+    },
+  ].map(item => withCommunityTargets(item, id))
+})
+
+// Resolve `tab` leaves into router-link targets for the active community.
+function withCommunityTargets(item, id) {
+  const map = leaf => leaf.tab
+    ? { ...leaf, to: { path: `/communities/${id}`, query: { tab: leaf.tab, ...(leaf.view ? { view: leaf.view } : {}) } } }
+    : leaf
+  if (item.children) return { ...item, children: item.children.map(map) }
+  return map(item)
+}
+
+const navItems = computed(() => (inCommunity.value ? communityNav.value : globalNav.value))
+
+const effectiveTab = computed(() => route.query.tab || 'overview')
+
+function isActive(item) {
+  const to = item.to
+  if (!to) return false
+  if (typeof to === 'object') {
+    if (route.path !== to.path || effectiveTab.value !== to.query.tab) return false
+    // When a target pins a specific view (Units vs Unit Details), match it too.
+    if (to.query.view) return (route.query.view || 'details') === to.query.view
+    return true
+  }
   if (to === '/dashboard') return route.path === '/dashboard'
-  return route.path.startsWith(to)
+  return route.path === to || route.path.startsWith(to + '/')
+}
+function isParentActive(item) {
+  if (item.children) return item.children.some(isActive)
+  if (item.groups) return item.groups.some(g => g.items.some(isActive))
+  return false
+}
+
+function exitToGlobal() {
+  flyout.value = null
+  communityStore.clearSelection()
+  router.push('/dashboard')
+}
+
+// ── Fly-out sub-menu (WeConnectU slide-out for rail items with children) ────────
+const flyout = ref(null)
+const flyoutSearch = ref('')
+const flyoutChildren = computed(() => {
+  const kids = flyout.value?.children ?? []
+  const q = flyoutSearch.value.trim().toLowerCase()
+  return q ? kids.filter(c => c.name.toLowerCase().includes(q)) : kids
+})
+// Grouped flyouts (e.g. Finance → Customers / Suppliers / General / Billing).
+const flyoutGroups = computed(() => {
+  const groups = flyout.value?.groups ?? null
+  if (!groups) return null
+  const q = flyoutSearch.value.trim().toLowerCase()
+  if (!q) return groups
+  return groups
+    .map(g => ({ ...g, items: g.items.filter(i => i.name.toLowerCase().includes(q)) }))
+    .filter(g => g.items.length)
+})
+function toggleFlyout(item) {
+  if (flyout.value?.name === item.name) { flyout.value = null; return }
+  flyout.value = item
+  flyoutSearch.value = ''
+  // Do NOT navigate on open — the panel just slides out; the page only
+  // changes once the user picks a specific sub-section (matches WeConnectU).
+}
+function openChild(child) {
+  if (child.soon) return          // not built yet — leave the panel open
+  if (child.to) router.push(child.to)
+  flyout.value = null
 }
 </script>
 
 <template>
+  <!-- ── WeConnectU-style icon rail — used for BOTH the global & community levels ── -->
   <aside
-    :class="[
-      'flex flex-col bg-navy-dark text-white transition-all duration-300 min-h-screen border-r border-white/5 flex-shrink-0',
-      collapsed ? 'w-[60px]' : 'w-60',
-    ]"
+    class="relative flex flex-col items-center bg-navy-dark text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28"
   >
-    <!-- Company branding -->
-    <div class="flex items-center gap-3 border-b border-white/5 px-5 py-5 min-h-[64px]">
-      <div v-if="!collapsed" class="overflow-hidden min-w-0">
-        <p class="font-body font-semibold text-sm text-white truncate">Bold Mark Properties</p>
-        <p class="text-[11px] text-white/40 font-normal truncate">Moving People Forward</p>
-      </div>
-      <!-- Collapsed: show BM initials -->
-      <div v-else class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
-        <span class="text-accent font-bold text-xs">B</span>
-      </div>
-    </div>
-
-    <!-- Navigation -->
-    <nav class="flex-1 flex flex-col py-5 px-3 gap-0.5">
-      <p
-        v-if="!collapsed"
-        class="text-[10px] uppercase tracking-widest text-white/30 font-semibold px-3 mb-2"
+    <nav class="flex-1 flex flex-col items-center gap-1 py-4 w-full px-2">
+      <!-- Global — exit button inside a community, active context indicator at the global level -->
+      <button
+        v-if="inCommunity"
+        type="button"
+        @click="exitToGlobal"
+        class="flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150 text-white/50 hover:bg-white/5 hover:text-white/80"
       >
-        Menu
-      </p>
-
+        <SidebarIcon name="fingerprint" :size="22" />
+        <span>Global</span>
+      </button>
       <RouterLink
-        v-for="item in navItems"
-        :key="item.to"
-        :to="item.to"
-        :title="collapsed ? item.name : undefined"
-        :class="[
-          'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150',
-          collapsed ? 'justify-center' : '',
-          isActive(item.to)
-            ? 'bg-accent/15 text-accent shadow-sm'
-            : 'text-white/50 hover:bg-white/5 hover:text-white/80',
-        ]"
+        v-else to="/dashboard"
+        class="flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150 text-accent bg-accent/10"
       >
-        <!-- House icon -->
-        <svg v-if="item.icon === 'house'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
-          <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-        </svg>
-
-        <!-- Building icon -->
-        <svg v-else-if="item.icon === 'building'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <rect width="16" height="20" x="4" y="2" rx="2" ry="2"/>
-          <path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/>
-          <path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/>
-          <path d="M16 10h.01"/><path d="M16 14h.01"/>
-          <path d="M8 10h.01"/><path d="M8 14h.01"/>
-        </svg>
-
-        <!-- File-text icon -->
-        <svg v-else-if="item.icon === 'file-text'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-          <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-          <path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
-        </svg>
-
-        <!-- Wallet icon -->
-        <svg v-else-if="item.icon === 'wallet'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/>
-          <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>
-        </svg>
-
-        <!-- Trending-down icon -->
-        <svg v-else-if="item.icon === 'trending-down'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/>
-          <polyline points="16 17 22 17 22 11"/>
-        </svg>
-
-        <!-- Users icon -->
-        <svg v-else-if="item.icon === 'users'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-          <circle cx="9" cy="7" r="4"/>
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-        </svg>
-
-        <span v-if="!collapsed">{{ item.name }}</span>
+        <SidebarIcon name="fingerprint" :size="22" />
+        <span>Global</span>
       </RouterLink>
+
+      <template v-for="item in navItems" :key="item.name">
+        <!-- Parent with a fly-out sub-menu (e.g. Units → Units / PQs, Finance → …) -->
+        <button
+          v-if="item.children || item.groups"
+          type="button"
+          @click="toggleFlyout(item)"
+          :class="[
+            'flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150',
+            // Active (gold) only when the current page belongs to this menu — NOT
+            // merely because its fly-out is open. An open (but inactive) fly-out
+            // gets a subtle neutral highlight so you can see which panel is showing.
+            isParentActive(item)
+              ? 'text-accent bg-accent/10'
+              : flyout?.name === item.name
+                ? 'text-white/80 bg-white/5'
+                : 'text-white/50 hover:bg-white/5 hover:text-white/80',
+          ]"
+        >
+          <SidebarIcon :name="item.icon" :size="22" />
+          <span class="text-center max-w-[80px] leading-tight">{{ item.name }}</span>
+        </button>
+
+        <!-- Leaf item -->
+        <RouterLink
+          v-else :to="item.to"
+          :class="[
+            'flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150',
+            isActive(item) ? 'text-accent bg-accent/10' : 'text-white/50 hover:bg-white/5 hover:text-white/80',
+          ]"
+        >
+          <SidebarIcon :name="item.icon" :size="22" />
+          <span class="text-center max-w-[80px] leading-tight">{{ item.name }}</span>
+        </RouterLink>
+      </template>
     </nav>
 
-    <!-- Bottom section: Settings + Collapse -->
-    <div class="px-3 pb-4 space-y-0.5 border-t border-white/10 pt-3">
-      <RouterLink
-        to="/settings"
-        :title="collapsed ? 'Settings' : undefined"
-        :class="[
-          'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150',
-          collapsed ? 'justify-center' : '',
-          isActive('/settings')
-            ? 'bg-accent/15 text-accent shadow-sm'
-            : 'text-white/50 hover:bg-white/5 hover:text-white/80',
-        ]"
+    <!-- ── Fly-out sub-menu panel (WeConnectU slide-out) ─────────────────────── -->
+    <template v-if="flyout">
+      <!-- click-away backdrop (transparent, like WeConnectU) -->
+      <div class="fixed inset-0 z-30" @click="flyout = null" />
+      <Transition
+        appear
+        enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0 -translate-x-3" enter-to-class="opacity-100 translate-x-0"
+        leave-active-class="transition duration-100 ease-in" leave-from-class="opacity-100 translate-x-0" leave-to-class="opacity-0 -translate-x-3"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 w-[18px] h-[18px]">
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
-        <span v-if="!collapsed">Settings</span>
-      </RouterLink>
+        <div class="fixed left-28 top-14 bottom-0 z-40 w-72 bg-card shadow-2xl border-r border-border flex flex-col">
+          <!-- Search -->
+          <div class="p-3 border-b border-border">
+            <div class="relative">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input
+                v-model="flyoutSearch" type="text" placeholder="Search..."
+                class="w-full rounded-full bg-muted pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+          </div>
 
-      <!-- Collapse toggle -->
-      <AppButton
-        variant="ghost"
-        :full="!collapsed"
-        :square="collapsed"
-        size="sm"
-        :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-        class="text-white/30 hover:text-white/60 hover:bg-white/5 text-[13px] px-3"
-        :class="collapsed ? 'justify-center' : 'justify-start gap-3'"
-        @click="collapsed = !collapsed"
-      >
-        <!-- Panel-left-close icon -->
-        <svg v-if="!collapsed" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] shrink-0">
-          <rect width="18" height="18" x="3" y="3" rx="2"/>
-          <path d="M9 3v18"/>
-          <path d="m16 15-3-3 3-3"/>
-        </svg>
-        <!-- Panel-left-open icon when collapsed -->
-        <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px] shrink-0">
-          <rect width="18" height="18" x="3" y="3" rx="2"/>
-          <path d="M9 3v18"/>
-          <path d="m14 9 3 3-3 3"/>
-        </svg>
-        <span v-if="!collapsed">Collapse</span>
-      </AppButton>
-    </div>
+          <!-- Grouped flyout (e.g. Finance → Customers / Suppliers / General / Billing) -->
+          <nav v-if="flyoutGroups" class="flex-1 overflow-y-auto px-2 pt-3 pb-4 space-y-4">
+            <div v-for="g in flyoutGroups" :key="g.title">
+              <div class="flex items-center gap-2 px-3 pb-1">
+                <SidebarIcon :name="g.icon" :size="16" class="text-navy" />
+                <span class="text-sm font-bold text-foreground">{{ g.title }}</span>
+              </div>
+              <button
+                v-for="item in g.items" :key="item.name"
+                type="button" :disabled="item.soon" @click="openChild(item)"
+                :class="[
+                  'w-full flex items-center justify-between gap-3 pl-9 pr-3 py-2 rounded-lg text-sm text-left transition-colors',
+                  item.soon ? 'text-muted-foreground/50 cursor-default'
+                    : isActive(item) ? 'bg-accent/10 text-accent font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                ]"
+              >
+                <span>{{ item.name }}</span>
+                <span v-if="item.soon" class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/70">Soon</span>
+              </button>
+            </div>
+            <p v-if="!flyoutGroups.length" class="px-3 py-4 text-sm text-muted-foreground">No matches.</p>
+          </nav>
+
+          <!-- Simple flyout (header + flat children, e.g. Units) -->
+          <template v-else>
+            <div class="flex items-center gap-2.5 px-4 pt-4 pb-1">
+              <SidebarIcon :name="flyout.headerIcon || flyout.icon" :size="20" class="text-navy" />
+              <span class="text-lg font-bold text-foreground">{{ flyout.name }}</span>
+            </div>
+            <nav class="flex-1 overflow-y-auto px-2 pt-1 pb-4">
+              <button
+                v-for="child in flyoutChildren" :key="child.name"
+                type="button" :disabled="child.soon" @click="openChild(child)"
+                :class="[
+                  'w-full flex items-center justify-between gap-3 rounded-lg text-sm text-left transition-colors',
+                  child.icon ? 'px-3 py-2.5' : 'pl-9 pr-3 py-2',
+                  child.soon ? 'text-muted-foreground/50 cursor-default'
+                    : isActive(child) ? 'bg-accent/10 text-accent font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                ]"
+              >
+                <span class="flex items-center gap-3">
+                  <SidebarIcon v-if="child.icon" :name="child.icon" :size="16" />
+                  {{ child.name }}
+                </span>
+                <span v-if="child.soon" class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/70">Soon</span>
+              </button>
+              <p v-if="!flyoutChildren.length" class="px-3 py-4 text-sm text-muted-foreground">No matches.</p>
+            </nav>
+          </template>
+        </div>
+      </Transition>
+    </template>
   </aside>
 </template>

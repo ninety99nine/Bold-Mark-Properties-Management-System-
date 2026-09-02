@@ -1,12 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useTenantStore } from '@/stores/tenant'
+import { useOrganizationStore } from '@/stores/organization'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AuthBrandPanel from '@/components/auth/AuthBrandPanel.vue'
 import api from '@/composables/useApi'
 
-const tenant = useTenantStore()
+const organization = useOrganizationStore()
 
 const email = ref('')
 const sent = ref(false)
@@ -77,7 +77,7 @@ async function handleSubmit() {
     <!-- Right panel — Form -->
     <div class="flex-1 flex flex-col justify-center items-center px-6 py-12 bg-bg">
       <div class="lg:hidden mb-10">
-        <img :src="tenant.logoUrl" :alt="tenant.name" class="h-8" />
+        <img :src="organization.logoUrl" :alt="organization.name" class="h-8" />
       </div>
 
       <div
@@ -158,7 +158,7 @@ async function handleSubmit() {
         </div>
 
         <p class="mt-8 text-center text-xs text-muted-fg">
-          © {{ new Date().getFullYear() }} {{ tenant.copyrightName }} · All rights reserved
+          © {{ new Date().getFullYear() }} {{ organization.copyrightName }} · All rights reserved
         </p>
       </div>
     </div>

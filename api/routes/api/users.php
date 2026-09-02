@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\V1\LoginLogController;
 use App\Http\Controllers\Api\V1\UserController;
 
 Route::prefix('users')
@@ -11,6 +12,7 @@ Route::prefix('users')
         Route::get('/summary', 'showUsersSummary')->name('show.users.summary');
         Route::post('/', 'inviteUser')->name('invite.user');
         Route::delete('/', 'deleteUsers')->name('delete.users');
+        Route::put('/me/password', 'changePassword')->name('change.password');
 
         // Explicit route model binding applied: AppServiceProvider.php
         Route::prefix('{user}')->group(function () {
@@ -18,6 +20,8 @@ Route::prefix('users')
             Route::put('/', 'updateUser')->name('update.user');
             Route::delete('/', 'deleteUser')->name('delete.user');
             Route::post('/send-password-reset', 'sendPasswordResetLink')->name('send.password.reset');
-            Route::put('/estates', 'syncUserEstates')->name('sync.user.estates');
+            Route::post('/reset-2fa', 'resetTwoFactor')->name('reset.two.factor');
+            Route::put('/communities', 'syncUserCommunities')->name('sync.user.communities');
+            Route::get('/login-logs', [LoginLogController::class, 'showUserLoginLogs'])->name('show.user.login.logs');
         });
     });

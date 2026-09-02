@@ -17,12 +17,12 @@ class UnitFactory extends Factory
     public function definition(): array
     {
         return [
-            'estate_id'      => null,
-            'tenant_id'      => null,
-            'unit_number'    => strtoupper(fake()->lexify('?')) . fake()->numberBetween(1, 50),
+            'community_id'      => null,
+            'organization_id'      => null,
+            'unit_number'    => strtoupper(fake()->lexify('?')) . fake()->unique()->numberBetween(1, 9999),
             'address'        => fake()->streetAddress(),
             'occupancy_type' => fake()->randomElement(OccupancyType::values()),
-            'status'         => UnitStatus::Active->value,
+            'status'         => UnitStatus::ACTIVE->value,
             'levy_override'  => null,
             'rent_amount'    => fake()->randomFloat(2, 3000, 15000),
         ];
@@ -31,21 +31,21 @@ class UnitFactory extends Factory
     public function ownerOccupied(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::OwnerOccupied->value,
+            'occupancy_type' => OccupancyType::OWNER_OCCUPIED->value,
         ]);
     }
 
-    public function tenantOccupied(): static
+    public function occupantOccupied(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::TenantOccupied->value,
+            'occupancy_type' => OccupancyType::OCCUPANT_OCCUPIED->value,
         ]);
     }
 
     public function vacant(): static
     {
         return $this->state(fn (array $attributes) => [
-            'occupancy_type' => OccupancyType::Vacant->value,
+            'occupancy_type' => OccupancyType::VACANT->value,
             'rent_amount'    => null,
         ]);
     }
@@ -53,7 +53,7 @@ class UnitFactory extends Factory
     public function suspended(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => UnitStatus::Suspended->value,
+            'status' => UnitStatus::SUSPENDED->value,
         ]);
     }
 

@@ -22,7 +22,7 @@ return new class extends Migration
 
             $table->uuid('id')->primary();
 
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
 
             // Identifies which table this view belongs to.
@@ -39,8 +39,8 @@ return new class extends Migration
             $table->date('date_range_end')->nullable();
 
             // Context-specific filter values, e.g.:
-            //   units:    {"occupancy_type": "tenant_occupied", "balance": "in_arrears"}
-            //   invoices: {"status": "overdue", "charge_type_id": "uuid"}
+            //   units:    {"occupancy_type": "occupant_occupied", "balance": "in_arrears"}
+            //   invoices: {"status": "overdue", "ledger_id": "uuid"}
             //   cashbook: {"allocation_status": "unallocated", "type": "credit"}
             $table->json('filters')->nullable();
 
@@ -53,8 +53,8 @@ return new class extends Migration
             // Look up all views for a user in a given context
             $table->index(['user_id', 'context'], 'table_views_user_context_idx');
 
-            // Tenant-level index for data isolation checks
-            $table->index(['tenant_id', 'context'], 'table_views_tenant_context_idx');
+            // Organization-level index for data isolation checks
+            $table->index(['organization_id', 'context'], 'table_views_organization_context_idx');
         });
     }
 

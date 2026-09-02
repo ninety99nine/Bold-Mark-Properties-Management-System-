@@ -6,6 +6,7 @@
 api/.env
 api/.env.*
 !api/.env.example
+!api/.env.production.example
 api/vendor/
 api/node_modules/
 api/public/hot
@@ -44,3 +45,10 @@ Thumbs.db
 *.key
 *.p12
 *.pfx
+scripts/.aws-bootstrap-output.txt
+
+# ----- Docker runtime (server-only, never committed) -----
+.deploy.env
+
+# ----- Playwright MCP session artifacts -----
+.playwright-mcp/

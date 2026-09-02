@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/composables/useApi.js'
+import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge  from '@/components/common/AppBadge.vue'
 import AppModal  from '@/components/common/AppModal.vue'
@@ -21,7 +22,7 @@ const ROLE_DISPLAY = {
   'portfolio-assistant':  'Portfolio Assistant',
   'trustee':              'Trustee / Director',
   'owner':                'Owner',
-  'tenant':               'Tenant',
+  'occupant':               'Occupant',
   'contractor':           'Contractor',
 }
 
@@ -32,7 +33,7 @@ const ALL_ROLE_OPTS = [
   { value: 'portfolio-assistant',  label: 'Portfolio Assistant' },
   { value: 'trustee',              label: 'Trustee / Director' },
   { value: 'owner',                label: 'Owner' },
-  { value: 'tenant',               label: 'Tenant' },
+  { value: 'occupant',               label: 'Occupant' },
   { value: 'contractor',           label: 'Contractor' },
 ]
 
@@ -61,9 +62,15 @@ const deleteLoading   = ref(false)
 const resetLoading = ref(false)
 const resetSent    = ref(false)
 
-// Toast
-const toastMessage = ref('')
-const toastType    = ref('success')
+// Two-factor reset (admin recovery for a lost device)
+const showReset2faModal = ref(false)
+const reset2faLoading   = ref(false)
+
+// Login history
+const loginLogs   = ref([])
+const logsLoading = ref(false)
+
+const { success: toastSuccess, error: toastError } = useToast()
 
 // ─── Computed ─────────────────────────────────────────────────────────────────
 const roleSlug = computed(() => user.value?.roles?.[0]?.name ?? '')
@@ -76,7 +83,7 @@ const ROLE_BADGE_STYLES = {
   'portfolio-assistant':  'bg-purple-50 text-purple-700 border-purple-200',
   'trustee':              'bg-amber-50 text-amber-700 border-amber-200',
   'owner':                'bg-teal-50 text-teal-700 border-teal-200',
-  'tenant':               'bg-sky-50 text-sky-700 border-sky-200',
+  'occupant':               'bg-sky-50 text-sky-700 border-sky-200',
   'contractor':           'bg-orange-50 text-orange-700 border-orange-200',
 }
 const roleBadgeClass = computed(() => ROLE_BADGE_STYLES[roleSlug.value] ?? 'bg-muted text-muted-foreground border-border')
@@ -105,10 +112,37 @@ function formatDateTime(str) {
   return new Date(str).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+const FAILURE_REASON_DISPLAY = {
+  user_not_found:   'User Not Found',
+  wrong_password:   'Wrong Password',
+  account_inactive: 'Account Inactive',
+  account_invited:  'Not Activated',
+}
+
+function formatFailureReason(reason) {
+  if (!reason) return '—'
+  return FAILURE_REASON_DISPLAY[reason] ?? reason
+}
+
+function parseAgent(ua) {
+  if (!ua) return '—'
+  let browser = 'Browser'
+  if (ua.includes('Edg/'))     browser = 'Edge'
+  else if (ua.includes('Chrome/'))   browser = 'Chrome'
+  else if (ua.includes('Firefox/'))  browser = 'Firefox'
+  else if (ua.includes('Safari/'))   browser = 'Safari'
+  let os = ''
+  if (ua.includes('Windows'))                     os = 'Windows'
+  else if (ua.includes('Macintosh') || ua.includes('Mac OS')) os = 'macOS'
+  else if (ua.includes('iPhone') || ua.includes('iPad'))      os = 'iOS'
+  else if (ua.includes('Android'))                os = 'Android'
+  else if (ua.includes('Linux'))                  os = 'Linux'
+  return os ? `${browser} / ${os}` : browser
+}
+
 function showToast(msg, type = 'success') {
-  toastMessage.value = msg
-  toastType.value    = type
-  setTimeout(() => { toastMessage.value = '' }, 4000)
+  if (type === 'error') toastError(msg)
+  else toastSuccess(msg)
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -196,29 +230,40 @@ async function sendPasswordReset() {
   }
 }
 
+// ─── Two-factor reset ──────────────────────────────────────────────────────────
+async function confirmReset2fa() {
+  reset2faLoading.value = true
+  try {
+    const res = await api.post(`/users/${user.value.id}/reset-2fa`)
+    user.value.two_factor_enabled = false
+    showReset2faModal.value = false
+    showToast(res.data.message ?? 'Two-factor authentication reset.')
+  } catch (e) {
+    showToast('Failed to reset two-factor authentication. Please try again.', 'error')
+  } finally {
+    reset2faLoading.value = false
+  }
+}
+
+// ─── Login logs ───────────────────────────────────────────────────────────────
+async function loadLoginLogs() {
+  logsLoading.value = true
+  try {
+    const res = await api.get(`/users/${route.params.userId}/login-logs`)
+    loginLogs.value = res.data.data
+  } catch {
+    // non-critical — silently swallow
+  } finally {
+    logsLoading.value = false
+  }
+}
+
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
-onMounted(loadUser)
+onMounted(() => { loadUser(); loadLoginLogs() })
 </script>
 
 <template>
   <div class="space-y-6 pb-8">
-
-    <!-- ── Toast ──────────────────────────────────────────────────────────── -->
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 -translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2"
-    >
-      <div
-        v-if="toastMessage"
-        :class="['fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-lg shadow-lg text-sm font-medium', toastType === 'error' ? 'bg-danger text-white' : 'bg-success text-white']"
-      >
-        {{ toastMessage }}
-      </div>
-    </Transition>
 
     <!-- ── Loading skeleton ───────────────────────────────────────────────── -->
     <template v-if="loading">
@@ -387,6 +432,31 @@ onMounted(loadUser)
             </div>
           </div>
 
+          <!-- Two-Factor Authentication card -->
+          <div class="rounded-lg border bg-card shadow-sm p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="font-semibold text-sm text-foreground">Two-Factor Authentication</h2>
+                <p class="text-xs text-muted-foreground mt-1">
+                  <span v-if="user.two_factor_enabled" class="text-success font-medium">Enabled.</span>
+                  <span v-else class="text-warning font-medium">Not yet set up.</span>
+                  Resetting clears this user's authenticator and signs them out. They'll be required to set up 2FA again at their next login — use this if they've lost their device.
+                </p>
+              </div>
+              <AppButton
+                variant="outline"
+                class="shrink-0"
+                :disabled="!user.two_factor_enabled"
+                @click="showReset2faModal = true"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+                </svg>
+                Reset 2FA
+              </AppButton>
+            </div>
+          </div>
+
           <!-- Danger zone card -->
           <div class="rounded-lg border border-danger/20 bg-danger/5 p-4">
             <h2 class="font-semibold text-sm text-danger">Danger Zone</h2>
@@ -406,6 +476,62 @@ onMounted(loadUser)
 
         </div>
       </div>
+
+      <!-- ── Login History ──────────────────────────────────────────────── -->
+      <div class="rounded-lg border bg-card shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b">
+          <h2 class="font-semibold text-sm text-foreground">Login History</h2>
+          <span class="text-xs text-muted-foreground">Last 20 attempts</span>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="logsLoading" class="px-4 py-8 text-center text-sm text-muted-foreground animate-pulse">
+          Loading login history…
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="!loginLogs.length" class="px-4 py-8 text-center text-sm text-muted-foreground">
+          No login activity recorded yet.
+        </div>
+
+        <!-- Table -->
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b bg-muted/30">
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Date &amp; Time</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Status</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Reason</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">IP Address</th>
+                <th class="text-left px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Device</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="log in loginLogs" :key="log.id" class="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                <td class="px-4 py-2.5 text-foreground whitespace-nowrap">{{ formatDateTime(log.created_at) }}</td>
+                <td class="px-4 py-2.5 whitespace-nowrap">
+                  <span v-if="log.login_successful" class="inline-flex items-center gap-1 text-xs font-medium text-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                      <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+                    </svg>
+                    Success
+                  </span>
+                  <span v-else class="inline-flex items-center gap-1 text-xs font-medium text-danger">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                      <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+                    </svg>
+                    Failed
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-muted-foreground text-xs">{{ formatFailureReason(log.failure_reason) }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground font-mono text-xs whitespace-nowrap">{{ log.ip_address ?? '—' }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{{ parseAgent(log.user_agent) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </template>
 
   </div>
@@ -463,6 +589,18 @@ onMounted(loadUser)
     <template #footer>
       <AppButton variant="outline" @click="showDeleteModal = false">Cancel</AppButton>
       <AppButton variant="danger" :loading="deleteLoading" @click="confirmDelete">Remove User</AppButton>
+    </template>
+  </AppModal>
+
+  <!-- ── Reset 2FA confirmation modal ──────────────────────────────────────── -->
+  <AppModal :show="showReset2faModal" title="Reset Two-Factor Authentication" size="sm" @close="showReset2faModal = false">
+    <p class="text-sm text-foreground">
+      This will clear <span class="font-semibold">{{ user?.name }}</span>'s two-factor authentication and sign them out of all sessions.
+      They will be required to set up 2FA again the next time they log in. Continue?
+    </p>
+    <template #footer>
+      <AppButton variant="outline" @click="showReset2faModal = false">Cancel</AppButton>
+      <AppButton variant="danger" :loading="reset2faLoading" @click="confirmReset2fa">Reset 2FA</AppButton>
     </template>
   </AppModal>
 </template>

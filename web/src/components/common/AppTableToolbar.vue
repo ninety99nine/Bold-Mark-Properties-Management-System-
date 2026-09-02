@@ -570,7 +570,7 @@ function deleteView(id, event) {
       <AppInput
         v-model="newViewName"
         label="View Name"
-        placeholder="e.g. Overdue Tenants, High Balance..."
+        placeholder="e.g. Overdue Occupants, High Balance..."
       />
 
       <!-- Date Range accordion -->

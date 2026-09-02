@@ -25,9 +25,11 @@ class ShowInvoicesRequest extends FormRequest
         return [
             'search'         => ['nullable', 'string', 'max:100'],
             'unit_id'        => ['sometimes', 'uuid', 'exists:units,id'],
-            'estate_id'      => ['sometimes', 'uuid', 'exists:estates,id'],
+            'community_id'      => ['sometimes', 'uuid', 'exists:communities,id'],
             'status'         => ['sometimes', 'string'],
-            'charge_type_id' => ['sometimes', 'uuid', 'exists:charge_types,id'],
+            'ledger_id' => ['sometimes', 'uuid', 'exists:ledgers,id'],
+            'billed_to_type' => ['sometimes', 'string'],
+            'country'        => ['nullable', 'string', 'max:3'],
         ];
     }
 }

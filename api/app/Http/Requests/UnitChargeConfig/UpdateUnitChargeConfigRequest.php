@@ -15,8 +15,8 @@ class UpdateUnitChargeConfigRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'charge_type_id' => ['sometimes', 'uuid', 'exists:charge_types,id'],
-            'amount'         => ['sometimes', 'numeric', 'min:0'],
+            'ledger_id' => ['sometimes', 'uuid', 'exists:ledgers,id'],
+            'amount'         => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
             'is_active'      => ['sometimes', 'boolean'],
         ];
     }
@@ -24,8 +24,8 @@ class UpdateUnitChargeConfigRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'charge_type_id.uuid'   => 'The charge type ID must be a valid UUID.',
-            'charge_type_id.exists' => 'The selected charge type does not exist.',
+            'ledger_id.uuid'   => 'The ledger ID must be a valid UUID.',
+            'ledger_id.exists' => 'The selected ledger does not exist.',
         ];
     }
 }

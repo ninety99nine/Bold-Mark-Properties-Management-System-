@@ -1,11 +1,17 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useCountryStore } from '@/stores/country'
+import { useIdleLogout } from '@/composables/useIdleLogout'
 import AppSidebar from './AppSidebar.vue'
 import AppTopbar from './AppTopbar.vue'
 
 const mainEl = ref(null)
 const route  = useRoute()
+const countryStore = useCountryStore()
+
+// Auto-logout on inactivity (BM-006) — only active inside the authenticated shell.
+useIdleLogout()
 
 watch(() => route.path, () => {
   if (mainEl.value) mainEl.value.scrollTop = 0
@@ -20,7 +26,7 @@ watch(() => route.path, () => {
       <main ref="mainEl" class="flex-1 overflow-auto p-6">
         <RouterView v-slot="{ Component }">
           <Transition name="page">
-            <component :is="Component" :key="$route.path" />
+            <component :is="Component" :key="$route.path + '-' + countryStore.activeCountry" />
           </Transition>
         </RouterView>
       </main>

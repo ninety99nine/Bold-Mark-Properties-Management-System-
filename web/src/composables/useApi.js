@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getToken } from '@/composables/authStorage'
 
 const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL || ''}/api/v1`,
@@ -10,7 +11,7 @@ const api = axios.create({
 
 // Attach auth token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
+  const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -22,13 +23,40 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle auth errors globally
+// Handle auth errors globally. On a 401 the session is over (expired through
+// inactivity, revoked, or the token is invalid): clear it and bounce to the
+// login page via the router — preserving the page the user was on so they
+// land back on it after signing in (BM-006). We use the router rather than a
+// hard `window.location` reload so the SPA stays warm and the redirect query
+// survives. Imports are dynamic to avoid a circular dependency with the store.
+let redirecting = false
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token')
-      window.location.href = '/login'
+  async (error) => {
+    if (error.response?.status === 401 && !redirecting) {
+      redirecting = true
+      try {
+        const [{ useAuthStore }, { default: router }] = await Promise.all([
+          import('@/stores/auth'),
+          import('@/router'),
+        ])
+        useAuthStore().clearSession()
+
+        const current = router.currentRoute.value
+        if (current.name !== 'login') {
+          // The server flags a genuine inactivity timeout with a specific
+          // message (EnforceSessionTimeout). Any other 401 — revoked/invalid
+          // token, etc. — is shown with neutral wording rather than mislabelled
+          // as inactivity.
+          const serverMessage = error.response?.data?.message || ''
+          const query = { redirect: current.fullPath, expired: '1' }
+          if (/inactivity/i.test(serverMessage)) query.reason = 'inactivity'
+          await router.replace({ name: 'login', query })
+        }
+      } finally {
+        redirecting = false
+      }
     }
     return Promise.reject(error)
   }

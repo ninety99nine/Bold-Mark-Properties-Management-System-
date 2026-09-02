@@ -81,4 +81,14 @@ class UserPolicy extends BasePolicy
 
         return $this->authService->hasPermission($user, 'user.delete');
     }
+
+    /**
+     * Determine whether the user can reset another user's two-factor
+     * authentication (a recovery action — the target is forced to re-enroll).
+     * Restricted to company admins; 2FA can never be self-disabled.
+     */
+    public function resetTwoFactor(User $user, User $target): bool
+    {
+        return $user->hasRole(['super-admin', 'company-admin']);
+    }
 }

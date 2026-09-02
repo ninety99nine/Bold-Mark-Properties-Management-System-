@@ -107,7 +107,7 @@ return [
         'invitations' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 0,      // 0 = never expires — owners/tenants may take a long time to set up
+            'expire' => 0,      // 0 = never expires — owners/organizations may take a long time to set up
             'throttle' => 60,
         ],
     ],
@@ -124,5 +124,21 @@ return [
     */
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
+
+    'login_log_per_user_limit'  => env('LOGIN_LOG_PER_USER_LIMIT',  100),
+    'login_log_anonymous_limit' => env('LOGIN_LOG_ANONYMOUS_LIMIT', 500),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session Inactivity Timeout
+    |--------------------------------------------------------------------------
+    |
+    | Number of minutes of inactivity after which an API session (access token)
+    | is automatically revoked. The clock resets on every authenticated
+    | request. Sessions created with "remember me" are exempt (BM-009).
+    |
+    */
+
+    'session_inactivity_timeout' => (int) env('SESSION_INACTIVITY_TIMEOUT', 30),
 
 ];

@@ -29,24 +29,24 @@ return new class extends Migration
             $table->timestamp('sent_at')->nullable();
 
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
-            $table->foreignUuid('charge_type_id')->constrained('charge_types')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('ledger_id')->constrained('ledgers')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
-            $table->unique(['unit_id', 'charge_type_id', 'billing_period']);
-            $table->index('tenant_id');
+            $table->unique(['unit_id', 'ledger_id', 'billing_period']);
+            $table->index('organization_id');
             $table->index('unit_id');
-            $table->index('charge_type_id');
+            $table->index('ledger_id');
             $table->index('status');
             $table->index('billing_period');
             $table->index('due_date');
             $table->index('billed_to_type');
             $table->index('billed_to_id');
-            $table->index(['tenant_id', 'status']);
+            $table->index(['organization_id', 'status']);
             $table->index(['unit_id', 'billing_period']);
             $table->index(['billed_to_type', 'billed_to_id']);
-            $table->index(['tenant_id', 'billing_period', 'status']);
+            $table->index(['organization_id', 'billing_period', 'status']);
         });
     }
 

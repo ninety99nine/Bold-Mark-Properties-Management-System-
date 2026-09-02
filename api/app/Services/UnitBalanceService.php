@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CashbookEntry;
+use App\Models\CreditNote;
 use App\Models\Invoice;
 use App\Models\Unit;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +13,7 @@ class UnitBalanceService
     /**
      * Recompute and persist the stored balance for a single unit.
      *
-     * Formula: balance = unallocated_credits − outstanding_amount
+     * Formula: balance = unallocated_credits + credit_notes − outstanding_amount
      *
      *   outstanding_amount  = sum of (invoice.amount − payments already allocated to it)
      *                         for all invoices in unpaid / overdue / partially_paid status.
@@ -21,6 +22,9 @@ class UnitBalanceService
      *
      *   unallocated_credits = sum of cashbook credit entries that have no invoice_id,
      *                         i.e. advance payments / overpayment remainders on account.
+     *
+     *   credit_notes        = sum of credit note totals raised against the unit; a credit
+     *                         note credits the customer's account, reducing what they owe.
      *
      * Result semantics:
      *   balance < 0  → unit is in arrears
@@ -54,7 +58,10 @@ class UnitBalanceService
             ->where('type', 'credit')
             ->sum('amount');
 
-        $balance = $unallocatedCredits - $outstandingAmount;
+        // Credit notes: documents that credit the customer's account.
+        $creditNotes = (float) CreditNote::where('unit_id', $unitId)->sum('amount');
+
+        $balance = $unallocatedCredits + $creditNotes - $outstandingAmount;
 
         DB::table('units')
             ->where('id', $unitId)
@@ -67,15 +74,15 @@ class UnitBalanceService
      * Uses a single raw SQL UPDATE per unit to minimise round-trips. Called by the
      * units:recalculate-balances Artisan command to backfill after the migration.
      *
-     * @param string|null $tenantId  When provided, only units for that tenant are updated.
+     * @param string|null $organizationId  When provided, only units for that occupant are updated.
      * @return int  Number of units updated.
      */
-    public function recalculateAll(?string $tenantId = null): int
+    public function recalculateAll(?string $organizationId = null): int
     {
         $query = Unit::query();
 
-        if ($tenantId) {
-            $query->where('tenant_id', $tenantId);
+        if ($organizationId) {
+            $query->where('organization_id', $organizationId);
         }
 
         $count = 0;

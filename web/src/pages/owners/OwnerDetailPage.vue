@@ -10,10 +10,14 @@ import AppInput         from '@/components/common/AppInput.vue'
 import AppInvoiceSelect from '@/components/common/AppInvoiceSelect.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
 import { useBack } from '@/composables/useBack.js'
+import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
 const { goBack } = useBack({ name: 'age-analysis' })
+const countryStore = useCountryStore()
+const { success } = useToast()
 
 // ── State ─────────────────────────────────────────────────────────────
 const loading         = ref(true)
@@ -180,9 +184,9 @@ const ownerUnits = computed(() => {
   return [{
     unitId:      u.id,
     unitNumber:  u.unit_number,
-    estateId:    u.estate_id,
-    estateName:  u.estate?.name ?? '',
-    monthlyLevy: u.levy_override ?? u.estate?.default_levy_amount ?? null,
+    communityId:    u.community_id,
+    communityName:  u.community?.name ?? '',
+    monthlyLevy: u.levy_override ?? u.community?.admin_fund_amount ?? null,
     occupancy:   u.occupancy_type,
   }]
 })
@@ -201,7 +205,7 @@ function invoiceStatusBadge(status) {
 function occupancyBadge(occupancy) {
   const map = {
     owner_occupied:  { label: 'Owner Occupied',  wrapClass: 'bg-success/10 text-success border-success/20' },
-    tenant_occupied: { label: 'Tenant Occupied', wrapClass: 'bg-blue-50 text-blue-700 border-blue-200'     },
+    occupant_occupied: { label: 'Occupant Occupied', wrapClass: 'bg-blue-50 text-blue-700 border-blue-200'     },
     vacant:          { label: 'Vacant',          wrapClass: 'bg-muted text-muted-foreground border-border'  },
   }
   return map[occupancy] ?? map.vacant
@@ -210,20 +214,18 @@ function occupancyBadge(occupancy) {
 function fmt(val) {
   const num = parseFloat(val ?? 0)
   if (num === 0) return '—'
-  return 'R\u00a0' + Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(num)
 }
 
 function fmtAmount(n) {
   if (n == null) return '—'
-  const abs  = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  const sign = n < 0 ? '-' : ''
-  return `${sign}R\u00A0${abs}`
+  if (n < 0) return '-' + countryStore.formatCurrency(Math.abs(n))
+  return countryStore.formatCurrency(n)
 }
 
 function fmtPaymentAmount(n) {
   if (n == null) return '—'
-  const abs = Math.abs(n).toLocaleString('en-US').replace(/,/g, '\u00A0')
-  return `+R\u00A0${abs}`
+  return '+' + countryStore.formatCurrency(Math.abs(n))
 }
 
 function statusVariant(s) {
@@ -270,12 +272,12 @@ function initials(name) {
 
 // ── Navigation ────────────────────────────────────────────────────────
 
-function goToEstate(estateId) {
-  router.push({ name: 'estate-detail', params: { id: estateId } })
+function goToCommunity(communityId) {
+  router.push({ name: 'community-detail', params: { id: communityId } })
 }
 
 function goToUnit(unit) {
-  router.push({ name: 'unit-detail', params: { estateId: unit.estateId, unitId: unit.unitId } })
+  router.push({ name: 'unit-detail', params: { communityId: unit.communityId, unitId: unit.unitId } })
 }
 
 function goToInvoice(invoiceId) {
@@ -324,7 +326,7 @@ async function savePayment() {
   paymentError2.value = null
   try {
     const fd = new FormData()
-    fd.append('estate_id',   owner.value?.unit?.estate_id ?? '')
+    fd.append('community_id',   owner.value?.unit?.community_id ?? '')
     fd.append('unit_id',     owner.value?.unit?.id ?? '')
     fd.append('type',        'credit')
     fd.append('date',        paymentForm.value.date)
@@ -335,6 +337,7 @@ async function savePayment() {
     await api.post('/cashbook', fd)
     showAddPayment.value     = false
     proofOfPaymentFile.value = null
+    success('Payment recorded successfully.')
     await fetchOwner()
   } catch (err) {
     paymentError2.value = err?.response?.data?.message ?? 'Failed to record payment. Please try again.'
@@ -369,11 +372,11 @@ function onTemplateChange() {
     },
     welcome: {
       subject: `Welcome — ${name}`,
-      body:    `Dear ${name},\n\nWelcome to the estate. We look forward to working with you and ensuring your property is well managed.\n\nKind regards,\nBold Mark Properties`,
+      body:    `Dear ${name},\n\nWelcome to the community. We look forward to working with you and ensuring your property is well managed.\n\nKind regards,\nBold Mark Properties`,
     },
     maintenance: {
       subject: 'Maintenance Notice',
-      body:    `Dear ${name},\n\nWe would like to inform you of upcoming maintenance work at the estate. Please contact us if you have any concerns.\n\nKind regards,\nBold Mark Properties`,
+      body:    `Dear ${name},\n\nWe would like to inform you of upcoming maintenance work at the community. Please contact us if you have any concerns.\n\nKind regards,\nBold Mark Properties`,
     },
     statement: {
       subject: `Monthly Statement — ${name}`,
@@ -402,21 +405,23 @@ const showEditOwner   = ref(false)
 const editOwnerSaving = ref(false)
 const editOwnerError  = ref(null)
 const editOwnerForm   = ref({
-  full_name:  '',
-  email:      '',
-  phone:      '',
-  id_number:  '',
-  address:    '',
+  full_name:        '',
+  email:            '',
+  secondary_emails: [],
+  phone:            '',
+  id_number:        '',
+  address:          '',
 })
 
 function openEditOwner() {
   editOwnerError.value = null
   editOwnerForm.value = {
-    full_name: owner.value?.full_name  ?? '',
-    email:     owner.value?.email      ?? '',
-    phone:     owner.value?.phone      ?? '',
-    id_number: owner.value?.id_number  ?? '',
-    address:   owner.value?.address    ?? '',
+    full_name:        owner.value?.full_name        ?? '',
+    email:            owner.value?.email            ?? '',
+    secondary_emails: [...(owner.value?.secondary_emails ?? [])],
+    phone:            owner.value?.phone            ?? '',
+    id_number:        owner.value?.id_number        ?? '',
+    address:          owner.value?.address          ?? '',
   }
   showEditOwner.value = true
 }
@@ -428,6 +433,7 @@ async function saveEditOwner() {
     const { data } = await api.put(`/owners/${route.params.ownerId}`, editOwnerForm.value)
     owner.value = { ...owner.value, ...(data.data ?? data) }
     showEditOwner.value = false
+    success('Owner details updated.')
   } catch (err) {
     editOwnerError.value = err?.response?.data?.message ?? 'Failed to save changes. Please try again.'
   } finally {
@@ -499,13 +505,13 @@ async function saveEditOwner() {
         </div>
         <p class="text-sm text-muted-foreground">
           <button
-            v-if="owner.unit?.estate_id"
+            v-if="owner.unit?.community_id"
             class="hover:underline text-primary"
-            @click="goToEstate(owner.unit.estate_id)"
+            @click="goToCommunity(owner.unit.community_id)"
           >
-            {{ owner.unit?.estate?.name ?? '—' }}
+            {{ owner.unit?.community?.name ?? '—' }}
           </button>
-          <span v-else>{{ owner.unit?.estate?.name ?? '—' }}</span>
+          <span v-else>{{ owner.unit?.community?.name ?? '—' }}</span>
         </p>
       </div>
       <div class="flex gap-2">
@@ -537,11 +543,17 @@ async function saveEditOwner() {
             <h3 class="tracking-tight font-body font-semibold text-lg">Contact Details</h3>
           </div>
           <div class="p-6 pt-0 space-y-3">
-            <div class="flex items-center gap-3 text-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0">
+            <div class="flex items-start gap-3 text-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0 mt-0.5">
                 <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
               </svg>
-              <span class="text-foreground">{{ owner.email }}</span>
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-foreground">{{ owner.email }}</span>
+                  <span v-if="owner.secondary_emails?.length" class="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded uppercase tracking-wide">Primary</span>
+                </div>
+                <span v-for="email in (owner.secondary_emails ?? [])" :key="email" class="text-foreground">{{ email }}</span>
+              </div>
             </div>
             <div class="flex items-center gap-3 text-sm">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-muted-foreground shrink-0">
@@ -695,7 +707,7 @@ async function saveEditOwner() {
                   @click="goToInvoice(inv.id)"
                 >
                   <td class="py-3 px-2 font-medium" :class="inv.status === 'overdue' ? 'text-danger' : 'text-foreground'">{{ inv.invoice_number }}</td>
-                  <td class="py-3 px-2 text-foreground">{{ inv.charge_type?.name ?? '—' }}</td>
+                  <td class="py-3 px-2 text-foreground">{{ inv.ledger?.name ?? '—' }}</td>
                   <td class="py-3 px-2 text-muted-foreground">{{ fmtPeriod(inv.billing_period) }}</td>
                   <td class="py-3 px-2 text-foreground">{{ owner.full_name }}</td>
                   <td class="py-3 px-2 text-right font-medium text-foreground whitespace-nowrap">{{ fmtAmount(inv.amount) }}</td>
@@ -963,7 +975,7 @@ async function saveEditOwner() {
         <AppDatePicker v-model="paymentForm.date" placeholder="Select date..." />
       </div>
       <AppInput v-model="paymentForm.description" label="Description" placeholder="e.g. EFT – M NDABA LEVY APR" />
-      <AppInput v-model="paymentForm.amount" label="Amount (R)" type="number" placeholder="0.00" />
+      <AppInput v-model="paymentForm.amount" label="Amount (R)" type="number" placeholder="0.00" :min="0" :max="9999999999.99" />
 
       <div>
         <label class="text-sm font-medium text-foreground mb-1.5 block">Allocate to Invoice</label>
@@ -1092,7 +1104,38 @@ async function saveEditOwner() {
       <p v-if="editOwnerError" class="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{{ editOwnerError }}</p>
 
       <AppInput v-model="editOwnerForm.full_name" label="Full Name" placeholder="e.g. Michael Ndaba" required />
-      <AppInput v-model="editOwnerForm.email" label="Email Address" type="email" placeholder="e.g. michael@email.com" required />
+
+      <!-- Primary email -->
+      <AppInput v-model="editOwnerForm.email" label="Primary Email" type="email" placeholder="e.g. michael@email.com" required />
+
+      <!-- Additional emails -->
+      <div class="space-y-2">
+        <label class="block text-sm font-medium">Additional Emails</label>
+        <div v-for="(_, i) in editOwnerForm.secondary_emails" :key="i" class="flex gap-2 items-center">
+          <AppInput
+            v-model="editOwnerForm.secondary_emails[i]"
+            type="email"
+            :placeholder="`e.g. other${i + 1}@email.com`"
+            class="flex-1"
+          />
+          <button
+            type="button"
+            class="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            @click="editOwnerForm.secondary_emails.splice(i, 1)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 text-sm text-primary hover:underline"
+          @click="editOwnerForm.secondary_emails.push('')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Add another email
+        </button>
+      </div>
+
       <AppInput v-model="editOwnerForm.phone" label="Phone Number" placeholder="e.g. +27 82 000 0000" />
       <AppInput v-model="editOwnerForm.id_number" label="ID / Passport Number" placeholder="e.g. 8001015800080" />
       <AppInput v-model="editOwnerForm.address" label="Address" placeholder="e.g. 12 Main Street, Johannesburg" />

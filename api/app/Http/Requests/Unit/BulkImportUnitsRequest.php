@@ -9,7 +9,7 @@ class BulkImportUnitsRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('create', [Unit::class, $this->route('estate')]);
+        return $this->user()->can('create', [Unit::class, $this->route('community')]);
     }
 
     public function rules(): array

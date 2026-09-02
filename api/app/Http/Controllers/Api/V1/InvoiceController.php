@@ -10,6 +10,7 @@ use App\Http\Resources\InvoiceResources;
 use App\Http\Requests\Invoice\ShowInvoicesRequest;
 use App\Http\Requests\Invoice\ShowInvoiceSummaryRequest;
 use App\Http\Requests\Invoice\CreateInvoiceRequest;
+use App\Http\Requests\Invoice\CreateCustomerInvoiceRequest;
 use App\Http\Requests\Invoice\RunBillingRequest;
 use App\Http\Requests\Invoice\CreateAdhocBillingRequest;
 use App\Http\Requests\Invoice\ShowInvoiceRequest;
@@ -20,6 +21,7 @@ use App\Http\Requests\Invoice\DeleteInvoicesRequest;
 use App\Http\Requests\Invoice\ShowDeletedInvoicesRequest;
 use App\Http\Requests\Invoice\RestoreInvoiceRequest;
 use App\Http\Requests\Invoice\ForceDeleteInvoiceRequest;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 
 class InvoiceController extends Controller
@@ -32,7 +34,7 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Return a paginated list of invoices for the authenticated tenant.
+     * Return a paginated list of invoices for the authenticated occupant.
      *
      * @param ShowInvoicesRequest $request
      * @return InvoiceResources
@@ -70,13 +72,25 @@ class InvoiceController extends Controller
      * @param CreateInvoiceRequest $request
      * @return array
      */
-    public function createInvoice(CreateInvoiceRequest $request): array
+    public function createInvoice(CreateInvoiceRequest $request): JsonResponse
     {
-        return $this->service->createInvoice($request->validated());
+        return response()->json($this->service->createInvoice($request->validated()), 201);
     }
 
     /**
-     * Run the billing engine for an estate and billing period.
+     * Create a WeConnectU-style multi-line customer invoice
+     * (customer, bank account, dates, line items, optional attachment).
+     *
+     * @param CreateCustomerInvoiceRequest $request
+     * @return JsonResponse
+     */
+    public function createCustomerInvoice(CreateCustomerInvoiceRequest $request): JsonResponse
+    {
+        return response()->json($this->service->createCustomerInvoice($request->validated()), 201);
+    }
+
+    /**
+     * Run the billing engine for an community and billing period.
      * Pass dry_run=true to preview without creating records.
      *
      * @param RunBillingRequest $request
@@ -88,7 +102,7 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Create ad-hoc invoices for a non-recurring charge type across selected units.
+     * Create ad-hoc invoices for a non-recurring ledger across selected units.
      *
      * @param CreateAdhocBillingRequest $request
      * @return array

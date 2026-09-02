@@ -21,14 +21,14 @@ return new class extends Migration
             $table->text('address')->nullable();
 
             $table->foreignUuid('unit_id')->constrained('units')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
             $table->index('unit_id');
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index('email');
-            $table->index(['tenant_id', 'email']);
+            $table->index(['organization_id', 'email']);
         });
     }
 

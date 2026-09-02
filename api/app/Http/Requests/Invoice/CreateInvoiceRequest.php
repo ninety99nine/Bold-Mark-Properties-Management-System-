@@ -26,10 +26,10 @@ class CreateInvoiceRequest extends FormRequest
     {
         return [
             'unit_id'        => ['required', 'uuid', 'exists:units,id'],
-            'charge_type_id' => ['required', 'uuid', 'exists:charge_types,id'],
+            'ledger_id' => ['required', 'uuid', 'exists:ledgers,id'],
             'billed_to_type' => ['required', Rule::in(BilledToType::values())],
             'billed_to_id'   => ['required', 'uuid'],
-            'amount'         => ['required', 'numeric', 'min:0'],
+            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'billing_period' => ['required', 'date'],
             'due_date'       => ['required', 'date'],
         ];
@@ -46,9 +46,9 @@ class CreateInvoiceRequest extends FormRequest
             'unit_id.required'        => 'The unit is required.',
             'unit_id.uuid'            => 'The unit ID must be a valid UUID.',
             'unit_id.exists'          => 'The selected unit does not exist.',
-            'charge_type_id.required' => 'The charge type is required.',
-            'charge_type_id.uuid'     => 'The charge type ID must be a valid UUID.',
-            'charge_type_id.exists'   => 'The selected charge type does not exist.',
+            'ledger_id.required' => 'The ledger is required.',
+            'ledger_id.uuid'     => 'The ledger ID must be a valid UUID.',
+            'ledger_id.exists'   => 'The selected ledger does not exist.',
             'billed_to_type.required' => 'The billed to type is required.',
             'billed_to_type.in'       => 'The billed to type must be one of: ' . implode(', ', BilledToType::values()) . '.',
             'billed_to_id.required'   => 'The billed to ID is required.',

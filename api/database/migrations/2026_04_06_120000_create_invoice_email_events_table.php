@@ -23,12 +23,12 @@ return new class extends Migration
             $table->json('metadata')->nullable();
 
             $table->foreignUuid('invoice_id')->constrained('invoices')->cascadeOnDelete();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->cascadeOnDelete();
+            $table->foreignUuid('organization_id')->constrained('organizations')->cascadeOnDelete();
 
             $table->timestamps();
 
             $table->index(['invoice_id', 'event_type']);
-            $table->index('tenant_id');
+            $table->index('organization_id');
             $table->index('resend_email_id');
         });
     }

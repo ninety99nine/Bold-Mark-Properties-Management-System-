@@ -5,6 +5,9 @@ import AppButton from '@/components/common/AppButton.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
 import api from '@/composables/useApi.js'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 const props = defineProps({
   show:  { type: Boolean, required: true },
@@ -47,9 +50,7 @@ const splitRemainder = computed(() =>
 )
 
 function fmt(n) {
-  const num = Number(n)
-  const decimals = num % 1 === 0 ? 0 : 2
-  return `R ${num.toLocaleString('en-ZA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
+  return countryStore.formatCurrency(n)
 }
 
 function formatDate(d) {
@@ -77,12 +78,12 @@ watch(() => props.show, async (val) => {
   }
 })
 
-// ── Load units for the entry's estate ─────────────────────────────────────
+// ── Load units for the entry's community ─────────────────────────────────────
 async function loadUnits() {
-  if (!props.entry?.estate_id) return
+  if (!props.entry?.community_id) return
   unitLoading.value = true
   try {
-    const res = await api.get(`/estates/${props.entry.estate_id}/units`, { params: { per_page: 200 } })
+    const res = await api.get(`/communities/${props.entry.community_id}/units`, { params: { per_page: 200 } })
     unitOptions.value = (res.data.data ?? []).map(u => ({
       value: u.id,
       label: `Unit ${u.unit_number}`,
@@ -258,7 +259,7 @@ async function submit() {
                       </span>
                     </div>
                     <p class="text-xs text-muted-foreground mt-0.5">
-                      {{ inv.charge_type?.name ?? '—' }}
+                      {{ inv.ledger?.name ?? '—' }}
                       <span v-if="inv.billing_period" class="before:content-['·'] before:mx-1">{{ formatDate(inv.billing_period) }}</span>
                     </p>
                   </div>
@@ -286,11 +287,11 @@ async function submit() {
                     Due {{ formatDate(inv.due_date) }}
                   </span>
                   <span
-                    v-if="inv.billed_to_owner?.full_name || inv.billed_to_unit_tenant?.full_name"
+                    v-if="inv.billed_to_owner?.full_name || inv.billed_to_unit_occupant?.full_name"
                     class="flex items-center gap-1 text-xs text-muted-foreground ml-auto"
                   >
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
-                    {{ inv.billed_to_owner?.full_name ?? inv.billed_to_unit_tenant?.full_name }}
+                    {{ inv.billed_to_owner?.full_name ?? inv.billed_to_unit_occupant?.full_name }}
                   </span>
                 </div>
               </div>
@@ -345,8 +346,8 @@ async function submit() {
                 <td class="px-4 py-2.5 font-mono text-right">{{ selectedInvoice?.invoice_number }}</td>
               </tr>
               <tr>
-                <td class="px-4 py-2.5 text-muted-foreground">Charge type</td>
-                <td class="px-4 py-2.5 text-right">{{ selectedInvoice?.charge_type?.name ?? '—' }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground">Ledger</td>
+                <td class="px-4 py-2.5 text-right">{{ selectedInvoice?.ledger?.name ?? '—' }}</td>
               </tr>
               <tr>
                 <td class="px-4 py-2.5 text-muted-foreground">Invoice outstanding</td>

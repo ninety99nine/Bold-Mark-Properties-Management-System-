@@ -2,27 +2,44 @@
   AppStatCard — KPI summary card used on every page header row.
 
   Props:
-    label      — card label e.g. "Total Estates"
+    label      — card label e.g. "Total Communities"
     value      — primary display value e.g. "7" or "R 32 050"
     subtitle   — small text below value e.g. "241 units"
     valueClass — Tailwind class for value colour (default: text-foreground)
     trend      — optional { text: string, direction: 'up'|'down', colorClass: string }
+    to         — optional route path or object; makes the card clickable
 
   Slot:
     #icon — SVG icon element (rendered without any background container)
 -->
 <script setup>
-defineProps({
+import { useRouter } from 'vue-router'
+
+const props = defineProps({
   label:       { type: String, required: true },
   value:       { type: [String, Number], required: true },
   subtitle:    { type: String, default: '' },
   valueClass:  { type: String, default: 'text-foreground' },
+  valueSize:   { type: String, default: 'text-3xl' }, // e.g. 'text-2xl' for compact cards
   trend:       { type: Object, default: null }, // { text, direction, colorClass }
+  to:          { type: [String, Object], default: null },
 })
+
+const router = useRouter()
+
+function handleClick() {
+  if (props.to) router.push(props.to)
+}
 </script>
 
 <template>
-  <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+  <div
+    :class="[
+      'rounded-lg border bg-card text-card-foreground shadow-sm transition-all duration-150',
+      to ? 'cursor-pointer hover:border-accent/40 hover:shadow-md active:scale-[0.98]' : '',
+    ]"
+    @click="handleClick"
+  >
     <div class="p-5">
       <!-- Label row -->
       <div class="flex items-center justify-between mb-3">
@@ -31,7 +48,7 @@ defineProps({
       </div>
 
       <!-- Value -->
-      <p :class="['text-3xl font-bold font-body', valueClass]">{{ value }}</p>
+      <p :class="[valueSize, 'font-bold font-body', valueClass]">{{ value }}</p>
 
       <!-- Subtitle (shown when no trend) -->
       <p v-if="subtitle && !trend" class="text-xs text-muted-foreground mt-1">{{ subtitle }}</p>

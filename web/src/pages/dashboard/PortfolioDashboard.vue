@@ -46,7 +46,7 @@ const kpiCards = [
 const communities = [
   { name: 'Crystal Mews BC', location: 'Bramley View', units: 47, arrears: 'R 54,320', adminFund: 'R 28,450', reserveFund: 'R 42,100', compliance: 'Compliant', status: 'green' },
   { name: 'King Arthur BC', location: 'Florida', units: 32, arrears: 'R 38,190', adminFund: 'R 18,750', reserveFund: 'R 31,200', compliance: 'Due Soon', status: 'amber' },
-  { name: 'Lyndhurst Estate', location: 'Lyndhurst', units: 28, arrears: 'R 49,156', adminFund: 'R 15,100', reserveFund: 'R 22,400', compliance: 'Non-Compliant', status: 'red' },
+  { name: 'Lyndhurst Community', location: 'Lyndhurst', units: 28, arrears: 'R 49,156', adminFund: 'R 15,100', reserveFund: 'R 22,400', compliance: 'Non-Compliant', status: 'red' },
 ]
 
 const debtAging = [
@@ -59,9 +59,9 @@ const debtAging = [
 const activity = [
   { text: 'Payment received — Crystal Mews BC, Unit 14', time: '2 hours ago', dot: '#22c55e' },
   { text: 'Letter of demand sent — King Arthur BC, Unit 7', time: '3 hours ago', dot: '#F75A68' },
-  { text: 'New task assigned — Lyndhurst Estate, roof inspection', time: '5 hours ago', dot: '#1F3A5C' },
+  { text: 'New task assigned — Lyndhurst Community, roof inspection', time: '5 hours ago', dot: '#1F3A5C' },
   { text: 'Compliance deadline approaching — AGM filing (Crystal Mews)', time: 'Yesterday', dot: '#D97706' },
-  { text: 'Bank statement imported — Lyndhurst Estate Admin Fund', time: 'Yesterday', dot: '#D89B4B' },
+  { text: 'Bank statement imported — Lyndhurst Community Admin Fund', time: 'Yesterday', dot: '#D89B4B' },
 ]
 
 const quickStats = [

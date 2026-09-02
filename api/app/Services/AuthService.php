@@ -23,7 +23,7 @@ class AuthService
      * @param User $user
      * @return bool
      */
-    public function isTenantAdmin(User $user): bool
+    public function isOrganizationAdmin(User $user): bool
     {
         return $user->hasRole('company-admin');
     }
@@ -33,7 +33,7 @@ class AuthService
      * Super-admins and company-admins are implicitly granted all permissions.
      *
      * @param User        $user
-     * @param string      $permission   e.g. 'estate.update'
+     * @param string      $permission   e.g. 'community.update'
      * @param mixed|null  $scopeId      Reserved for future scope-based checks
      * @return bool
      */
@@ -48,14 +48,14 @@ class AuthService
     }
 
     /**
-     * Determine whether the given user belongs to a specific tenant.
+     * Determine whether the given user belongs to a specific organization.
      *
      * @param User   $user
-     * @param string $tenantId
+     * @param string $organizationId
      * @return bool
      */
-    public function hasTenantAccess(User $user, string $tenantId): bool
+    public function hasOrganizationAccess(User $user, string $organizationId): bool
     {
-        return (string) $user->tenant_id === (string) $tenantId;
+        return (string) $user->organization_id === (string) $organizationId;
     }
 }

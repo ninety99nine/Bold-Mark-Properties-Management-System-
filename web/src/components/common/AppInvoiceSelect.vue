@@ -23,6 +23,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import api from '@/composables/useApi'
+import { useCountryStore } from '@/stores/country'
+
+const countryStore = useCountryStore()
 
 const props = defineProps({
   modelValue:        { default: '' },
@@ -50,9 +53,7 @@ let debounceTimer = null
 // ── Display helpers ────────────────────────────────────────────────────
 function fmtCurrency(amount) {
   if (amount === null || amount === undefined) return '—'
-  const num = Math.round(Number(amount))
-  if (isNaN(num)) return '—'
-  return `R\u00a0${num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}`
+  return countryStore.formatCurrency(amount)
 }
 
 function fmtPeriod(dateStr) {
@@ -76,7 +77,7 @@ function statusLabel(s) { return STATUS_LABEL[s] ?? s }
 
 function billedToName(inv) {
   if (inv.billed_to_type === 'owner') return inv.billed_to_owner?.full_name ?? '—'
-  return inv.billed_to_unit_tenant?.full_name ?? '—'
+  return inv.billed_to_unit_occupant?.full_name ?? '—'
 }
 
 // ── Trigger label ──────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ onUnmounted(() => {
                 ref="searchRef"
                 v-model="search"
                 type="text"
-                placeholder="Search by invoice #, unit, name, or charge type..."
+                placeholder="Search by invoice #, unit, name, or ledger..."
                 class="w-full h-8 pl-8 pr-3 text-xs rounded border border-border bg-muted/30 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 placeholder:text-muted-foreground"
               />
               <!-- Loading spinner inside search -->
@@ -285,9 +286,9 @@ onUnmounted(() => {
                     </span>
                   </div>
                 </div>
-                <!-- Row 2: charge type · period · billed to -->
+                <!-- Row 2: ledger · period · billed to -->
                 <p class="text-[11px] text-muted-foreground mt-0.5 truncate">
-                  {{ inv.charge_type?.name ?? '—' }}
+                  {{ inv.ledger?.name ?? '—' }}
                   <span class="mx-1 opacity-40">·</span>
                   {{ fmtPeriod(inv.billing_period) }}
                   <span class="mx-1 opacity-40">·</span>

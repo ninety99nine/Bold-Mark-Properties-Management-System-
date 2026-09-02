@@ -25,6 +25,9 @@ class UnitChargeConfigPolicy extends BasePolicy
      */
     public function viewAny(User $user, Unit $unit): bool
     {
+        if ($unit->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -33,6 +36,9 @@ class UnitChargeConfigPolicy extends BasePolicy
      */
     public function view(User $user, Unit $unit, UnitChargeConfig $config): bool
     {
+        if ($unit->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -41,6 +47,9 @@ class UnitChargeConfigPolicy extends BasePolicy
      */
     public function create(User $user, Unit $unit): bool
     {
+        if ($unit->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -49,6 +58,9 @@ class UnitChargeConfigPolicy extends BasePolicy
      */
     public function update(User $user, Unit $unit, UnitChargeConfig $config): bool
     {
+        if ($unit->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -57,6 +69,9 @@ class UnitChargeConfigPolicy extends BasePolicy
      */
     public function deleteAny(User $user, Unit $unit): bool
     {
+        if ($unit->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -65,6 +80,9 @@ class UnitChargeConfigPolicy extends BasePolicy
      */
     public function delete(User $user, Unit $unit, UnitChargeConfig $config): bool
     {
+        if ($unit->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 }

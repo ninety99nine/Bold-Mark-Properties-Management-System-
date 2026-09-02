@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\UnitChargeConfigController;
 
-Route::prefix('estates/{estate}/units/{unit}/charge-configs')
+Route::prefix('communities/{community}/units/{unit}/charge-configs')
     ->controller(UnitChargeConfigController::class)
     ->middleware(['auth:api'])
     ->group(function () {

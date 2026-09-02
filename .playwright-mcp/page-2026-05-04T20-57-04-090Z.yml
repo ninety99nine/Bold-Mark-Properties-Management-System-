@@ -1,0 +1,211 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - paragraph [ref=e7]: Bold Mark Properties
+      - paragraph [ref=e8]: Moving People Forward
+    - navigation [ref=e9]:
+      - paragraph [ref=e10]: Menu
+      - link "Home" [ref=e11] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e12]
+        - generic [ref=e15]: Home
+      - button "Portfolio" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - generic [ref=e20]: Portfolio
+        - img [ref=e21]
+      - generic [ref=e23]:
+        - link "Estates" [ref=e24] [cursor=pointer]:
+          - /url: /estates
+          - img [ref=e25]
+          - generic [ref=e30]: Estates
+        - link "Vacancies" [ref=e31] [cursor=pointer]:
+          - /url: /vacancies
+          - img [ref=e32]
+          - generic [ref=e35]: Vacancies
+      - link "Billing" [ref=e36] [cursor=pointer]:
+        - /url: /billing
+        - img [ref=e37]
+        - generic [ref=e40]: Billing
+      - link "Cashbook" [ref=e41] [cursor=pointer]:
+        - /url: /cashbook
+        - img [ref=e42]
+        - generic [ref=e45]: Cashbook
+      - button "Collections" [ref=e46] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e49]: Collections
+        - img [ref=e50]
+      - generic [ref=e52]:
+        - link "Arrears" [ref=e53] [cursor=pointer]:
+          - /url: /arrears
+          - img [ref=e54]
+          - generic [ref=e56]: Arrears
+        - link "Age Analysis" [ref=e57] [cursor=pointer]:
+          - /url: /age-analysis
+          - img [ref=e58]
+          - generic [ref=e61]: Age Analysis
+      - link "Compliance" [ref=e62] [cursor=pointer]:
+        - /url: /compliance
+        - img [ref=e63]
+        - generic [ref=e67]: Compliance
+      - link "Users" [ref=e68] [cursor=pointer]:
+        - /url: /users
+        - img [ref=e69]
+        - generic [ref=e74]: Users
+    - generic [ref=e75]:
+      - link "Settings" [ref=e76] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e77]
+        - generic [ref=e80]: Settings
+      - button "Collapse" [ref=e81] [cursor=pointer]:
+        - img [ref=e82]
+        - generic [ref=e85]: Collapse
+  - generic [ref=e86]:
+    - banner [ref=e87]:
+      - generic [ref=e91]:
+        - img
+        - textbox "Search estates, units, people..." [ref=e92]
+      - generic [ref=e93]:
+        - button [ref=e95] [cursor=pointer]:
+          - img [ref=e96]
+        - generic [ref=e100]:
+          - button "Justin Company Admin" [active] [ref=e101] [cursor=pointer]:
+            - img [ref=e103]
+            - generic [ref=e106]:
+              - paragraph [ref=e107]: Justin
+              - paragraph [ref=e108]: Company Admin
+            - img [ref=e109]
+          - generic [ref=e385]:
+            - button "Account Settings" [ref=e386] [cursor=pointer]:
+              - img [ref=e387]
+              - text: Account Settings
+            - button "Log Out" [ref=e391] [cursor=pointer]:
+              - img [ref=e392]
+              - text: Log Out
+    - main [ref=e111]:
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - heading "Dashboard" [level=1] [ref=e114]
+          - paragraph [ref=e115]: Portfolio overview for Bold Mark Properties
+        - generic [ref=e116]:
+          - generic [ref=e243]:
+            - generic: View estates
+            - generic [ref=e245] [cursor=pointer]:
+              - generic [ref=e246]:
+                - generic [ref=e247]: Total Estates
+                - img [ref=e248]
+              - paragraph [ref=e251]: "0"
+              - paragraph [ref=e252]: 0 units
+          - generic [ref=e253]:
+            - generic: View arrears
+            - generic [ref=e255] [cursor=pointer]:
+              - generic [ref=e256]:
+                - generic [ref=e257]: Total Outstanding
+                - img [ref=e258]
+              - paragraph [ref=e261]: R 0
+              - generic [ref=e262]:
+                - img [ref=e263]
+                - generic [ref=e266]: 0 unpaid invoices
+          - generic [ref=e267]:
+            - generic: View cashbook
+            - generic [ref=e269] [cursor=pointer]:
+              - generic [ref=e270]:
+                - generic [ref=e271]: Collected This Month
+                - img [ref=e272]
+              - paragraph [ref=e275]: R 0
+              - generic [ref=e276]:
+                - img [ref=e277]
+                - generic [ref=e280]: 0 payments this month
+          - generic [ref=e281]:
+            - generic: View vacancies
+            - generic [ref=e283] [cursor=pointer]:
+              - generic [ref=e284]:
+                - generic [ref=e285]: Occupancy Rate
+                - img [ref=e286]
+              - paragraph [ref=e290]: 0%
+              - paragraph [ref=e291]: 0 vacant units
+        - generic [ref=e141]:
+          - button "Run Billing" [ref=e142] [cursor=pointer]:
+            - img [ref=e143]
+            - text: Run Billing
+          - button "Upload Cashbook" [ref=e146] [cursor=pointer]:
+            - img [ref=e147]
+            - text: Upload Cashbook
+          - button "View Age Analysis" [ref=e150] [cursor=pointer]:
+            - img [ref=e151]
+            - text: View Age Analysis
+        - generic [ref=e154]:
+          - generic [ref=e155]:
+            - generic [ref=e157]:
+              - heading "Recent Invoices" [level=3] [ref=e158]
+              - button "View All" [ref=e159] [cursor=pointer]:
+                - text: View All
+                - img [ref=e160]
+            - generic [ref=e294]:
+              - img [ref=e296]
+              - paragraph [ref=e299]: No invoices found
+              - paragraph [ref=e300]: Try selecting a different filter above
+          - generic [ref=e199]:
+            - generic [ref=e201]:
+              - heading "Estates Overview" [level=3] [ref=e202]
+              - generic [ref=e203]:
+                - button "Add Estate" [ref=e204] [cursor=pointer]:
+                  - img [ref=e205]
+                  - text: Add Estate
+                - button "View All" [ref=e206] [cursor=pointer]:
+                  - text: View All
+                  - img [ref=e207]
+            - generic [ref=e302]:
+              - img [ref=e304]
+              - paragraph [ref=e307]: No estates yet
+              - paragraph [ref=e308]: Add your first estate to get started
+        - generic [ref=e309]:
+          - generic [ref=e311]:
+            - generic [ref=e312]:
+              - generic [ref=e313]:
+                - img [ref=e315]
+                - heading "Getting Started" [level=3] [ref=e319]
+              - paragraph [ref=e320]: Complete these steps to unlock the full power of your portfolio management platform.
+            - generic [ref=e321]:
+              - paragraph [ref=e322]: 0/5
+              - paragraph [ref=e323]: steps complete
+          - generic [ref=e325]:
+            - generic [ref=e326]:
+              - generic [ref=e329]: "1"
+              - generic [ref=e330]:
+                - paragraph [ref=e331]: Create your first estate
+                - paragraph [ref=e332]: Set up a body corporate, rental portfolio, or mixed estate to start managing properties.
+              - button "Create Estate" [ref=e334] [cursor=pointer]:
+                - text: Create Estate
+                - img [ref=e335]
+            - generic [ref=e337]:
+              - generic [ref=e340]: "2"
+              - generic [ref=e341]:
+                - paragraph [ref=e342]: Add units to your estate
+                - paragraph [ref=e343]: Register the individual units, plots, or apartments that make up the estate.
+              - generic [ref=e345]:
+                - img [ref=e346]
+                - text: Locked
+            - generic [ref=e349]:
+              - generic [ref=e352]: "3"
+              - generic [ref=e353]:
+                - paragraph [ref=e354]: Assign owners and tenants to units
+                - paragraph [ref=e355]: Link each unit to its registered owner. If rented out, add the tenant and lease details.
+              - generic [ref=e357]:
+                - img [ref=e358]
+                - text: Locked
+            - generic [ref=e361]:
+              - generic [ref=e364]: "4"
+              - generic [ref=e365]:
+                - paragraph [ref=e366]: Run your first billing
+                - paragraph [ref=e367]: Generate levy, rent, and all other charge invoices for active units in one click.
+              - generic [ref=e369]:
+                - img [ref=e370]
+                - text: Locked
+            - generic [ref=e373]:
+              - generic [ref=e376]: "5"
+              - generic [ref=e377]:
+                - paragraph [ref=e378]: Record a payment in the cashbook
+                - paragraph [ref=e379]: Log incoming bank payments and allocate them to the correct invoices to track what's been collected.
+              - generic [ref=e381]:
+                - img [ref=e382]
+                - text: Locked

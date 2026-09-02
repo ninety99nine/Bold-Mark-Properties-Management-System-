@@ -1,0 +1,42 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - img "Property Management Platform" [ref=e8]
+      - generic [ref=e10]: Property Management
+    - generic [ref=e11]:
+      - generic [ref=e14]: Management Platform
+      - heading "Moving People Forward." [level=1] [ref=e15]:
+        - text: Moving People
+        - emphasis [ref=e16]: Forward.
+      - paragraph [ref=e17]: The complete property management platform for Body Corporate and HOA managing agents.
+      - generic [ref=e18]:
+        - generic [ref=e19]: Levy Billing
+        - generic [ref=e20]: Debt Management
+        - generic [ref=e21]: Compliance
+        - generic [ref=e22]: Financials
+        - generic [ref=e23]: Communications
+    - generic [ref=e25]:
+      - generic [ref=e26]: Transparent
+      - generic [ref=e28]: Secure
+      - generic [ref=e30]: Reliable
+  - generic [ref=e32]:
+    - generic [ref=e33]:
+      - heading "Welcome back" [level=2] [ref=e34]
+      - paragraph [ref=e35]: Sign in to your management portal
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38] [cursor=pointer]: Email address *
+        - textbox "Email address *" [ref=e40]:
+          - /placeholder: you@company.com
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - generic [ref=e43] [cursor=pointer]: Password
+          - link "Forgot password?" [ref=e44] [cursor=pointer]:
+            - /url: /forgot-password
+        - generic [ref=e45]:
+          - textbox "Password" [ref=e46]:
+            - /placeholder: ••••••••••
+          - button [ref=e47] [cursor=pointer]:
+            - img [ref=e48]
+      - button "Sign in" [ref=e51] [cursor=pointer]
+    - paragraph [ref=e52]: © 2026 Property Management Platform · All rights reserved

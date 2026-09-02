@@ -32,6 +32,9 @@ class InvoicePolicy extends BasePolicy
      */
     public function view(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return true;
     }
 
@@ -48,21 +51,17 @@ class InvoicePolicy extends BasePolicy
      */
     public function update(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'invoice.update');
     }
 
     /**
      * Determine whether the user can bulk-delete invoices.
-     * Iterates the incoming `invoice_ids` array and checks permission.
      */
     public function deleteAny(User $user): bool
     {
-        $invoiceIds = request()->input('invoice_ids', []);
-
-        if (empty($invoiceIds)) {
-            return false;
-        }
-
         return $this->authService->hasPermission($user, 'invoice.delete');
     }
 
@@ -71,6 +70,9 @@ class InvoicePolicy extends BasePolicy
      */
     public function delete(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'invoice.delete');
     }
 
@@ -87,6 +89,9 @@ class InvoicePolicy extends BasePolicy
      */
     public function restore(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'invoice.delete');
     }
 
@@ -95,6 +100,9 @@ class InvoicePolicy extends BasePolicy
      */
     public function forceDelete(User $user, Invoice $invoice): bool
     {
+        if ($invoice->organization_id !== $user->organization_id) {
+            abort(404);
+        }
         return $this->authService->hasPermission($user, 'invoice.delete');
     }
 }

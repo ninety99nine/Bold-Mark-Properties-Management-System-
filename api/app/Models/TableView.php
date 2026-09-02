@@ -14,7 +14,7 @@ class TableView extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
-        'tenant_id',
+        'organization_id',
         'user_id',
         'context',
         'name',

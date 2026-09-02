@@ -1,0 +1,208 @@
+[ 3708072ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/src/router/index.js?t=1777932720979:0
+[ 4710671ms] [WARNING] [Vue warn]: Unhandled error during execution of native event handler 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 max-h-0" enter-to-class="opacity-100 max-h-[5000px]"  ... > 
+  at <ComplianceChecklistPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/compliance/checklists/019df4d4-dd28-727e-ba56-967199cea3eb-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 4710704ms] TypeError: _ctx.triggerAttachFile is not a function
+    at onClick (http://localhost:3000/src/pages/compliance/ComplianceChecklistPage.vue?t=1777933720335:1113:64)
+    at callWithErrorHandling (http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1873:17)
+    at callWithAsyncErrorHandling (http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1880:15)
+    at HTMLButtonElement.invoker (http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:7602:3)
+[ 4711865ms] [WARNING] [Vue warn]: Unhandled error during execution of native event handler 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 max-h-0" enter-to-class="opacity-100 max-h-[5000px]"  ... > 
+  at <ComplianceChecklistPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/compliance/checklists/019df4d4-dd28-727e-ba56-967199cea3eb-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 4711866ms] TypeError: _ctx.triggerAttachFile is not a function
+    at onClick (http://localhost:3000/src/pages/compliance/ComplianceChecklistPage.vue?t=1777933720335:1113:64)
+    at callWithErrorHandling (http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1873:17)
+    at callWithAsyncErrorHandling (http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1880:15)
+    at HTMLButtonElement.invoker (http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:7602:3)
+[ 4786544ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <SettingsPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/settings-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 4786665ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/settings:0
+[ 4786666ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/settings:0
+[ 4786666ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/settings:0
+[ 4798191ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 4798267ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 8430302ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/@vite/client:968
+[ 8433490ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > key="/users/2-null" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 8436064ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 8436722ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 8529575ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/@vite/client:968
+[ 8530720ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > key="/users/2-null" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 8531031ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[ 8531177ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[32775510ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/@vite/client:968
+[32777209ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > key="/users/2-null" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[32778327ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[32778576ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[38482740ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/@vite/client:968
+[38486284ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > key="/users/2-null" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[38487300ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[38487491ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[38961509ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/@vite/client:968
+[38962560ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > key="/users/2-null" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[38962884ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[38962966ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[39115304ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/@vite/client:968
+[39116412ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > key="/users/2-null" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< undefined > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[39116787ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735
+[39116931ms] [WARNING] [Vue warn]: Component inside <Transition> renders non-element root node that cannot be animated. 
+  at <UserDetailPage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > key="/users/2-ZA" > 
+  at <BaseTransition appear=false persisted=false mode=undefined  ... > 
+  at <Transition name="page" > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< Proxy(Object) > > 
+  at <RouterView> 
+  at <App> @ http://localhost:3000/node_modules/.vite/deps/vue.runtime.esm-bundler-DewitlPc.js?v=f456c76a:1735

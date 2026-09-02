@@ -22,6 +22,14 @@ const routes = [
     meta: { guest: true },
   },
 
+  // ── Profile selection (authenticated, full-screen — the WeConnectU entry anchor) ──
+  {
+    path: '/select-profile',
+    name: 'select-profile',
+    component: () => import('@/pages/auth/SelectProfilePage.vue'),
+    meta: { requiresAuth: true },
+  },
+
   // ── App shell (authenticated) ─────────────────────────────────────
   {
     path: '/',
@@ -38,24 +46,39 @@ const routes = [
         component: () => import('@/pages/dashboard/DashboardPage.vue'),
       },
       {
-        path: 'estates',
-        name: 'estates',
-        component: () => import('@/pages/estates/EstatesPage.vue'),
+        path: 'communities',
+        name: 'communities',
+        component: () => import('@/pages/communities/CommunitiesPage.vue'),
       },
       {
-        path: 'estates/:id',
-        name: 'estate-detail',
-        component: () => import('@/pages/estates/EstateDetailPage.vue'),
+        path: 'vacancies',
+        name: 'vacancies',
+        component: () => import('@/pages/vacancies/VacanciesPage.vue'),
       },
       {
-        path: 'estates/:estateId/units/:unitId',
+        path: 'communications',
+        name: 'communications',
+        component: () => import('@/pages/communications/CommunicationsIndex.vue'),
+      },
+      {
+        path: 'communities/:id',
+        name: 'community-detail',
+        component: () => import('@/pages/communities/CommunityDetailPage.vue'),
+      },
+      {
+        path: 'communities/:communityId/take-on',
+        name: 'community-take-on',
+        component: () => import('@/pages/communities/CommunityTakeOnPage.vue'),
+      },
+      {
+        path: 'communities/:communityId/units/:unitId',
         name: 'unit-detail',
-        component: () => import('@/pages/estates/UnitDetailPage.vue'),
+        component: () => import('@/pages/communities/UnitDetailPage.vue'),
       },
       {
-        path: 'estates/:estateId/units/:unitId/tenants/:tenantId',
-        name: 'tenant-detail',
-        component: () => import('@/pages/estates/TenantDetailPage.vue'),
+        path: 'communities/:communityId/units/:unitId/occupants/:occupantId',
+        name: 'occupant-detail',
+        component: () => import('@/pages/communities/OccupantDetailPage.vue'),
       },
       {
         path: 'billing',
@@ -77,10 +100,97 @@ const routes = [
         name: 'cashbook-entry',
         component: () => import('@/pages/cashbook/CashbookEntryDetailPage.vue'),
       },
+      // ── Compliance routes ──────────────────────────────────────────
+      {
+        path: 'compliance',
+        name: 'compliance',
+        component: () => import('@/pages/compliance/ComplianceDashboardPage.vue'),
+      },
+      {
+        path: 'compliance/checklists/:checklistId',
+        name: 'compliance-checklist',
+        component: () => import('@/pages/compliance/ComplianceChecklistPage.vue'),
+      },
+      {
+        path: 'compliance/templates',
+        name: 'compliance-templates',
+        component: () => import('@/pages/compliance/ComplianceTemplatesPage.vue'),
+      },
+      {
+        path: 'compliance/templates/:templateId',
+        name: 'compliance-template-detail',
+        component: () => import('@/pages/compliance/ComplianceTemplateDetailPage.vue'),
+      },
+
+      {
+        path: 'tasks',
+        name: 'tasks',
+        component: () => import('@/pages/tasks/TasksIndex.vue'),
+      },
+      {
+        path: 'customer-management',
+        name: 'customer-management',
+        component: () => import('@/pages/customer-management/CustomerManagementPage.vue'),
+      },
+      {
+        path: 'customers/invoice',
+        name: 'customer-invoice',
+        component: () => import('@/pages/customer-management/CustomerInvoicePage.vue'),
+      },
+      {
+        path: 'customers/credit-note',
+        name: 'credit-note',
+        component: () => import('@/pages/customer-management/CreditNotePage.vue'),
+      },
+      {
+        path: 'customers/manage',
+        name: 'manage-customers',
+        component: () => import('@/pages/customer-management/ManageCustomersPage.vue'),
+      },
+      {
+        path: 'customers/manage/:ownerId',
+        name: 'customer-detail',
+        component: () => import('@/pages/customer-management/CustomerDetailPage.vue'),
+      },
+      {
+        path: 'customers/status',
+        name: 'customer-status',
+        component: () => import('@/pages/customer-management/CustomerStatusPage.vue'),
+      },
+      {
+        path: 'customers/status/batches',
+        name: 'status-batches',
+        component: () => import('@/pages/customer-management/StatusBatchesPage.vue'),
+      },
+      {
+        path: 'customers/status/automatic',
+        name: 'automatic-status-changes',
+        component: () => import('@/pages/customer-management/AutomaticStatusChangesPage.vue'),
+      },
+      {
+        path: 'customers/statements',
+        name: 'customer-statements',
+        component: () => import('@/pages/customer-management/CustomerStatementsPage.vue'),
+      },
+      {
+        path: 'customers/ledger',
+        name: 'detailed-customer-ledger',
+        component: () => import('@/pages/customer-management/DetailedCustomerLedgerPage.vue'),
+      },
       {
         path: 'age-analysis',
         name: 'age-analysis',
         component: () => import('@/pages/age-analysis/AgeAnalysisPage.vue'),
+      },
+      {
+        path: 'age-analysis/notices',
+        name: 'legal-notices',
+        component: () => import('@/pages/age-analysis/LegalNoticesPage.vue'),
+      },
+      {
+        path: 'age-analysis/customer-notices',
+        name: 'customer-notices',
+        component: () => import('@/pages/age-analysis/CustomerNoticesPage.vue'),
       },
       {
         path: 'owners/:ownerId',
@@ -99,6 +209,40 @@ const routes = [
       },
       {
         path: 'settings',
+        redirect: '/settings/profile',
+      },
+      {
+        path: 'settings/general',
+        name: 'community-general-settings',
+        component: () => import('@/pages/settings/CommunityGeneralSettingsPage.vue'),
+      },
+      {
+        path: 'settings/address-contact',
+        name: 'community-address-contact',
+        component: () => import('@/pages/settings/CommunityAddressContactPage.vue'),
+      },
+      {
+        path: 'settings/charges',
+        name: 'community-charges',
+        component: () => import('@/pages/settings/CommunityChargesSettingsPage.vue'),
+      },
+      {
+        path: 'settings/default-billing-setup',
+        name: 'default-billing-setup',
+        component: () => import('@/pages/settings/DefaultBillingSetupPage.vue'),
+      },
+      {
+        path: 'settings/users',
+        name: 'community-users',
+        component: () => import('@/pages/settings/CommunityUsersPage.vue'),
+      },
+      {
+        path: 'settings/company',
+        name: 'company-details',
+        component: () => import('@/pages/settings/CompanyDetailsPage.vue'),
+      },
+      {
+        path: 'settings/:tab',
         name: 'settings',
         component: () => import('@/pages/settings/SettingsPage.vue'),
       },
@@ -127,6 +271,14 @@ router.beforeEach((to) => {
 
   if (to.meta.guest && auth.isAuthenticated) {
     return { name: 'dashboard' }
+  }
+
+  // After a page reload the auth token is restored from storage but the user
+  // profile is not — hydrate it so the topbar (name/role) and permission checks
+  // populate. Fire-and-forget: navigation is not blocked; the UI fills in
+  // reactively once it resolves.
+  if (auth.isAuthenticated && !auth.user) {
+    auth.fetchUser().catch(() => {})
   }
 })
 

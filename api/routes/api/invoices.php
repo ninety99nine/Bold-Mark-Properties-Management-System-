@@ -12,6 +12,7 @@ Route::prefix('invoices')
         Route::get('/summary', 'showInvoicesSummary')->name('show.invoices.summary');
         Route::get('/deleted', 'showDeletedInvoices')->name('show.deleted.invoices');
         Route::post('/', 'createInvoice')->name('create.invoice');
+        Route::post('/customer-invoice', 'createCustomerInvoice')->name('create.customer.invoice');
         Route::post('/run-billing', 'runBilling')->name('run.billing');
         Route::post('/adhoc-billing', 'createAdhocBilling')->name('create.adhoc.billing');
         Route::delete('/', 'deleteInvoices')->name('delete.invoices');

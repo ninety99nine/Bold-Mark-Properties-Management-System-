@@ -16,8 +16,8 @@ class CashbookEntryFactory extends Factory
     public function definition(): array
     {
         return [
-            'estate_id'       => null,
-            'tenant_id'       => null,
+            'community_id'       => null,
+            'organization_id'       => null,
             'description'     => fake()->sentence(4),
             'amount'          => fake()->randomFloat(2, 500, 15000),
             'type'            => fake()->randomElement(CashbookEntryType::values()),
@@ -32,14 +32,14 @@ class CashbookEntryFactory extends Factory
     public function credit(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => CashbookEntryType::Credit->value,
+            'type' => CashbookEntryType::CREDIT->value,
         ]);
     }
 
     public function debit(): static
     {
         return $this->state(fn (array $attributes) => [
-            'type' => CashbookEntryType::Debit->value,
+            'type' => CashbookEntryType::DEBIT->value,
         ]);
     }
 

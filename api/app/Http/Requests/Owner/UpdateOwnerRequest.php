@@ -14,18 +14,21 @@ class UpdateOwnerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'full_name'  => ['sometimes', 'string', 'max:255'],
-            'email'      => ['sometimes', 'email', 'max:255'],
-            'phone'      => ['sometimes', 'nullable', 'string', 'max:30'],
-            'id_number'  => ['sometimes', 'nullable', 'string', 'max:50'],
-            'address'    => ['sometimes', 'nullable', 'string', 'max:500'],
+            'full_name'          => ['sometimes', 'string', 'max:255'],
+            'email'              => ['sometimes', 'email', 'max:255'],
+            'secondary_emails'   => ['sometimes', 'nullable', 'array'],
+            'secondary_emails.*' => ['email', 'max:255'],
+            'phone'              => ['sometimes', 'nullable', 'string', 'max:30'],
+            'id_number'          => ['sometimes', 'nullable', 'string', 'max:50'],
+            'address'            => ['sometimes', 'nullable', 'string', 'max:500'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'email.email' => 'The email address must be a valid email.',
+            'email.email'              => 'The email address must be a valid email.',
+            'secondary_emails.*.email' => 'Each additional email must be a valid email address.',
         ];
     }
 }

@@ -58,6 +58,9 @@ const props = defineProps({
   rows:         { type: Number, default: 4 },
   /** Prepend a built-in icon. Currently supports: 'search' */
   leadingIcon:  { type: String, default: null },
+  /** Native min/max for number inputs */
+  min:          { type: [Number, String], default: undefined },
+  max:          { type: [Number, String], default: undefined },
 })
 
 const emit = defineEmits(['update:modelValue', 'focus', 'blur', 'input', 'keydown'])
@@ -97,6 +100,20 @@ function handleInput(e) {
   emit('update:modelValue', e.target.value)
   emit('input', e)
 }
+
+function handleBlur(e) {
+  if (props.type === 'number' && (props.min !== undefined || props.max !== undefined)) {
+    const val = parseFloat(e.target.value)
+    if (!isNaN(val)) {
+      const clamped = Math.min(
+        props.max !== undefined ? Number(props.max) : Infinity,
+        Math.max(props.min !== undefined ? Number(props.min) : -Infinity, val)
+      )
+      if (clamped !== val) emit('update:modelValue', String(clamped))
+    }
+  }
+  emit('blur', e)
+}
 </script>
 
 <template>
@@ -120,7 +137,7 @@ function handleInput(e) {
       :class="standaloneClass"
       @input="handleInput"
       @focus="$emit('focus', $event)"
-      @blur="$emit('blur', $event)"
+      @blur="handleBlur"
       @keydown="$emit('keydown', $event)"
     />
 
@@ -142,11 +159,13 @@ function handleInput(e) {
         :disabled="disabled"
         :readonly="readonly"
         :autocomplete="autocomplete"
+        :min="min"
+        :max="max"
         class="flex-1 min-w-0 h-full px-3 text-sm text-fg bg-transparent border-none outline-none
                placeholder:text-muted-fg disabled:cursor-not-allowed"
         @input="handleInput"
         @focus="$emit('focus', $event)"
-        @blur="$emit('blur', $event)"
+        @blur="handleBlur"
         @keydown="$emit('keydown', $event)"
       />
 
@@ -182,10 +201,12 @@ function handleInput(e) {
         :disabled="disabled"
         :readonly="readonly"
         :autocomplete="autocomplete"
+        :min="min"
+        :max="max"
         :class="standaloneClass"
         @input="handleInput"
         @focus="$emit('focus', $event)"
-        @blur="$emit('blur', $event)"
+        @blur="handleBlur"
         @keydown="$emit('keydown', $event)"
       />
 

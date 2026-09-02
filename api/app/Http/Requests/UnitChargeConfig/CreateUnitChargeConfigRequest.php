@@ -15,8 +15,8 @@ class CreateUnitChargeConfigRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'charge_type_id' => ['required', 'uuid', 'exists:charge_types,id'],
-            'amount'         => ['required', 'numeric', 'min:0'],
+            'ledger_id' => ['required', 'uuid', 'exists:ledgers,id'],
+            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'is_active'      => ['sometimes', 'boolean'],
         ];
     }
@@ -24,9 +24,9 @@ class CreateUnitChargeConfigRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'charge_type_id.required' => 'The charge type is required.',
-            'charge_type_id.uuid'     => 'The charge type ID must be a valid UUID.',
-            'charge_type_id.exists'   => 'The selected charge type does not exist.',
+            'ledger_id.required' => 'The ledger is required.',
+            'ledger_id.uuid'     => 'The ledger ID must be a valid UUID.',
+            'ledger_id.exists'   => 'The selected ledger does not exist.',
             'amount.required'         => 'The amount is required.',
             'amount.numeric'          => 'The amount must be a number.',
             'amount.min'              => 'The amount must be at least 0.',

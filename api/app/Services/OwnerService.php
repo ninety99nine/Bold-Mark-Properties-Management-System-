@@ -11,7 +11,7 @@ use App\Http\Resources\OwnerResources;
 class OwnerService extends BaseService
 {
     /**
-     * Return a paginated, filtered list of owners for the authenticated tenant.
+     * Return a paginated, filtered list of owners for the authenticated occupant.
      *
      * @param array $data
      * @return OwnerResources
@@ -19,11 +19,11 @@ class OwnerService extends BaseService
     public function showOwners(array $data): OwnerResources
     {
         $user  = Auth::user();
-        $query = Owner::where('tenant_id', $user->tenant_id)
-            ->with(['unit.estate']);
+        $query = Owner::where('organization_id', $user->organization_id)
+            ->with(['unit.community']);
 
-        if (!empty($data['estate_id'])) {
-            $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
+        if (!empty($data['community_id'])) {
+            $query->whereHas('unit', fn($q) => $q->where('community_id', $data['community_id']));
         }
 
         if (!request()->has('_sort')) {
@@ -44,7 +44,7 @@ class OwnerService extends BaseService
     {
         $user   = Auth::user();
         $owners = Owner::whereIn('id', $ownerIds)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->get();
 
         $total = $owners->count();
@@ -70,7 +70,7 @@ class OwnerService extends BaseService
      */
     public function showOwner(Owner $owner): OwnerResource
     {
-        $owner->load(['unit.estate', 'invoices.chargeType']);
+        $owner->load(['unit.community', 'invoices.ledger']);
 
         return $this->showResource($owner);
     }
@@ -86,7 +86,7 @@ class OwnerService extends BaseService
     {
         $owner->update(
             collect($data)
-                ->only(['full_name', 'email', 'phone', 'id_number', 'address'])
+                ->only(['full_name', 'email', 'secondary_emails', 'phone', 'id_number', 'address'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray()
         );

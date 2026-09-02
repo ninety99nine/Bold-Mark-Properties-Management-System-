@@ -10,9 +10,13 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppInput from '@/components/common/AppInput.vue'
 import AppTableToolbar from '@/components/common/AppTableToolbar.vue'
 import AppExportModal from '@/components/common/AppExportModal.vue'
+import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route  = useRoute()
+const countryStore = useCountryStore()
+const { success } = useToast()
 
 // ─── Remote state ─────────────────────────────────────────────────────────
 const invoices   = ref([])
@@ -20,10 +24,10 @@ const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: 15 }
 const summary    = ref({
   total: 0, total_amount: 0,
   paid_count: 0, overdue_count: 0, partially_paid_count: 0, unpaid_count: 0,
-  revenue_by_charge_type: [],
+  revenue_by_ledger: [],
 })
-const chargeTypes = ref([])
-const estates     = ref([])
+const ledgers = ref([])
+const communities     = ref([])
 
 const loading        = ref(false)
 const summaryLoading = ref(false)
@@ -64,16 +68,16 @@ const billingFilterFields = computed(() => [
     ],
   },
   {
-    key: 'charge_type_id',
-    label: 'Charge Type',
-    options: chargeTypes.value.map(ct => ({ value: ct.id, label: ct.name })),
+    key: 'ledger_id',
+    label: 'Ledger',
+    options: ledgers.value.map(ct => ({ value: ct.id, label: ct.name })),
   },
   {
     key: 'billed_to_type',
     label: 'Recipient Type',
     options: [
       { value: 'owner',  label: 'Owner'  },
-      { value: 'tenant', label: 'Tenant' },
+      { value: 'occupant', label: 'Occupant' },
     ],
   },
 ])
@@ -107,17 +111,19 @@ function buildApiParams() {
   }
 
   if (state.filters?.status)          params.status          = state.filters.status
-  if (state.filters?.charge_type_id)  params.charge_type_id  = state.filters.charge_type_id
+  if (state.filters?.ledger_id)  params.ledger_id  = state.filters.ledger_id
   if (state.filters?.billed_to_type)  params.billed_to_type  = state.filters.billed_to_type
   if (state.sort)                      params._sort           = SORT_API_MAP[state.sort] ?? state.sort
+
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
 
   return params
 }
 
 // ─── Filter option lists (for modals) ─────────────────────────────────────
-const estateOpts = computed(() => [
-  { value: '', label: 'Select estate...' },
-  ...estates.value.map(e => ({ value: e.id, label: e.name })),
+const communityOpts = computed(() => [
+  { value: '', label: 'Select community...' },
+  ...communities.value.map(e => ({ value: e.id, label: e.name })),
 ])
 
 // Past 12 months as billing period options
@@ -133,10 +139,10 @@ const periodOpts = computed(() => {
   return opts
 })
 
-// Non-recurring charge types for ad-hoc billing
-const adHocChargeTypeOpts = computed(() => [
-  { value: '', label: 'Select charge type...' },
-  ...chargeTypes.value
+// Non-recurring ledgers for ad-hoc billing
+const adHocLedgerOpts = computed(() => [
+  { value: '', label: 'Select ledger...' },
+  ...ledgers.value
     .filter(ct => !ct.is_recurring)
     .map(ct => ({ value: ct.id, label: ct.name })),
 ])
@@ -163,7 +169,9 @@ async function fetchInvoices() {
 async function fetchSummary() {
   summaryLoading.value = true
   try {
-    const { data } = await api.get('/invoices/summary')
+    const summaryParams = {}
+    if (countryStore.activeCountry) summaryParams.country = countryStore.activeCountry
+    const { data } = await api.get('/invoices/summary', { params: summaryParams })
     summary.value = data
   } catch (e) {
     console.error('Failed to fetch invoice summary', e)
@@ -172,31 +180,46 @@ async function fetchSummary() {
   }
 }
 
-async function fetchChargeTypes() {
+async function fetchLedgers() {
   try {
-    const { data } = await api.get('/charge-types', { params: { _per_page: 100 } })
-    chargeTypes.value = data.data
+    const { data } = await api.get('/ledgers', { params: { _per_page: 100 } })
+    ledgers.value = data.data
   } catch (e) {
-    console.error('Failed to fetch charge types', e)
+    console.error('Failed to fetch ledgers', e)
   }
 }
 
-async function fetchEstates() {
+async function fetchCommunities() {
   try {
-    const { data } = await api.get('/estates', { params: { _per_page: 100 } })
-    estates.value = data.data
+    const communityParams = { _per_page: 100 }
+    if (countryStore.activeCountry) communityParams.country = countryStore.activeCountry
+    const { data } = await api.get('/communities', { params: communityParams })
+    communities.value = data.data
   } catch (e) {
-    console.error('Failed to fetch estates', e)
+    console.error('Failed to fetch communities', e)
   }
 }
 
 onMounted(() => {
   fetchInvoices()
   fetchSummary()
-  fetchChargeTypes()
-  fetchEstates()
+  fetchLedgers()
+  fetchCommunities()
   if (route.query.tab === 'trash') {
     switchView('trash')
+  }
+  if (route.query.action === 'run-billing') {
+    showRun.value = true
+    router.replace({ query: { ...route.query, action: undefined } })
+  }
+})
+
+watch(() => countryStore.activeCountry, (newVal, oldVal) => {
+  if (oldVal !== null && newVal !== oldVal) {
+    currentPage.value = 1
+    fetchInvoices()
+    fetchSummary()
+    fetchCommunities()
   }
 })
 
@@ -243,8 +266,7 @@ const BADGE_LABEL = {
 }
 
 function fmt(n) {
-  const num = Math.round(Number(n) * 100) / 100
-  return 'R\u00a0' + num.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f')
+  return countryStore.formatCurrency(n)
 }
 
 function fmtStat(card) {
@@ -261,7 +283,7 @@ function fmtPeriod(dateStr) {
 
 function billedToName(inv) {
   if (inv.billed_to_type === 'owner')  return inv.billed_to_owner?.full_name       || '—'
-  if (inv.billed_to_type === 'tenant') return inv.billed_to_unit_tenant?.full_name  || '—'
+  if (inv.billed_to_type === 'occupant') return inv.billed_to_unit_occupant?.full_name  || '—'
   return '—'
 }
 
@@ -270,6 +292,7 @@ function goToInvoice(inv) {
 }
 
 function emailDeliveryStatus(inv) {
+  if (inv.email_failed_at) return 'failed'
   const events = inv.email_events ?? []
   if (events.some(e => e.event_type === 'opened'))    return 'opened'
   if (events.some(e => e.event_type === 'delivered')) return 'delivered'
@@ -280,6 +303,7 @@ function emailDeliveryStatus(inv) {
 function emailDeliveryTooltip(inv) {
   return {
     none:      'Not yet sent',
+    failed:    'Email delivery failed — all retries exhausted',
     sent:      'Email sent — awaiting delivery confirmation',
     delivered: 'Email delivered to inbox',
     opened:    'Email opened by recipient',
@@ -298,22 +322,22 @@ const showAdHoc  = ref(false)
 const showExport = ref(false)
 
 // ── Run Billing ────────────────────────────────────────────────────────────
-const runEstate        = ref('')
+const runCommunity        = ref('')
 const runPeriod        = ref('')
 const runPreview       = ref([])
 const runLoading       = ref(false)
 const runConfirming    = ref(false)
 const runError         = ref('')
 
-watch([runEstate, runPeriod], fetchRunPreview)
+watch([runCommunity, runPeriod], fetchRunPreview)
 
 async function fetchRunPreview() {
-  if (!runEstate.value || !runPeriod.value) { runPreview.value = []; return }
+  if (!runCommunity.value || !runPeriod.value) { runPreview.value = []; return }
   runLoading.value = true
   runError.value   = ''
   try {
     const { data } = await api.post('/invoices/run-billing', {
-      estate_id:      runEstate.value,
+      community_id:      runCommunity.value,
       billing_period: runPeriod.value,
       dry_run:        true,
     })
@@ -327,16 +351,17 @@ async function fetchRunPreview() {
 }
 
 async function confirmRunBilling() {
-  if (!runEstate.value || !runPeriod.value) return
+  if (!runCommunity.value || !runPeriod.value) return
   runConfirming.value = true
   runError.value      = ''
   try {
     await api.post('/invoices/run-billing', {
-      estate_id:      runEstate.value,
+      community_id:      runCommunity.value,
       billing_period: runPeriod.value,
       dry_run:        false,
     })
     closeRun()
+    success('Billing run completed successfully.')
     fetchInvoices()
     fetchSummary()
   } catch (e) {
@@ -348,7 +373,7 @@ async function confirmRunBilling() {
 
 function closeRun() {
   showRun.value    = false
-  runEstate.value  = ''
+  runCommunity.value  = ''
   runPeriod.value  = ''
   runPreview.value = []
   runError.value   = ''
@@ -356,14 +381,15 @@ function closeRun() {
 
 const nonDuplicatePreview = computed(() => runPreview.value.filter(r => !r.duplicate))
 const duplicateCount      = computed(() => runPreview.value.filter(r => r.duplicate).length)
+const runPreviewTotal     = computed(() => nonDuplicatePreview.value.reduce((sum, r) => sum + Number(r.amount), 0))
 
 // ── Ad-Hoc Billing ────────────────────────────────────────────────────────
-const adHocEstate     = ref('')
-const adHocChargeType = ref('')
+const adHocCommunity     = ref('')
+const adHocLedger = ref('')
 const adHocAmount     = ref('')
 const adHocLoading    = ref(false)
 const adHocError      = ref('')
-const adHocValid      = computed(() => adHocEstate.value && adHocChargeType.value && Number(adHocAmount.value) > 0)
+const adHocValid      = computed(() => adHocCommunity.value && adHocLedger.value && Number(adHocAmount.value) > 0)
 
 async function generateAdHoc() {
   if (!adHocValid.value) return
@@ -371,12 +397,13 @@ async function generateAdHoc() {
   adHocError.value   = ''
   try {
     await api.post('/invoices/adhoc-billing', {
-      estate_id:      adHocEstate.value,
-      charge_type_id: adHocChargeType.value,
+      community_id:      adHocCommunity.value,
+      ledger_id: adHocLedger.value,
       amount:         parseFloat(adHocAmount.value),
       billing_period: periodOpts.value[0]?.value,
     })
     closeAdHoc()
+    success('Ad-hoc billing generated successfully.')
     fetchInvoices()
     fetchSummary()
   } catch (e) {
@@ -388,8 +415,8 @@ async function generateAdHoc() {
 
 function closeAdHoc() {
   showAdHoc.value        = false
-  adHocEstate.value      = ''
-  adHocChargeType.value  = ''
+  adHocCommunity.value      = ''
+  adHocLedger.value  = ''
   adHocAmount.value      = ''
   adHocError.value       = ''
 }
@@ -412,9 +439,11 @@ function buildExportParams(format, records) {
   }
 
   if (state.filters?.status)          params.status          = state.filters.status
-  if (state.filters?.charge_type_id)  params.charge_type_id  = state.filters.charge_type_id
+  if (state.filters?.ledger_id)  params.ledger_id  = state.filters.ledger_id
   if (state.filters?.billed_to_type)  params.billed_to_type  = state.filters.billed_to_type
   if (state.sort)                      params._sort           = SORT_API_MAP[state.sort] ?? state.sort
+
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
 
   params._format = format
   params._limit  = records
@@ -504,6 +533,7 @@ async function restoreInvoice(inv) {
   restoringId.value = inv.id
   try {
     await api.post(`/invoices/${inv.id}/restore`)
+    success('Invoice restored successfully.')
     await fetchDeletedInvoices()
     fetchSummary()
   } catch (e) {
@@ -594,9 +624,9 @@ const donutLegend = computed(() => {
   ]
 })
 
-// ─── Bar chart — Revenue by Charge Type ───────────────────────────────────
+// ─── Bar chart — Revenue by Ledger ───────────────────────────────────
 const barChart = computed(() => {
-  const entries = (summary.value.revenue_by_charge_type || []).map(r => [r.name, r.total])
+  const entries = (summary.value.revenue_by_ledger || []).map(r => [r.name, r.total])
   if (entries.length === 0) return null
 
   const maxVal = Math.max(...entries.map(([, v]) => v), 1)
@@ -633,7 +663,7 @@ const barChart = computed(() => {
     return {
       val,
       y:     PY1 - Math.round((val / scale) * PH),
-      label: val >= 1000 ? `R ${val / 1000}k` : `R ${val}`,
+      label: countryStore.formatCurrencyCompact(val),
     }
   })
 
@@ -707,32 +737,36 @@ function onBarMove(event, bar) {
       <!-- Section header with Active / Trash tabs -->
       <div class="px-6 pt-5 pb-0 flex items-center justify-between">
         <!-- Tab toggle -->
-        <div class="flex items-center gap-1 p-1 rounded-lg bg-muted/60 border border-border">
+        <div class="flex items-center gap-4 border-b border-border -mb-px">
           <button
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            class="inline-flex items-center gap-1.5 px-1 pb-2.5 text-sm font-medium transition-all duration-150 border-b-2 -mb-px"
             :class="activeView === 'active'
-              ? 'bg-background shadow-sm text-foreground border border-border'
-              : 'text-muted-foreground hover:text-foreground'"
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
             @click="switchView('active')"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
               <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
               <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
             </svg>
             Invoices
           </button>
           <button
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            class="inline-flex items-center gap-1.5 px-1 pb-2.5 text-sm font-medium transition-all duration-150 border-b-2 -mb-px"
             :class="activeView === 'trash'
-              ? 'bg-background shadow-sm text-foreground border border-border'
-              : 'text-muted-foreground hover:text-foreground'"
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
             @click="switchView('trash')"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
               <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
             </svg>
             Trash
+            <span
+              v-if="deletedPagination.total > 0"
+              class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-semibold leading-none bg-destructive/10 text-destructive"
+            >{{ deletedPagination.total }}</span>
           </button>
         </div>
 
@@ -772,7 +806,7 @@ function onBarMove(event, bar) {
           <thead>
             <tr class="border-b border-border">
               <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Invoice #</th>
-              <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Estate</th>
+              <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Community</th>
               <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
               <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
               <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Billed To</th>
@@ -801,15 +835,20 @@ function onBarMove(event, bar) {
                 @click="goToInvoice(inv)"
               >
                 <td class="py-3 px-4 font-medium text-foreground">{{ inv.invoice_number }}</td>
-                <td class="py-3 px-4 text-muted-foreground">{{ inv.unit?.estate?.name || '—' }}</td>
+                <td class="py-3 px-4 text-muted-foreground">{{ inv.unit?.community?.name || '—' }}</td>
                 <td class="py-3 px-4 text-foreground">{{ inv.unit?.unit_number || '—' }}</td>
-                <td class="py-3 px-4 text-foreground">{{ inv.charge_type?.name || '—' }}</td>
+                <td class="py-3 px-4 text-foreground">{{ inv.ledger?.name || '—' }}</td>
                 <td class="py-3 px-4 text-foreground">{{ billedToName(inv) }}</td>
                 <td class="py-3 px-4 text-muted-foreground">{{ fmtPeriod(inv.billing_period) }}</td>
                 <td class="py-3 px-4 text-right font-medium text-foreground whitespace-nowrap">{{ fmt(inv.amount) }}</td>
                 <!-- Email delivery tick indicator -->
                 <td class="py-3 px-4 text-center" :title="emailDeliveryTooltip(inv)">
                   <span v-if="emailDeliveryStatus(inv) === 'none'" class="text-xs text-muted-foreground/40">—</span>
+                  <span v-else-if="emailDeliveryStatus(inv) === 'failed'" class="inline-flex items-center">
+                    <svg width="16" height="11" viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-destructive">
+                      <path d="M1.5 5.5L5.5 9.5L14.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
                   <span v-else-if="emailDeliveryStatus(inv) === 'sent'" class="inline-flex items-center">
                     <svg width="16" height="11" viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-muted-foreground">
                       <path d="M1.5 5.5L5.5 9.5L14.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -915,7 +954,7 @@ function onBarMove(event, bar) {
             <thead>
               <tr class="border-b border-border">
                 <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Invoice #</th>
-                <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Estate · Unit</th>
+                <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Community · Unit</th>
                 <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Type</th>
                 <th class="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Billed To</th>
                 <th class="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Amount</th>
@@ -941,10 +980,10 @@ function onBarMove(event, bar) {
                 >
                   <td class="py-3 px-4 font-medium text-foreground">{{ inv.invoice_number }}</td>
                   <td class="py-3 px-4 text-muted-foreground">
-                    {{ inv.unit?.estate?.name || '—' }}
+                    {{ inv.unit?.community?.name || '—' }}
                     <span v-if="inv.unit?.unit_number" class="text-foreground"> · {{ inv.unit.unit_number }}</span>
                   </td>
-                  <td class="py-3 px-4 text-foreground">{{ inv.charge_type?.name || '—' }}</td>
+                  <td class="py-3 px-4 text-foreground">{{ inv.ledger?.name || '—' }}</td>
                   <td class="py-3 px-4 text-foreground">{{ billedToName(inv) }}</td>
                   <td class="py-3 px-4 text-right font-medium text-foreground whitespace-nowrap">{{ fmt(inv.amount) }}</td>
                   <td class="py-3 px-4 text-muted-foreground whitespace-nowrap">{{ formatDeletedDate(inv.deleted_at) }}</td>
@@ -1120,10 +1159,10 @@ function onBarMove(event, bar) {
         </div>
       </div>
 
-      <!-- Revenue by Charge Type (Bar) -->
+      <!-- Revenue by Ledger (Bar) -->
       <div class="rounded-lg border bg-card shadow-sm">
         <div class="px-6 pt-5 pb-2">
-          <h3 class="font-body font-semibold text-base text-foreground">Revenue by Charge Type</h3>
+          <h3 class="font-body font-semibold text-base text-foreground">Revenue by Ledger</h3>
         </div>
         <div class="chart-tip-anchor relative px-4 pb-4">
 
@@ -1220,7 +1259,7 @@ function onBarMove(event, bar) {
     <AppModal :show="showRun" title="Run Monthly Billing" size="lg" @close="closeRun">
       <div class="space-y-4 py-4">
         <div class="grid grid-cols-2 gap-4">
-          <AppSelect v-model="runEstate" label="Estate" :options="estateOpts" required />
+          <AppSelect v-model="runCommunity" label="Community" :options="communityOpts" required />
           <AppSelect v-model="runPeriod" label="Billing Period" :options="periodOpts" placeholder="Select period..." required />
         </div>
 
@@ -1236,12 +1275,12 @@ function onBarMove(event, bar) {
           Loading billing preview…
         </div>
 
-        <!-- Prompt to select estate + period -->
+        <!-- Prompt to select community + period -->
         <div
-          v-else-if="!runEstate || !runPeriod"
+          v-else-if="!runCommunity || !runPeriod"
           class="border rounded border-border p-6 text-center text-sm text-muted-foreground"
         >
-          Select an estate and billing period to preview invoices.
+          Select an community and billing period to preview invoices.
         </div>
 
         <!-- Preview table -->
@@ -1259,7 +1298,7 @@ function onBarMove(event, bar) {
               <thead class="sticky top-0 bg-muted/80">
                 <tr class="border-b border-border">
                   <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Unit</th>
-                  <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Charge Type</th>
+                  <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Ledger</th>
                   <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Recipient</th>
                   <th class="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Amount</th>
                 </tr>
@@ -1271,9 +1310,9 @@ function onBarMove(event, bar) {
                   :class="['border-b border-border', row.duplicate ? 'opacity-40' : '']"
                 >
                   <td class="py-2 px-3 font-medium text-foreground">{{ row.unit_number }}</td>
-                  <td class="py-2 px-3 text-foreground">{{ row.charge_type }}</td>
+                  <td class="py-2 px-3 text-foreground">{{ row.ledger }}</td>
                   <td class="py-2 px-3 text-foreground">
-                    {{ row.recipient_name || (row.billed_to_type === 'owner' ? 'Owner' : 'Tenant') }}
+                    {{ row.recipient_name || (row.billed_to_type === 'owner' ? 'Owner' : 'Occupant') }}
                     <span v-if="row.duplicate" class="ml-1 text-xs text-muted-foreground">(duplicate)</span>
                   </td>
                   <td class="py-2 px-3 text-right font-medium text-foreground whitespace-nowrap">{{ fmt(row.amount) }}</td>
@@ -1281,14 +1320,20 @@ function onBarMove(event, bar) {
               </tbody>
             </table>
           </div>
+
+          <!-- Total -->
+          <div class="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3 mt-4">
+            <p class="text-sm font-medium text-foreground">Total to be invoiced</p>
+            <p class="text-lg font-bold font-body text-foreground">{{ fmt(runPreviewTotal) }}</p>
+          </div>
         </div>
 
         <!-- No invoices to generate -->
         <div
-          v-else-if="runEstate && runPeriod && !runLoading"
+          v-else-if="runCommunity && runPeriod && !runLoading"
           class="border rounded border-border p-6 text-center text-sm text-muted-foreground"
         >
-          No invoices to generate for this estate and period.
+          No invoices to generate for this community and period.
         </div>
 
         <div class="flex justify-end gap-2 pt-2">
@@ -1313,18 +1358,20 @@ function onBarMove(event, bar) {
     ════════════════════════════════════════════════════════════════ -->
     <AppModal :show="showAdHoc" title="Create Ad-Hoc Billing" size="md" @close="closeAdHoc">
       <div class="space-y-4 py-4">
-        <AppSelect v-model="adHocEstate" label="Estate" :options="estateOpts" required />
+        <AppSelect v-model="adHocCommunity" label="Community" :options="communityOpts" required />
         <div>
-          <AppSelect v-model="adHocChargeType" label="Charge Type" :options="adHocChargeTypeOpts" required />
-          <p class="text-xs text-muted-foreground mt-1">Only non-recurring (ad-hoc) charge types are shown.</p>
+          <AppSelect v-model="adHocLedger" label="Ledger" :options="adHocLedgerOpts" required />
+          <p class="text-xs text-muted-foreground mt-1">Only non-recurring (ad-hoc) ledgers are shown.</p>
         </div>
         <AppInput
           v-model="adHocAmount"
           label="Amount"
           type="number"
           placeholder="0.00"
-          prefix="R"
+          :prefix="countryStore.currencySymbol"
           required
+          :min="0"
+          :max="9999999999.99"
         />
         <p v-if="adHocError" class="text-sm text-danger">{{ adHocError }}</p>
         <div class="flex justify-end gap-2 pt-2">

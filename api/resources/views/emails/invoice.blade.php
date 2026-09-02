@@ -1,14 +1,14 @@
 @extends('emails.layout')
 
 @section('title', 'Invoice ' . $invoice->invoice_number)
-@section('section_label', $invoice->chargeType->name . ' Invoice')
+@section('section_label', ($invoice->ledger?->name ?? 'Customer') . ' Invoice')
 
 @section('content')
   <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#1E2740;line-height:1.3;">
     {{ $invoice->invoice_number }}
   </h1>
   <p style="margin:0 0 24px;font-size:14px;color:#717B99;">
-    {{ $invoice->chargeType->name }} · {{ $invoice->unit->estate->name }} · Unit {{ $invoice->unit->unit_number }}
+    {{ $invoice->ledger?->name ?? 'Customer Invoice' }} · {{ $invoice->unit->community->name }} · Unit {{ $invoice->unit->unit_number }}
   </p>
 
   <!-- Invoice card -->
@@ -46,7 +46,7 @@
             </td>
             <td width="50%" style="vertical-align:top;text-align:right;">
               <p style="margin:0 0 4px;font-size:12px;color:#717B99;">
-                Invoice Date: <strong style="color:#1E2740;">{{ $invoice->created_at->format('d M Y') }}</strong>
+                Invoice Date: <strong style="color:#1E2740;">{{ ($invoice->invoice_date ?? $invoice->created_at)->format('d M Y') }}</strong>
               </p>
               <p style="margin:0 0 4px;font-size:12px;color:#717B99;">
                 Due Date: <strong style="color:#1E2740;">{{ $invoice->due_date->format('d M Y') }}</strong>
@@ -71,17 +71,42 @@
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td style="padding:12px 20px;font-size:13px;color:#1E2740;border-top:1px solid #DCDEE8;">
-                <strong>{{ $invoice->chargeType->name }} — Unit {{ $invoice->unit->unit_number }}</strong><br>
-                <span style="font-size:11px;color:#717B99;">{{ $invoice->billing_period->format('F Y') }}</span>
-              </td>
-              <td style="padding:12px 20px;font-size:13px;font-weight:700;color:#1E2740;text-align:right;border-top:1px solid #DCDEE8;white-space:nowrap;">
-                R {{ number_format($invoice->amount, 0, '.', ' ') }}
-              </td>
-            </tr>
+            @if($invoice->items->isNotEmpty())
+              @foreach($invoice->items as $item)
+                <tr>
+                  <td style="padding:12px 20px;font-size:13px;color:#1E2740;border-top:1px solid #DCDEE8;">
+                    <strong>{{ $item->ledger?->name ?? 'Account' }}</strong>
+                    @if($item->description)<br><span style="font-size:11px;color:#717B99;">{{ $item->description }}</span>@endif
+                    @if($item->quantity != 1)<br><span style="font-size:11px;color:#717B99;">Qty {{ rtrim(rtrim(number_format($item->quantity, 2), '0'), '.') }} × R {{ number_format($item->amount, 2, '.', ' ') }}</span>@endif
+                  </td>
+                  <td style="padding:12px 20px;font-size:13px;font-weight:700;color:#1E2740;text-align:right;border-top:1px solid #DCDEE8;white-space:nowrap;">
+                    R {{ number_format($item->line_total, 2, '.', ' ') }}
+                  </td>
+                </tr>
+              @endforeach
+            @else
+              <tr>
+                <td style="padding:12px 20px;font-size:13px;color:#1E2740;border-top:1px solid #DCDEE8;">
+                  <strong>{{ $invoice->ledger->name }} — Unit {{ $invoice->unit->unit_number }}</strong><br>
+                  <span style="font-size:11px;color:#717B99;">{{ $invoice->billing_period->format('F Y') }}</span>
+                </td>
+                <td style="padding:12px 20px;font-size:13px;font-weight:700;color:#1E2740;text-align:right;border-top:1px solid #DCDEE8;white-space:nowrap;">
+                  R {{ number_format($invoice->amount, 0, '.', ' ') }}
+                </td>
+              </tr>
+            @endif
           </tbody>
           <tfoot>
+            @if($invoice->items->isNotEmpty() && ($invoice->vat_amount ?? 0) > 0)
+              <tr>
+                <td style="padding:8px 20px;font-size:12px;color:#717B99;border-top:1px solid #DCDEE8;">Sub-total</td>
+                <td style="padding:8px 20px;font-size:12px;color:#717B99;text-align:right;border-top:1px solid #DCDEE8;white-space:nowrap;">R {{ number_format($invoice->subtotal ?? $invoice->amount, 2, '.', ' ') }}</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 20px;font-size:12px;color:#717B99;">VAT</td>
+                <td style="padding:8px 20px;font-size:12px;color:#717B99;text-align:right;white-space:nowrap;">R {{ number_format($invoice->vat_amount, 2, '.', ' ') }}</td>
+              </tr>
+            @endif
             <tr style="background-color:#F8FBFF;">
               <td style="padding:12px 20px;font-size:14px;font-weight:700;color:#1E2740;border-top:1px solid #DCDEE8;">Total Due</td>
               <td style="padding:12px 20px;font-size:14px;font-weight:700;color:#1E2740;text-align:right;border-top:1px solid #DCDEE8;white-space:nowrap;">

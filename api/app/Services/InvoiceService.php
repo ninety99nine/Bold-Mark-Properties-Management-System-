@@ -3,25 +3,34 @@
 namespace App\Services;
 
 use Exception;
-use App\Models\Estate;
+use App\Models\Community;
 use App\Models\Unit;
 use App\Models\Invoice;
-use App\Models\ChargeType;
+use App\Models\Ledger;
 use App\Models\InvoiceEmailEvent;
 use App\Enums\InvoiceStatus;
 use App\Enums\BilledToType;
 use App\Enums\OccupancyType;
+use App\Enums\SystemLedger;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use App\Jobs\SendInvoiceEmail;
 use Resend\Laravel\Facades\Resend;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\InvoiceResources;
+use App\Notifications\BillingRunCompleted;
+use Illuminate\Support\Facades\Notification;
 
 class InvoiceService extends BaseService
 {
+    protected array $allowedRelationships = ['unit', 'ledger', 'bankAccount', 'items', 'billedToOwner', 'billedToUnitOccupant', 'cashbookEntries'];
+
+    protected array $allowedCountableRelationships = ['cashbookEntries'];
+
     public function __construct(private readonly UnitBalanceService $unitBalance)
     {
         parent::__construct();
@@ -29,7 +38,7 @@ class InvoiceService extends BaseService
 
 
     /**
-     * Return a paginated, filtered list of invoices for the authenticated tenant.
+     * Return a paginated, filtered list of invoices for the authenticated occupant.
      *
      * @param array $data
      * @return InvoiceResources
@@ -37,23 +46,27 @@ class InvoiceService extends BaseService
     public function showInvoices(array $data): InvoiceResources
     {
         $user  = Auth::user();
-        $query = Invoice::where('tenant_id', $user->tenant_id)
-            ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant', 'emailEvents']);
+        $query = Invoice::where('organization_id', $user->organization_id)
+            ->with(['unit.community', 'ledger', 'billedToOwner', 'billedToUnitOccupant', 'emailEvents']);
+
+        if (!empty($data['country'])) {
+            $query->whereHas('unit.community', fn($q) => $q->where('country', $data['country']));
+        }
 
         if (!empty($data['status'])) {
             $query->where('status', $data['status']);
         }
 
-        if (!empty($data['charge_type_id'])) {
-            $query->where('charge_type_id', $data['charge_type_id']);
+        if (!empty($data['ledger_id'])) {
+            $query->where('ledger_id', $data['ledger_id']);
         }
 
         if (!empty($data['unit_id'])) {
             $query->where('unit_id', $data['unit_id']);
         }
 
-        if (!empty($data['estate_id'])) {
-            $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
+        if (!empty($data['community_id'])) {
+            $query->whereHas('unit', fn($q) => $q->where('community_id', $data['community_id']));
         }
 
         if (!empty($data['billed_to_type'])) {
@@ -65,22 +78,22 @@ class InvoiceService extends BaseService
         }
 
         if (!empty($data['billing_period'])) {
-            $query->where('billing_period', Carbon::parse($data['billing_period'] . '-01')->format('Y-m-d'));
+            $query->whereDate('billing_period', Carbon::parse($data['billing_period'] . '-01')->format('Y-m-d'));
         }
 
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('invoice_number', 'ilike', $term)
-                  ->orWhereHas('unit', fn($u) => $u->where('unit_number', 'ilike', $term))
-                  ->orWhereHas('chargeType', fn($ct) => $ct->where('name', 'ilike', $term))
-                  ->orWhere(function ($sub) use ($term) {
+            $search = $data['search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('invoice_number', $search)
+                  ->orWhereHas('unit', fn($u) => $u->whereLike('unit_number', $search))
+                  ->orWhereHas('ledger', fn($ct) => $ct->whereLike('name', $search))
+                  ->orWhere(function ($sub) use ($search) {
                       $sub->where('billed_to_type', 'owner')
-                          ->whereHas('billedToOwner', fn($o) => $o->where('full_name', 'ilike', $term));
+                          ->whereHas('billedToOwner', fn($o) => $o->whereLike('full_name', $search));
                   })
-                  ->orWhere(function ($sub) use ($term) {
-                      $sub->where('billed_to_type', 'tenant')
-                          ->whereHas('billedToUnitTenant', fn($t) => $t->where('full_name', 'ilike', $term));
+                  ->orWhere(function ($sub) use ($search) {
+                      $sub->where('billed_to_type', 'occupant')
+                          ->whereHas('billedToUnitOccupant', fn($t) => $t->whereLike('full_name', $search));
                   });
             });
         }
@@ -116,20 +129,24 @@ class InvoiceService extends BaseService
     public function exportInvoices(array $data): \Symfony\Component\HttpFoundation\Response
     {
         $user  = Auth::user();
-        $query = Invoice::where('tenant_id', $user->tenant_id)
-            ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant']);
+        $query = Invoice::where('organization_id', $user->organization_id)
+            ->with(['unit.community', 'ledger', 'billedToOwner', 'billedToUnitOccupant']);
+
+        if (!empty($data['country'])) {
+            $query->whereHas('unit.community', fn($q) => $q->where('country', $data['country']));
+        }
 
         if (!empty($data['status'])) {
             $query->where('status', $data['status']);
         }
-        if (!empty($data['charge_type_id'])) {
-            $query->where('charge_type_id', $data['charge_type_id']);
+        if (!empty($data['ledger_id'])) {
+            $query->where('ledger_id', $data['ledger_id']);
         }
         if (!empty($data['unit_id'])) {
             $query->where('unit_id', $data['unit_id']);
         }
-        if (!empty($data['estate_id'])) {
-            $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
+        if (!empty($data['community_id'])) {
+            $query->whereHas('unit', fn($q) => $q->where('community_id', $data['community_id']));
         }
         if (!empty($data['billed_to_type'])) {
             $query->where('billed_to_type', $data['billed_to_type']);
@@ -138,21 +155,21 @@ class InvoiceService extends BaseService
             $query->where('billed_to_id', $data['billed_to_id']);
         }
         if (!empty($data['billing_period'])) {
-            $query->where('billing_period', Carbon::parse($data['billing_period'] . '-01')->format('Y-m-d'));
+            $query->whereDate('billing_period', Carbon::parse($data['billing_period'] . '-01')->format('Y-m-d'));
         }
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where(function ($q) use ($term) {
-                $q->where('invoice_number', 'ilike', $term)
-                  ->orWhereHas('unit', fn($u) => $u->where('unit_number', 'ilike', $term))
-                  ->orWhereHas('chargeType', fn($ct) => $ct->where('name', 'ilike', $term))
-                  ->orWhere(function ($sub) use ($term) {
+            $search = $data['search'];
+            $query->where(function ($q) use ($search) {
+                $q->whereLike('invoice_number', $search)
+                  ->orWhereHas('unit', fn($u) => $u->whereLike('unit_number', $search))
+                  ->orWhereHas('ledger', fn($ct) => $ct->whereLike('name', $search))
+                  ->orWhere(function ($sub) use ($search) {
                       $sub->where('billed_to_type', 'owner')
-                          ->whereHas('billedToOwner', fn($o) => $o->where('full_name', 'ilike', $term));
+                          ->whereHas('billedToOwner', fn($o) => $o->whereLike('full_name', $search));
                   })
-                  ->orWhere(function ($sub) use ($term) {
-                      $sub->where('billed_to_type', 'tenant')
-                          ->whereHas('billedToUnitTenant', fn($t) => $t->where('full_name', 'ilike', $term));
+                  ->orWhere(function ($sub) use ($search) {
+                      $sub->where('billed_to_type', 'occupant')
+                          ->whereHas('billedToUnitOccupant', fn($t) => $t->whereLike('full_name', $search));
                   });
             });
         }
@@ -176,7 +193,7 @@ class InvoiceService extends BaseService
         $limit    = $this->resolveExportLimit($data['_limit'] ?? 'current');
         $invoices = $this->query->limit($limit)->get();
 
-        $headings = ['Invoice #', 'Estate', 'Unit', 'Charge Type', 'Billed To', 'Period', 'Amount', 'Status', 'Due Date', 'Sent At'];
+        $headings = ['Invoice #', 'Community', 'Unit', 'Ledger', 'Billed To', 'Period', 'Amount', 'Status', 'Due Date', 'Sent At'];
 
         $rows = $invoices->map(function ($invoice) {
             $billedToType = $invoice->billed_to_type instanceof \BackedEnum
@@ -185,7 +202,7 @@ class InvoiceService extends BaseService
 
             $billedTo = $billedToType === 'owner'
                 ? $invoice->billedToOwner?->full_name
-                : $invoice->billedToUnitTenant?->full_name;
+                : $invoice->billedToUnitOccupant?->full_name;
 
             $status = $invoice->status instanceof \BackedEnum
                 ? $invoice->status->value
@@ -193,9 +210,9 @@ class InvoiceService extends BaseService
 
             return [
                 $invoice->invoice_number,
-                $invoice->unit?->estate?->name,
+                $invoice->unit?->community?->name,
                 $invoice->unit?->unit_number,
-                $invoice->chargeType?->name,
+                $invoice->ledger?->name,
                 $billedTo,
                 $invoice->billing_period?->format('M Y'),
                 number_format((float) $invoice->amount, 2),
@@ -226,18 +243,22 @@ class InvoiceService extends BaseService
     public function showInvoicesSummary(array $data): array
     {
         $user  = Auth::user();
-        $query = Invoice::where('tenant_id', $user->tenant_id);
+        $query = Invoice::where('organization_id', $user->organization_id);
 
-        if (!empty($data['estate_id'])) {
-            $query->whereHas('unit', fn($q) => $q->where('estate_id', $data['estate_id']));
+        if (!empty($data['country'])) {
+            $query->whereHas('unit.community', fn($q) => $q->where('country', $data['country']));
+        }
+
+        if (!empty($data['community_id'])) {
+            $query->whereHas('unit', fn($q) => $q->where('community_id', $data['community_id']));
         }
 
         if (!empty($data['status'])) {
             $query->where('status', $data['status']);
         }
 
-        if (!empty($data['charge_type_id'])) {
-            $query->where('charge_type_id', $data['charge_type_id']);
+        if (!empty($data['ledger_id'])) {
+            $query->where('ledger_id', $data['ledger_id']);
         }
 
         $stats = (clone $query)->selectRaw(
@@ -255,22 +276,58 @@ class InvoiceService extends BaseService
             ]
         )->first();
 
-        $revenueByChargeType = DB::table('invoices')
-            ->join('charge_types', 'invoices.charge_type_id', '=', 'charge_types.id')
-            ->where('invoices.tenant_id', $user->tenant_id)
-            ->when(!empty($data['estate_id']), function ($q) use ($data) {
-                $unitIds = Unit::where('estate_id', $data['estate_id'])->pluck('id');
-                $q->whereIn('invoices.unit_id', $unitIds);
-            })
-            ->when(!empty($data['status']),         fn ($q) => $q->where('invoices.status', $data['status']))
-            ->when(!empty($data['charge_type_id']), fn ($q) => $q->where('invoices.charge_type_id', $data['charge_type_id']))
-            ->select('charge_types.name', DB::raw('SUM(invoices.amount) as total_amount'))
-            ->groupBy('charge_types.id', 'charge_types.name')
-            ->orderByDesc('total_amount')
-            ->get()
-            ->map(fn ($row) => ['name' => $row->name, 'total' => (float) $row->total_amount])
+        // Revenue-by-ledger comes from two sources that we merge by account:
+        //   1. System / single-charge invoices → the header ledger + header amount.
+        //   2. Manual (multi-line) customer invoices → each invoice_item's ledger +
+        //      line_total, since a manual invoice has no single header account.
+        $applyScopeFilters = function ($q, string $unitColumn) use ($data) {
+            if (!empty($data['country'])) {
+                $unitIds = Unit::whereHas('community', fn ($c) => $c->where('country', $data['country']))->pluck('id');
+                $q->whereIn($unitColumn, $unitIds);
+            }
+            if (!empty($data['community_id'])) {
+                $unitIds = Unit::where('community_id', $data['community_id'])->pluck('id');
+                $q->whereIn($unitColumn, $unitIds);
+            }
+            if (!empty($data['status'])) {
+                $q->where('invoices.status', $data['status']);
+            }
+        };
+
+        $systemRevenue = DB::table('invoices')
+            ->join('ledgers', 'invoices.ledger_id', '=', 'ledgers.id')
+            ->where('invoices.organization_id', $user->organization_id)
+            ->tap(fn ($q) => $applyScopeFilters($q, 'invoices.unit_id'))
+            ->when(!empty($data['ledger_id']), fn ($q) => $q->where('invoices.ledger_id', $data['ledger_id']))
+            ->select('ledgers.id as ledger_id', 'ledgers.name', DB::raw('SUM(invoices.amount) as total_amount'))
+            ->groupBy('ledgers.id', 'ledgers.name')
+            ->get();
+
+        $manualRevenue = DB::table('invoice_items')
+            ->join('invoices', 'invoice_items.invoice_id', '=', 'invoices.id')
+            ->join('ledgers', 'invoice_items.ledger_id', '=', 'ledgers.id')
+            ->where('invoices.organization_id', $user->organization_id)
+            ->whereNull('invoices.deleted_at')
+            ->tap(fn ($q) => $applyScopeFilters($q, 'invoices.unit_id'))
+            ->when(!empty($data['ledger_id']), fn ($q) => $q->where('invoice_items.ledger_id', $data['ledger_id']))
+            ->select('ledgers.id as ledger_id', 'ledgers.name', DB::raw('SUM(invoice_items.line_total) as total_amount'))
+            ->groupBy('ledgers.id', 'ledgers.name')
+            ->get();
+
+        // Merge the two streams by ledger, then sort by combined total desc.
+        $merged = [];
+        foreach ($systemRevenue->concat($manualRevenue) as $row) {
+            $key = $row->ledger_id;
+            if (!isset($merged[$key])) {
+                $merged[$key] = ['name' => $row->name, 'total' => 0.0];
+            }
+            $merged[$key]['total'] += (float) $row->total_amount;
+        }
+
+        $revenueByLedger = collect($merged)
+            ->sortByDesc('total')
             ->values()
-            ->toArray();
+            ->all();
 
         return [
             'total'                  => (int) ($stats->total ?? 0),
@@ -279,7 +336,7 @@ class InvoiceService extends BaseService
             'overdue_count'          => (int) ($stats->overdue_count ?? 0),
             'partially_paid_count'   => (int) ($stats->partially_paid_count ?? 0),
             'unpaid_count'           => (int) ($stats->unpaid_count ?? 0),
-            'revenue_by_charge_type' => $revenueByChargeType,
+            'revenue_by_ledger' => $revenueByLedger,
         ];
     }
 
@@ -294,7 +351,7 @@ class InvoiceService extends BaseService
         $user = Auth::user();
 
         $invoiceData = collect($data)
-            ->only(['unit_id', 'charge_type_id', 'billed_to_type', 'billed_to_id', 'amount', 'billing_period', 'due_date'])
+            ->only(['unit_id', 'ledger_id', 'billed_to_type', 'billed_to_id', 'amount', 'billing_period', 'due_date'])
             ->toArray();
 
         // Normalise billing_period to first day of month
@@ -302,22 +359,22 @@ class InvoiceService extends BaseService
             $invoiceData['billing_period'] = Carbon::parse($invoiceData['billing_period'])->startOfMonth()->format('Y-m-d');
         }
 
-        // Duplicate check: same unit + charge type + billing period is not allowed
+        // Duplicate check: same unit + ledger + billing period is not allowed
         $exists = Invoice::where('unit_id', $invoiceData['unit_id'])
-            ->where('charge_type_id', $invoiceData['charge_type_id'])
-            ->where('billing_period', $invoiceData['billing_period'])
+            ->where('ledger_id', $invoiceData['ledger_id'])
+            ->whereDate('billing_period', $invoiceData['billing_period'])
             ->exists();
 
         if ($exists) {
-            $chargeType    = ChargeType::find($invoiceData['charge_type_id']);
-            $chargeTypeName = $chargeType?->name ?? 'this charge type';
+            $ledger    = Ledger::find($invoiceData['ledger_id']);
+            $ledgerName = $ledger?->name ?? 'this ledger';
             $period        = Carbon::parse($invoiceData['billing_period'])->format('F Y');
-            throw new Exception("An invoice for {$chargeTypeName} already exists for {$period}. Duplicate invoices are not allowed.");
+            throw new Exception("An invoice for {$ledgerName} already exists for {$period}. Duplicate invoices are not allowed.");
         }
 
         $invoice = Invoice::create(array_merge($invoiceData, [
-            'tenant_id'          => $user->tenant_id,
-            'invoice_number'     => $this->generateInvoiceNumber($user->tenant_id),
+            'organization_id'          => $user->organization_id,
+            'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
             'status'             => InvoiceStatus::UNPAID->value,
             'issued_by_type'     => 'user',
             'issued_by_user_id'  => $user->id,
@@ -329,7 +386,151 @@ class InvoiceService extends BaseService
     }
 
     /**
-     * Execute the billing engine for an estate and billing period.
+     * Create a WeConnectU-style multi-line customer invoice.
+     *
+     * The invoice header caches the rolled-up subtotal / VAT / total so downstream
+     * finance code keeps reading the single `amount` column, while the individual
+     * account lines are stored as invoice_items. The invoice is billed to the unit's
+     * primary owner, falling back to the current occupant.
+     *
+     * @param array $data
+     * @return array
+     * @throws Exception
+     */
+    public function createCustomerInvoice(array $data): array
+    {
+        $user = Auth::user();
+
+        $unit = Unit::where('id', $data['unit_id'])
+            ->where('organization_id', $user->organization_id)
+            ->with(['owner', 'currentOccupant'])
+            ->firstOrFail();
+
+        [$billedToType, $billedToId] = $this->resolveBilledTo($unit);
+
+        if (!$billedToType || !$billedToId) {
+            throw new Exception('This unit has no owner or occupant to bill.');
+        }
+
+        // Validate the bank account (when supplied) belongs to the organization.
+        if (!empty($data['bank_account_id'])) {
+            \App\Models\BankAccount::where('id', $data['bank_account_id'])
+                ->where('organization_id', $user->organization_id)
+                ->firstOrFail();
+        }
+
+        $invoiceDate   = Carbon::parse($data['invoice_date']);
+        $billingPeriod = $invoiceDate->copy()->startOfMonth()->format('Y-m-d');
+
+        // Roll up line-item totals.
+        $subtotal = 0.0;
+        $vatTotal = 0.0;
+        $items    = [];
+
+        foreach (array_values($data['items']) as $index => $row) {
+            $quantity = (float) $row['quantity'];
+            $unitAmt  = (float) $row['amount'];
+            $taxRate  = (float) ($row['tax_rate'] ?? 0);
+
+            $lineSubtotal = round($quantity * $unitAmt, 2);
+            $taxAmount    = round($lineSubtotal * $taxRate / 100, 2);
+            $lineTotal    = round($lineSubtotal + $taxAmount, 2);
+
+            $subtotal += $lineSubtotal;
+            $vatTotal += $taxAmount;
+
+            $items[] = [
+                'ledger_id'   => $row['ledger_id'],
+                'description' => $row['description'] ?? null,
+                'quantity'    => $quantity,
+                'amount'      => $unitAmt,
+                'tax_rate'    => $taxRate,
+                'tax_amount'  => $taxAmount,
+                'line_total'  => $lineTotal,
+                'sort_order'  => $index,
+            ];
+        }
+
+        $subtotal   = round($subtotal, 2);
+        $vatTotal   = round($vatTotal, 2);
+        $grandTotal = round($subtotal + $vatTotal, 2);
+
+        // Persist the optional uploaded source document.
+        $attachmentPath = null;
+        if (request()->hasFile('attachment')) {
+            $attachmentPath = request()->file('attachment')
+                ->store("invoice-attachments/{$user->organization_id}", 'public');
+        }
+
+        $invoice = DB::transaction(function () use (
+            $user, $unit, $data, $billedToType, $billedToId, $billingPeriod,
+            $invoiceDate, $subtotal, $vatTotal, $grandTotal, $attachmentPath, $items
+        ) {
+            $invoice = Invoice::create([
+                'unit_id'           => $unit->id,
+                'ledger_id'         => null, // multi-line: accounts live on invoice_items
+                'bank_account_id'   => $data['bank_account_id'] ?? null,
+                'billed_to_type'    => $billedToType,
+                'billed_to_id'      => $billedToId,
+                'amount'            => $grandTotal,
+                'subtotal'          => $subtotal,
+                'vat_amount'        => $vatTotal,
+                'billing_period'    => $billingPeriod,
+                'invoice_date'      => $invoiceDate->format('Y-m-d'),
+                'due_date'          => Carbon::parse($data['due_date'])->format('Y-m-d'),
+                'attachment_path'   => $attachmentPath,
+                'status'            => InvoiceStatus::UNPAID->value,
+                'source'            => \App\Enums\InvoiceSource::MANUAL->value,
+                'invoice_number'    => $this->generateInvoiceNumber($user->organization_id),
+                'organization_id'   => $user->organization_id,
+                'issued_by_type'    => 'user',
+                'issued_by_user_id' => $user->id,
+            ]);
+
+            foreach ($items as $item) {
+                $invoice->items()->create($item);
+            }
+
+            return $invoice;
+        });
+
+        $this->unitBalance->recalculate($unit);
+
+        // Optionally e-mail the invoice to the billed-to recipient.
+        if (!empty($data['email_invoice'])) {
+            SendInvoiceEmail::dispatch($invoice->id);
+        }
+
+        $invoice->load([
+            'unit.community', 'ledger', 'bankAccount', 'items.ledger',
+            'billedToOwner', 'billedToUnitOccupant',
+        ]);
+
+        return $this->showCreatedResource($invoice);
+    }
+
+    /**
+     * Resolve the billed-to entity for a customer invoice: primary owner first,
+     * then the current occupant.
+     *
+     * @param Unit $unit
+     * @return array{0: string|null, 1: string|null}
+     */
+    private function resolveBilledTo(Unit $unit): array
+    {
+        if ($unit->owner) {
+            return [BilledToType::OWNER->value, $unit->owner->id];
+        }
+
+        if ($unit->currentOccupant) {
+            return [BilledToType::OCCUPANT->value, $unit->currentOccupant->id];
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * Execute the billing engine for an community and billing period.
      *
      * When dry_run is true, no records are created — a preview is returned.
      * When dry_run is false (default), invoices are generated in the database.
@@ -343,68 +544,121 @@ class InvoiceService extends BaseService
         $user  = Auth::user();
         $isDryRun = (bool) ($data['dry_run'] ?? false);
 
-        $estate = Estate::where('id', $data['estate_id'])
-            ->where('tenant_id', $user->tenant_id)
+        $community = Community::where('id', $data['community_id'])
+            ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
-        $billingPeriod = Carbon::parse($data['billing_period'] . '-01');
+        return $this->runBillingForCommunity($community, $data['billing_period'], $isDryRun, $user);
+    }
+
+    public function runBillingForCommunity(Community $community, string $billingPeriodYearMonth, bool $isDryRun = false, ?\App\Models\User $actor = null): array
+    {
+        $user = $actor ?? Auth::user();
+
+        $billingPeriod = Carbon::parse($billingPeriodYearMonth . '-01');
         $billingPeriodDate = $billingPeriod->format('Y-m-d');
+        $paymentTermsDays = $community->payment_terms_days ?? 7;
 
         // Load active units with all needed relationships
-        $units = Unit::where('estate_id', $estate->id)
+        $units = Unit::where('community_id', $community->id)
             ->where('status', 'active')
             ->with([
                 'owner',
-                'currentTenant',
-                'activeChargeConfigs.chargeType',
-                'estate.activeChargeTypes',
+                'currentOccupant',
+                'activeChargeConfigs.ledger',
+                'community.activeLedgers',
             ])
             ->get();
 
-        $preview = [];
-        $created = 0;
+        $preview     = [];
+        $created     = 0;
+        $createdIds  = [];
 
-        // Get levy and rent system charge types for this estate (from estate's active charge types)
-        $estateChargeTypes = $estate->activeChargeTypes;
-        $levyChargeType    = $estateChargeTypes->firstWhere('code', 'LEVY');
-        $rentChargeType    = $estateChargeTypes->firstWhere('code', 'RENT');
+        // Get system ledgers for this community (from community's active ledgers)
+        $communityLedgers  = $community->activeLedgers;
+        $levyLedger     = $communityLedgers->firstWhere('type', SystemLedger::ADMIN_LEVY->value);
+        $reserveLevyType    = $communityLedgers->firstWhere('type', SystemLedger::RESERVE_LEVY->value);
+        $csosLevyType       = $communityLedgers->firstWhere('type', SystemLedger::CSOS_LEVY->value);
+        $rentLedger     = $communityLedgers->firstWhere('type', SystemLedger::RENT->value);
+
+        // Pre-compute PQ totals for the billing run to avoid N+1 queries
+        $totalPq         = $units->whereNotNull('pq')->sum('pq');
+        $adminBudget     = (float) ($community->admin_fund_amount ?? 0);
+        $reserveBudget   = (float) ($community->reserve_fund_amount ?? 0);
+        $csosPerUnit     = (float) ($community->csos_levy_amount ?? 0);
 
         foreach ($units as $unit) {
             $invoicesToCreate = [];
 
-            // 1. Levy invoice → always to owner (if levy charge type is enabled for the estate)
-            if ($levyChargeType && $unit->owner) {
-                $levyAmount = $unit->levy_override ?? $estate->default_levy_amount;
+            // 1a. Admin levy invoice → owner, PQ-based or equal-share fallback
+            if ($levyLedger && $unit->owner) {
+                $levyAmount = $unit->levy_override;
+
+                if ($levyAmount === null && $adminBudget > 0) {
+                    $levyAmount = ($totalPq > 0 && $unit->pq !== null)
+                        ? round(($unit->pq / $totalPq) * $adminBudget, 2)
+                        : ($units->count() > 0 ? round($adminBudget / $units->count(), 2) : 0);
+                }
 
                 if ($levyAmount > 0) {
                     $invoicesToCreate[] = [
-                        'charge_type'    => $levyChargeType,
+                        'ledger'    => $levyLedger,
                         'billed_to_type' => BilledToType::OWNER->value,
                         'billed_to_id'   => $unit->owner->id,
                         'recipient_name' => $unit->owner->full_name,
                         'amount'         => $levyAmount,
                         'unit'           => $unit,
-                        'label'          => 'Levy',
+                        'label'          => 'Admin Levy',
                     ];
                 }
             }
 
-            // 2. Rent invoice → to active tenant if tenant_occupied and rent charge type is active
+            // 1b. Reserve levy invoice → owner, PQ-based only (no equal-share fallback)
+            if ($reserveLevyType && $unit->owner && $reserveBudget > 0 && $totalPq > 0 && $unit->pq !== null) {
+                $reserveAmount = round(($unit->pq / $totalPq) * $reserveBudget, 2);
+
+                if ($reserveAmount > 0) {
+                    $invoicesToCreate[] = [
+                        'ledger'    => $reserveLevyType,
+                        'billed_to_type' => BilledToType::OWNER->value,
+                        'billed_to_id'   => $unit->owner->id,
+                        'recipient_name' => $unit->owner->full_name,
+                        'amount'         => $reserveAmount,
+                        'unit'           => $unit,
+                        'label'          => 'Reserve Levy',
+                    ];
+                }
+            }
+
+            // 1c. CSOS levy invoice → owner, flat per-unit amount set on the community
+            if ($csosLevyType && $unit->owner && $csosPerUnit > 0) {
+                $invoicesToCreate[] = [
+                    'ledger'    => $csosLevyType,
+                    'billed_to_type' => BilledToType::OWNER->value,
+                    'billed_to_id'   => $unit->owner->id,
+                    'recipient_name' => $unit->owner->full_name,
+                    'amount'         => $csosPerUnit,
+                    'unit'           => $unit,
+                    'label'          => 'CSOS Levy',
+                ];
+            }
+
+            // 2. Rent invoice → to active occupant if occupant_occupied and rent ledger is active
             $occupancyType = $unit->occupancy_type instanceof OccupancyType
                 ? $unit->occupancy_type->value
                 : (string) $unit->occupancy_type;
 
             if (
-                $rentChargeType &&
-                $occupancyType === OccupancyType::TENANT_OCCUPIED->value &&
-                $unit->currentTenant &&
+                $rentLedger &&
+                $occupancyType === OccupancyType::OCCUPANT_OCCUPIED->value &&
+                $unit->currentOccupant &&
                 $unit->rent_amount > 0
             ) {
                 $invoicesToCreate[] = [
-                    'charge_type'    => $rentChargeType,
-                    'billed_to_type' => BilledToType::TENANT->value,
-                    'billed_to_id'   => $unit->currentTenant->id,
-                    'recipient_name' => $unit->currentTenant->full_name,
+                    'ledger'    => $rentLedger,
+                    'billed_to_type' => BilledToType::OCCUPANT->value,
+                    'billed_to_id'   => $unit->currentOccupant->id,
+                    'recipient_name' => $unit->currentOccupant->full_name,
                     'amount'         => $unit->rent_amount,
                     'unit'           => $unit,
                     'label'          => 'Rent',
@@ -413,15 +667,15 @@ class InvoiceService extends BaseService
 
             // 3. Per-unit recurring charge configs (parking, gym, pet levy, etc.)
             foreach ($unit->activeChargeConfigs as $config) {
-                $chargeType = $config->chargeType;
+                $ledger = $config->ledger;
 
-                if (!$chargeType || !$chargeType->is_active || !$chargeType->is_recurring) {
+                if (!$ledger || !$ledger->is_active || !$ledger->is_recurring) {
                     continue;
                 }
 
-                $appliesTo = $chargeType->applies_to instanceof \App\Enums\ChargeTypeAppliesTo
-                    ? $chargeType->applies_to->value
-                    : (string) $chargeType->applies_to;
+                $appliesTo = $ledger->applies_to instanceof \App\Enums\LedgerAppliesTo
+                    ? $ledger->applies_to->value
+                    : (string) $ledger->applies_to;
 
                 // Determine recipient
                 $billedToType = null;
@@ -432,35 +686,35 @@ class InvoiceService extends BaseService
                         $billedToType = BilledToType::OWNER->value;
                         $billedToId   = $unit->owner->id;
                     }
-                } elseif ($appliesTo === 'tenant') {
-                    if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value && $unit->currentTenant) {
-                        $billedToType = BilledToType::TENANT->value;
-                        $billedToId   = $unit->currentTenant->id;
+                } elseif ($appliesTo === 'occupant') {
+                    if ($occupancyType === OccupancyType::OCCUPANT_OCCUPIED->value && $unit->currentOccupant) {
+                        $billedToType = BilledToType::OCCUPANT->value;
+                        $billedToId   = $unit->currentOccupant->id;
                     }
                 } elseif ($appliesTo === 'either') {
-                    // Bill the current occupant: tenant if tenant_occupied, else owner
-                    if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value && $unit->currentTenant) {
-                        $billedToType = BilledToType::TENANT->value;
-                        $billedToId   = $unit->currentTenant->id;
+                    // Bill the current occupant: occupant if occupant_occupied, else owner
+                    if ($occupancyType === OccupancyType::OCCUPANT_OCCUPIED->value && $unit->currentOccupant) {
+                        $billedToType = BilledToType::OCCUPANT->value;
+                        $billedToId   = $unit->currentOccupant->id;
                     } elseif ($unit->owner) {
                         $billedToType = BilledToType::OWNER->value;
                         $billedToId   = $unit->owner->id;
                     }
                 }
 
-                $recipientName = ($billedToType === BilledToType::TENANT->value)
-                    ? $unit->currentTenant?->full_name
+                $recipientName = ($billedToType === BilledToType::OCCUPANT->value)
+                    ? $unit->currentOccupant?->full_name
                     : $unit->owner?->full_name;
 
                 if ($billedToType && $billedToId && $config->amount > 0) {
                     $invoicesToCreate[] = [
-                        'charge_type'    => $chargeType,
+                        'ledger'    => $ledger,
                         'billed_to_type' => $billedToType,
                         'billed_to_id'   => $billedToId,
                         'recipient_name' => $recipientName,
                         'amount'         => $config->amount,
                         'unit'           => $unit,
-                        'label'          => $chargeType->name,
+                        'label'          => $ledger->name,
                     ];
                 }
             }
@@ -468,15 +722,15 @@ class InvoiceService extends BaseService
             // 4. Check for duplicates and build final list
             foreach ($invoicesToCreate as $invoiceSpec) {
                 $duplicate = Invoice::where('unit_id', $unit->id)
-                    ->where('charge_type_id', $invoiceSpec['charge_type']->id)
-                    ->where('billing_period', $billingPeriodDate)
+                    ->where('ledger_id', $invoiceSpec['ledger']->id)
+                    ->whereDate('billing_period', $billingPeriodDate)
                     ->where('billed_to_type', $invoiceSpec['billed_to_type'])
                     ->where('billed_to_id', $invoiceSpec['billed_to_id'])
                     ->exists();
 
                 $previewRow = [
                     'unit_number'    => $unit->unit_number,
-                    'charge_type'    => $invoiceSpec['label'],
+                    'ledger'    => $invoiceSpec['label'],
                     'billed_to_type' => $invoiceSpec['billed_to_type'],
                     'recipient_name' => $invoiceSpec['recipient_name'] ?? null,
                     'amount'         => $invoiceSpec['amount'],
@@ -485,21 +739,22 @@ class InvoiceService extends BaseService
 
                 if (!$duplicate) {
                     if (!$isDryRun) {
-                        Invoice::create([
+                        $invoice = Invoice::create([
                             'unit_id'            => $unit->id,
-                            'charge_type_id'     => $invoiceSpec['charge_type']->id,
+                            'ledger_id'     => $invoiceSpec['ledger']->id,
                             'billed_to_type'     => $invoiceSpec['billed_to_type'],
                             'billed_to_id'       => $invoiceSpec['billed_to_id'],
                             'amount'             => $invoiceSpec['amount'],
                             'billing_period'     => $billingPeriodDate,
-                            'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
+                            'due_date'           => now()->addDays($paymentTermsDays)->format('Y-m-d'),
                             'status'             => InvoiceStatus::UNPAID->value,
-                            'invoice_number'     => $this->generateInvoiceNumber($user->tenant_id),
-                            'tenant_id'          => $user->tenant_id,
+                            'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
+                            'organization_id'    => $user->organization_id,
                             'issued_by_type'     => 'user',
                             'issued_by_user_id'  => $user->id,
                         ]);
                         $created++;
+                        $createdIds[]             = $invoice->id;
                         $affectedUnits[$unit->id] = $unit;
                     }
                 }
@@ -513,9 +768,27 @@ class InvoiceService extends BaseService
             $this->unitBalance->recalculate($affectedUnit);
         }
 
+        // Dispatch one job per invoice — rate limiting is enforced globally via RateLimited middleware.
+        if (!$isDryRun && !empty($createdIds)) {
+            foreach ($createdIds as $invoiceId) {
+                SendInvoiceEmail::dispatch($invoiceId);
+            }
+        }
+
+        // Notify all users assigned to this community about the completed billing run.
+        if (!$isDryRun && $created > 0) {
+            $usersToNotify = $community->assignedUsers()->get();
+            Notification::send($usersToNotify, new BillingRunCompleted(
+                $community,
+                $created,
+                $billingPeriod->format('F Y'),
+            ));
+        }
+
         return [
             'preview'        => $preview,
             'created'        => $created,
+            'created_ids'    => $createdIds,
             'billing_period' => $billingPeriod->format('Y-m'),
             'dry_run'        => $isDryRun,
             'message'        => $isDryRun
@@ -525,7 +798,7 @@ class InvoiceService extends BaseService
     }
 
     /**
-     * Create ad-hoc invoices for a non-recurring charge type across selected units.
+     * Create ad-hoc invoices for a non-recurring ledger across selected units.
      *
      * @param array $data
      * @return array
@@ -535,24 +808,24 @@ class InvoiceService extends BaseService
     {
         $user = Auth::user();
 
-        $estate = Estate::where('id', $data['estate_id'])
-            ->where('tenant_id', $user->tenant_id)
+        $community = Community::where('id', $data['community_id'])
+            ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
-        $chargeType = ChargeType::where('id', $data['charge_type_id'])
-            ->where('tenant_id', $user->tenant_id)
+        $ledger = Ledger::where('id', $data['ledger_id'])
+            ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
-        if ($chargeType->is_recurring) {
-            throw new Exception('Ad-hoc billing is only available for non-recurring charge types. Use Run Billing for recurring charges.');
+        if ($ledger->is_recurring) {
+            throw new Exception('Ad-hoc billing is only available for non-recurring ledgers. Use Run Billing for recurring charges.');
         }
 
         $billingPeriod = Carbon::parse(($data['billing_period'] ?? now()->format('Y-m')) . '-01');
         $billingPeriodDate = $billingPeriod->format('Y-m-d');
 
-        $query = Unit::where('estate_id', $estate->id)
+        $query = Unit::where('community_id', $community->id)
             ->where('status', 'active')
-            ->with(['owner', 'currentTenant']);
+            ->with(['owner', 'currentOccupant']);
 
         if (!empty($data['unit_ids'])) {
             $query->whereIn('id', $data['unit_ids']);
@@ -562,9 +835,9 @@ class InvoiceService extends BaseService
         $count  = 0;
         $preview = [];
 
-        $appliesTo = $chargeType->applies_to instanceof \App\Enums\ChargeTypeAppliesTo
-            ? $chargeType->applies_to->value
-            : (string) $chargeType->applies_to;
+        $appliesTo = $ledger->applies_to instanceof \App\Enums\LedgerAppliesTo
+            ? $ledger->applies_to->value
+            : (string) $ledger->applies_to;
 
         foreach ($units as $unit) {
             $occupancyType = $unit->occupancy_type instanceof OccupancyType
@@ -577,15 +850,15 @@ class InvoiceService extends BaseService
             if ($appliesTo === 'owner' && $unit->owner) {
                 $billedToType = BilledToType::OWNER->value;
                 $billedToId   = $unit->owner->id;
-            } elseif ($appliesTo === 'tenant') {
-                if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value && $unit->currentTenant) {
-                    $billedToType = BilledToType::TENANT->value;
-                    $billedToId   = $unit->currentTenant->id;
+            } elseif ($appliesTo === 'occupant') {
+                if ($occupancyType === OccupancyType::OCCUPANT_OCCUPIED->value && $unit->currentOccupant) {
+                    $billedToType = BilledToType::OCCUPANT->value;
+                    $billedToId   = $unit->currentOccupant->id;
                 }
             } elseif ($appliesTo === 'either') {
-                if ($occupancyType === OccupancyType::TENANT_OCCUPIED->value && $unit->currentTenant) {
-                    $billedToType = BilledToType::TENANT->value;
-                    $billedToId   = $unit->currentTenant->id;
+                if ($occupancyType === OccupancyType::OCCUPANT_OCCUPIED->value && $unit->currentOccupant) {
+                    $billedToType = BilledToType::OCCUPANT->value;
+                    $billedToId   = $unit->currentOccupant->id;
                 } elseif ($unit->owner) {
                     $billedToType = BilledToType::OWNER->value;
                     $billedToId   = $unit->owner->id;
@@ -598,15 +871,15 @@ class InvoiceService extends BaseService
 
             Invoice::create([
                 'unit_id'            => $unit->id,
-                'charge_type_id'     => $chargeType->id,
+                'ledger_id'     => $ledger->id,
                 'billed_to_type'     => $billedToType,
                 'billed_to_id'       => $billedToId,
                 'amount'             => $data['amount'],
                 'billing_period'     => $billingPeriodDate,
-                'due_date'           => $billingPeriod->copy()->addDays(7)->format('Y-m-d'),
+                'due_date'           => now()->addDays(7)->format('Y-m-d'),
                 'status'             => InvoiceStatus::UNPAID->value,
-                'invoice_number'     => $this->generateInvoiceNumber($user->tenant_id),
-                'tenant_id'          => $user->tenant_id,
+                'invoice_number'     => $this->generateInvoiceNumber($user->organization_id),
+                'organization_id'          => $user->organization_id,
                 'issued_by_type'     => 'user',
                 'issued_by_user_id'  => $user->id,
             ]);
@@ -615,7 +888,7 @@ class InvoiceService extends BaseService
 
             $preview[] = [
                 'unit_number'    => $unit->unit_number,
-                'charge_type'    => $chargeType->name,
+                'ledger'    => $ledger->name,
                 'billed_to_type' => $billedToType,
                 'amount'         => $data['amount'],
             ];
@@ -639,7 +912,7 @@ class InvoiceService extends BaseService
      */
     public function showInvoice(Invoice $invoice): InvoiceResource
     {
-        $invoice->load(['unit.estate', 'chargeType', 'cashbookEntries', 'billedToOwner', 'billedToUnitTenant', 'emailEvents', 'issuedBy']);
+        $invoice->load(['unit.community', 'ledger', 'bankAccount', 'items.ledger', 'cashbookEntries', 'billedToOwner', 'billedToUnitOccupant', 'emailEvents', 'issuedBy']);
 
         return $this->showResource($invoice);
     }
@@ -678,11 +951,11 @@ class InvoiceService extends BaseService
      */
     public function resendInvoice(Invoice $invoice): array
     {
-        $invoice->load(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant']);
+        $invoice->load(['unit.community', 'ledger', 'bankAccount', 'items.ledger', 'billedToOwner', 'billedToUnitOccupant']);
 
         $billedTo = $invoice->billed_to_type->value === BilledToType::OWNER->value
             ? $invoice->billedToOwner
-            : $invoice->billedToUnitTenant;
+            : $invoice->billedToUnitOccupant;
 
         if (!$billedTo || !$billedTo->email) {
             throw new Exception('No email address found for the invoice recipient.');
@@ -695,30 +968,98 @@ class InvoiceService extends BaseService
 
         $from = config('mail.from.name') . ' <' . config('mail.from.address') . '>';
 
-        $response = Resend::emails()->send([
-            'from'    => $from,
-            'to'      => [$billedTo->email],
-            'subject' => "Invoice {$invoice->invoice_number} — {$invoice->chargeType->name}",
-            'html'    => $html,
-        ]);
+        // Multi-line customer invoices have no header ledger — fall back to a generic label.
+        $subject = "Invoice {$invoice->invoice_number} — " . ($invoice->ledger?->name ?? 'Customer Invoice');
 
-        $resendEmailId = $response->id ?? null;
+        if (app()->isLocal()) {
+            Log::info("[local] Invoice email suppressed — would send to {$billedTo->email}", [
+                'invoice' => $invoice->invoice_number,
+                'subject' => $subject,
+            ]);
+            $resendEmailId = null;
+        } else {
+            $response = Resend::emails()->send([
+                'from'    => $from,
+                'to'      => [$billedTo->email],
+                'subject' => $subject,
+                'html'    => $html,
+            ]);
+            $resendEmailId = $response->id ?? null;
+        }
 
         // Clear previous tracking events so the UI always shows the current send cycle
         InvoiceEmailEvent::where('invoice_id', $invoice->id)->delete();
 
         InvoiceEmailEvent::create([
             'invoice_id'      => $invoice->id,
-            'tenant_id'       => $invoice->tenant_id,
+            'organization_id'       => $invoice->organization_id,
             'event_type'      => 'sent',
             'email'           => $billedTo->email,
             'resend_email_id' => $resendEmailId,
             'occurred_at'     => now(),
         ]);
 
-        $invoice->update(['sent_at' => now()]);
+        $invoice->update([
+            'sent_at'         => now(),
+            'email_failed_at' => null,
+        ]);
 
         return ['message' => 'Invoice sent successfully'];
+    }
+
+    /**
+     * Send a payment reminder email for an overdue/unpaid invoice and record the timestamp.
+     *
+     * @param Invoice $invoice
+     * @return array
+     */
+    public function sendPaymentReminder(Invoice $invoice): array
+    {
+        $invoice->load(['unit.community', 'ledger', 'bankAccount', 'items.ledger', 'billedToOwner', 'billedToUnitOccupant']);
+
+        $billedTo = $invoice->billed_to_type->value === BilledToType::OWNER->value
+            ? $invoice->billedToOwner
+            : $invoice->billedToUnitOccupant;
+
+        if (!$billedTo || !$billedTo->email) {
+            throw new Exception('No email address found for the invoice recipient.');
+        }
+
+        $html = view('emails.payment-reminder', [
+            'invoice'  => $invoice,
+            'billedTo' => $billedTo,
+        ])->render();
+
+        $from = config('mail.from.name') . ' <' . config('mail.from.address') . '>';
+
+        if (app()->isLocal()) {
+            Log::info("[local] Payment reminder email suppressed — would send to {$billedTo->email}", [
+                'invoice' => $invoice->invoice_number,
+                'subject' => "Payment Reminder — Invoice {$invoice->invoice_number}",
+            ]);
+            $resendEmailId = null;
+        } else {
+            $response = Resend::emails()->send([
+                'from'    => $from,
+                'to'      => [$billedTo->email],
+                'subject' => "Payment Reminder — Invoice {$invoice->invoice_number}",
+                'html'    => $html,
+            ]);
+            $resendEmailId = $response->id ?? null;
+        }
+
+        InvoiceEmailEvent::create([
+            'invoice_id'      => $invoice->id,
+            'organization_id' => $invoice->organization_id,
+            'event_type'      => 'reminder_sent',
+            'email'           => $billedTo->email,
+            'resend_email_id' => $resendEmailId,
+            'occurred_at'     => now(),
+        ]);
+
+        $invoice->update(['reminder_sent_at' => now()]);
+
+        return ['message' => 'Payment reminder sent successfully'];
     }
 
     /**
@@ -729,22 +1070,26 @@ class InvoiceService extends BaseService
      */
     public function downloadPdf(Invoice $invoice): Response
     {
-        $invoice->load(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant']);
+        $invoice->load(['unit.community', 'ledger', 'bankAccount', 'items.ledger', 'billedToOwner', 'billedToUnitOccupant']);
 
         $billedTo = $invoice->billed_to_type->value === BilledToType::OWNER->value
             ? $invoice->billedToOwner
-            : $invoice->billedToUnitTenant;
+            : $invoice->billedToUnitOccupant;
+
+        $organization = $invoice->organization;
 
         $pdf = Pdf::loadView('pdfs.invoice', [
-            'invoice'  => $invoice,
-            'billedTo' => $billedTo,
+            'invoice'         => $invoice,
+            'billedTo'        => $billedTo,
+            'organization'    => $organization,
+            'companyLogoPath' => $organization?->logoFilePath(),
         ])->setPaper('a4');
 
         return $pdf->download("{$invoice->invoice_number}.pdf");
     }
 
     /**
-     * Return a paginated list of soft-deleted invoices for the authenticated tenant.
+     * Return a paginated list of soft-deleted invoices for the authenticated occupant.
      *
      * @param array $data
      * @return InvoiceResources
@@ -753,13 +1098,12 @@ class InvoiceService extends BaseService
     {
         $user  = Auth::user();
         $query = Invoice::onlyTrashed()
-            ->where('tenant_id', $user->tenant_id)
-            ->with(['unit.estate', 'chargeType', 'billedToOwner', 'billedToUnitTenant'])
+            ->where('organization_id', $user->organization_id)
+            ->with(['unit.community', 'ledger', 'billedToOwner', 'billedToUnitOccupant'])
             ->latest('deleted_at');
 
         if (!empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
-            $query->where('invoice_number', 'ilike', $term);
+            $query->whereLike('invoice_number', $data['search']);
         }
 
         return $this->setQuery($query)->getOutput();
@@ -810,7 +1154,7 @@ class InvoiceService extends BaseService
     {
         $user     = Auth::user();
         $invoices = Invoice::whereIn('id', $ids)
-            ->where('tenant_id', $user->tenant_id)
+            ->where('organization_id', $user->organization_id)
             ->with('unit')
             ->get();
 
@@ -857,18 +1201,18 @@ class InvoiceService extends BaseService
     }
 
     /**
-     * Generate a sequential invoice number for the tenant.
+     * Generate a sequential invoice number for the occupant.
      * Format: INV-{YEAR}-{ZERO_PADDED_COUNT}
      *
-     * @param string $tenantId
+     * @param string $organizationId
      * @return string
      */
-    private function generateInvoiceNumber(string $tenantId): string
+    private function generateInvoiceNumber(string $organizationId): string
     {
         $year   = date('Y');
         $prefix = 'INV-' . $year . '-';
 
-        $max = Invoice::where('tenant_id', $tenantId)
+        $max = Invoice::where('organization_id', $organizationId)
             ->where('invoice_number', 'like', $prefix . '%')
             ->withTrashed()
             ->max('invoice_number');

@@ -23,7 +23,7 @@ class OwnerController extends Controller
     }
 
     /**
-     * Return a paginated list of owners for the authenticated tenant.
+     * Return a paginated list of owners for the authenticated occupant.
      * Owners are created via unit creation — no store endpoint.
      *
      * @param ShowOwnersRequest $request

@@ -10,10 +10,14 @@ import AppSelect     from '@/components/common/AppSelect.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
 import api from '@/composables/useApi'
 import { useBack } from '@/composables/useBack.js'
+import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
 
 const route  = useRoute()
 const router = useRouter()
 const { goBack } = useBack('/billing')
+const countryStore = useCountryStore()
+const { success } = useToast()
 
 const invoice       = ref(null)
 const loading       = ref(true)
@@ -42,6 +46,7 @@ async function changeStatus(newStatus) {
   try {
     await api.put(`/invoices/${route.params.invoiceId}`, { status: newStatus })
     await fetchInvoice()
+    success('Invoice status updated.')
   } catch {
     // silent
   } finally {
@@ -81,6 +86,7 @@ async function submitEdit() {
     }
     await api.put(`/invoices/${route.params.invoiceId}`, payload)
     showEditModal.value = false
+    success('Invoice updated successfully.')
     await fetchInvoice()
   } catch (err) {
     editError.value = err.response?.data?.message ?? 'Failed to save changes. Please try again.'
@@ -104,6 +110,7 @@ async function restoreInvoice() {
   restoring.value = true
   try {
     await api.post(`/invoices/${route.params.invoiceId}/restore`)
+    success('Invoice restored successfully.')
     await fetchInvoice()   // reload — deleted_at will now be null, banners hide
   } catch {
     /* ignore — unlikely to fail */
@@ -159,7 +166,7 @@ const billedTo = computed(() => {
   if (!invoice.value) return null
   return invoice.value.billed_to_type === 'owner'
     ? invoice.value.billed_to_owner
-    : invoice.value.billed_to_unit_tenant
+    : invoice.value.billed_to_unit_occupant
 })
 
 const statusVariant = computed(() => {
@@ -228,6 +235,12 @@ const sentEvent      = computed(() => getEmailEvent('sent'))
 const deliveredEvent = computed(() => getEmailEvent('delivered'))
 const openedEvent    = computed(() => getEmailEvent('opened'))
 
+const emailFailed      = computed(() => !!invoice.value?.email_failed_at)
+const failedEmailEvent = computed(() =>
+  invoice.value?.email_events?.find(e => e.event_type === 'delivery_failed') ?? null
+)
+const failedEmailReason = computed(() => failedEmailEvent.value?.metadata?.reason ?? null)
+
 const timeToOpen = computed(() => {
   if (!deliveredEvent.value || !openedEvent.value) return null
   const diffMs = new Date(openedEvent.value.occurred_at) - new Date(deliveredEvent.value.occurred_at)
@@ -245,8 +258,7 @@ const timeToOpen = computed(() => {
 
 // ── Formatting ────────────────────────────────────────────────────────────
 function formatCurrency(amount) {
-  const parts = Math.abs(amount ?? 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
-  return `R\u00a0${parts}`
+  return countryStore.formatCurrency(amount)
 }
 
 function formatDate(dateStr) {
@@ -320,7 +332,7 @@ function printInvoice() {
   const to  = billedTo.value
 
   const lineItems = (inv.line_items?.length ? inv.line_items : [{
-    description: `${inv.charge_type?.name ?? 'Charge'} — Unit ${inv.unit?.unit_number}`,
+    description: `${inv.ledger?.name ?? 'Charge'} — Unit ${inv.unit?.unit_number}`,
     period:      formatPeriod(inv.billing_period),
     amount:      inv.amount,
   }])
@@ -373,7 +385,7 @@ function printInvoice() {
       <td style="vertical-align:top;width:55%;">
         <div style="font-size:10px;font-weight:600;letter-spacing:2px;color:#717b99;margin-bottom:8px;">BILL TO</div>
         <div style="font-size:16px;font-weight:700;color:#1e2740;">${to?.full_name ?? '—'}</div>
-        <div style="font-size:12px;color:#717b99;margin-top:4px;">${inv.billed_to_type === 'owner' ? 'Owner' : 'Tenant'}</div>
+        <div style="font-size:12px;color:#717b99;margin-top:4px;">${inv.billed_to_type === 'owner' ? 'Owner' : 'Occupant'}</div>
         <div style="font-size:12px;color:#717b99;margin-top:2px;">${to?.email ?? ''}</div>
       </td>
       <td style="vertical-align:top;text-align:right;">
@@ -381,7 +393,7 @@ function printInvoice() {
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Invoice Date</td><td style="font-size:12px;font-weight:600;text-align:right;">${formatDateLong(inv.invoice_date ?? inv.created_at?.split('T')[0])}</td></tr>
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Due Date</td><td style="font-size:12px;font-weight:600;text-align:right;">${formatDateLong(inv.due_date)}</td></tr>
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Period</td><td style="font-size:12px;font-weight:600;text-align:right;">${formatPeriod(inv.billing_period)}</td></tr>
-          <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Estate</td><td style="font-size:12px;font-weight:600;text-align:right;">${inv.unit?.estate?.name ?? '—'}</td></tr>
+          <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Community</td><td style="font-size:12px;font-weight:600;text-align:right;">${inv.unit?.community?.name ?? '—'}</td></tr>
           <tr><td style="font-size:12px;color:#717b99;padding:3px 0;padding-right:16px;">Unit</td><td style="font-size:12px;font-weight:600;text-align:right;">${inv.unit?.unit_number ?? '—'}</td></tr>
         </table>
       </td>
@@ -444,7 +456,7 @@ const invoiceOptions = computed(() => {
   )
   const opts = outstanding.map(inv => ({
     value: inv.id,
-    label: `${inv.invoice_number} — ${inv.charge_type?.name ?? 'Charge'} (${formatCurrency(inv.outstanding ?? inv.amount)} outstanding)`,
+    label: `${inv.invoice_number} — ${inv.ledger?.name ?? 'Charge'} (${formatCurrency(inv.outstanding ?? inv.amount)} outstanding)`,
   }))
   return [{ value: '__none__', label: 'None — record as unallocated' }, ...opts]
 })
@@ -520,7 +532,7 @@ async function submitAddPayment() {
   addPaymentError.value  = null
   try {
     const fd = new FormData()
-    fd.append('estate_id',   invoice.value.unit?.estate_id ?? '')
+    fd.append('community_id',   invoice.value.unit?.community_id ?? '')
     fd.append('unit_id',     invoice.value.unit?.id ?? '')
     fd.append('type',        'credit')
     fd.append('date',        addPaymentForm.value.date)
@@ -643,6 +655,16 @@ async function submitRemovePayment() {
     <!-- ── Invoice content ─────────────────────────────────────────────── -->
     <template v-else-if="invoice">
 
+      <!-- Email failed banner -->
+      <div v-if="emailFailed && !invoice.deleted_at" class="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+        <div>
+          <span class="font-medium">Email delivery failed</span> — all retry attempts were exhausted and this invoice was not delivered to the recipient.
+          Use the <strong>Retry Send</strong> button to attempt again.
+          <span v-if="failedEmailReason" class="block mt-1 text-destructive/70 text-xs">Reason: {{ failedEmailReason }}</span>
+        </div>
+      </div>
+
       <!-- Deleted banner -->
       <div v-if="invoice.deleted_at" class="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -720,7 +742,7 @@ async function submitRemovePayment() {
             </div>
           </div>
           <p class="text-sm text-muted-foreground">
-            {{ invoice.unit?.estate?.name }} · Unit {{ invoice.unit?.unit_number }}
+            {{ invoice.unit?.community?.name }} · Unit {{ invoice.unit?.unit_number }}
           </p>
         </div>
 
@@ -776,7 +798,7 @@ async function submitRemovePayment() {
           <!-- Resend Email (hidden for deleted invoices) -->
           <AppButton
             v-if="!invoice.deleted_at"
-            variant="outline"
+            :variant="emailFailed ? 'danger-ghost' : 'outline'"
             :disabled="resending"
             @click="resendInvoice"
           >
@@ -790,12 +812,17 @@ async function submitRemovePayment() {
               stroke-linecap="round" stroke-linejoin="round" class="text-success">
               <path d="M20 6 9 17l-5-5" />
             </svg>
+            <svg v-else-if="emailFailed" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M3 12h9"/>
+            </svg>
             <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect width="20" height="16" x="2" y="4" rx="2" />
               <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
             </svg>
-            {{ resending ? 'Sending…' : resendSuccess ? 'Sent!' : hasEverBeenSent ? 'Resend Email' : 'Send Email' }}
+            {{ resending ? 'Sending…' : resendSuccess ? 'Sent!' : emailFailed ? 'Retry Send' : hasEverBeenSent ? 'Resend Email' : 'Send Email' }}
           </AppButton>
 
           <!-- Download PDF -->
@@ -893,7 +920,7 @@ async function submitRemovePayment() {
                   <tbody>
                     <tr class="border-b border-border">
                       <td class="py-3 px-5 text-foreground">
-                        <p class="font-medium">{{ invoice.charge_type?.name }} — Unit {{ invoice.unit?.unit_number }}</p>
+                        <p class="font-medium">{{ invoice.ledger?.name }} — Unit {{ invoice.unit?.unit_number }}</p>
                         <p class="text-xs text-muted-foreground">{{ formatPeriod(invoice.billing_period) }}</p>
                       </td>
                       <td class="py-3 px-5 text-right font-medium text-foreground whitespace-nowrap">
@@ -1044,7 +1071,7 @@ async function submitRemovePayment() {
           <!-- Context card -->
           <AppCard padding="none" shadow="sm">
             <div class="p-5 space-y-3">
-              <!-- Estate -->
+              <!-- Community -->
               <div class="flex items-center gap-2 text-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
@@ -1055,12 +1082,12 @@ async function submitRemovePayment() {
                   <path d="M12 10h.01" /><path d="M12 14h.01" /><path d="M16 10h.01" />
                   <path d="M16 14h.01" /><path d="M8 10h.01" /><path d="M8 14h.01" />
                 </svg>
-                <span class="text-muted-foreground">Estate:</span>
+                <span class="text-muted-foreground">Community:</span>
                 <router-link
-                  :to="`/estates/${invoice.unit?.estate_id}`"
+                  :to="`/communities/${invoice.unit?.community_id}`"
                   class="text-primary font-medium hover:underline"
                 >
-                  {{ invoice.unit?.estate?.name ?? '—' }}
+                  {{ invoice.unit?.community?.name ?? '—' }}
                 </router-link>
               </div>
 
@@ -1075,7 +1102,7 @@ async function submitRemovePayment() {
                 <span class="text-muted-foreground">Unit:</span>
                 <router-link
                   v-if="invoice.unit"
-                  :to="`/estates/${invoice.unit.estate_id}/units/${invoice.unit.id}`"
+                  :to="`/communities/${invoice.unit.community_id}/units/${invoice.unit.id}`"
                   class="text-primary font-medium hover:underline"
                 >
                   {{ invoice.unit.unit_number }}
@@ -1173,10 +1200,16 @@ async function submitRemovePayment() {
                   <div class="flex items-start gap-3 relative">
                     <div
                       class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 ring-2 ring-background"
-                      :class="sentEvent ? 'bg-success/15' : 'bg-muted'"
+                      :class="emailFailed ? 'bg-destructive/15' : sentEvent ? 'bg-success/15' : 'bg-muted'"
                     >
+                      <!-- Failed icon (X) -->
+                      <svg v-if="emailFailed" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                        class="text-destructive">
+                        <path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+                      </svg>
                       <!-- Sent icon (paper plane) -->
-                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                      <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                         :class="sentEvent ? 'text-success' : 'text-muted-foreground'">
                         <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
@@ -1184,8 +1217,14 @@ async function submitRemovePayment() {
                       </svg>
                     </div>
                     <div class="pt-0.5 min-w-0">
-                      <p class="text-sm font-semibold text-foreground">Sent</p>
-                      <template v-if="sentEvent">
+                      <p class="text-sm font-semibold" :class="emailFailed ? 'text-destructive' : 'text-foreground'">
+                        {{ emailFailed ? 'Delivery Failed' : 'Sent' }}
+                      </p>
+                      <template v-if="emailFailed">
+                        <p class="text-xs text-destructive/70">Failed on {{ formatDateTime(invoice.email_failed_at) }}</p>
+                        <p class="text-xs text-destructive/70">All retry attempts exhausted</p>
+                      </template>
+                      <template v-else-if="sentEvent">
                         <p class="text-xs text-muted-foreground">{{ formatDateTime(sentEvent.occurred_at) }}</p>
                         <p v-if="sentEvent.email" class="text-xs text-muted-foreground truncate">{{ sentEvent.email }}</p>
                       </template>
@@ -1243,8 +1282,22 @@ async function submitRemovePayment() {
                 </div>
               </div>
 
+              <!-- Email failed callout -->
+              <div v-if="emailFailed" class="mt-4 px-3 py-2.5 bg-destructive/5 border border-destructive/20 rounded-md flex items-start gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="text-destructive shrink-0 mt-px">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+                </svg>
+                <div>
+                  <p class="text-xs text-destructive leading-relaxed font-medium">The recipient never received this invoice.</p>
+                  <p v-if="failedEmailReason" class="text-xs text-destructive/70 mt-0.5 leading-relaxed">{{ failedEmailReason }}</p>
+                  <p class="text-xs text-destructive/70 mt-0.5">Use <strong>Retry Send</strong> above to attempt delivery again.</p>
+                </div>
+              </div>
+
               <!-- Time-to-open stat -->
-              <div v-if="openedEvent && timeToOpen" class="mt-4 px-3 py-2.5 bg-success/8 border border-success/20 rounded-md flex items-center gap-2">
+              <div v-else-if="openedEvent && timeToOpen" class="mt-4 px-3 py-2.5 bg-success/8 border border-success/20 rounded-md flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                   class="text-success shrink-0">
@@ -1306,6 +1359,8 @@ async function submitRemovePayment() {
         label="Amount"
         type="number"
         placeholder="0.00"
+        :min="0"
+        :max="9999999999.99"
       />
       <AppInput
         v-model="addPaymentForm.notes"
@@ -1375,6 +1430,8 @@ async function submitRemovePayment() {
         label="Amount"
         type="number"
         placeholder="0.00"
+        :min="0"
+        :max="9999999999.99"
       />
 
       <AppDatePicker

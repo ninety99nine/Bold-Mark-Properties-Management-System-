@@ -24,6 +24,11 @@ import AppTooltip       from '@/components/common/AppTooltip.vue'
 import AppTableToolbar  from '@/components/common/AppTableToolbar.vue'
 import AppExportModal   from '@/components/common/AppExportModal.vue'
 import AppDatePicker    from '@/components/common/AppDatePicker.vue'
+import { useCountryStore } from '@/stores/country'
+import { useToast } from '@/composables/useToast'
+
+const countryStore = useCountryStore()
+const { success } = useToast()
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend)
 
@@ -48,6 +53,7 @@ async function handleExportDownload({ format, records }) {
 
   const state  = toolbarState.value
   const params = {}
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
   if (state.filters?.allocation_status) params.allocation_status = state.filters.allocation_status
   if (state.filters?.type)              params.type              = state.filters.type
   if (state.search?.trim())             params._search           = state.search.trim()
@@ -77,7 +83,9 @@ const summary = ref({
 async function fetchSummary() {
   summaryLoading.value = true
   try {
-    const { data } = await api.get('/cashbook/summary')
+    const params = {}
+    if (countryStore.activeCountry) params.country = countryStore.activeCountry
+    const { data } = await api.get('/cashbook/summary', { params })
     summary.value = data
   } catch { /* silent */ } finally {
     summaryLoading.value = false
@@ -156,6 +164,7 @@ function buildApiParams() {
   const state  = toolbarState.value
   const params = { _per_page: 15, page: currentPage.value }
 
+  if (countryStore.activeCountry) params.country = countryStore.activeCountry
   if (state.filters?.allocation_status) params.allocation_status = state.filters.allocation_status
   if (state.search?.trim())             params._search = state.search.trim()
   if (state.dateRange && state.dateRange !== 'all_time') {
@@ -192,6 +201,18 @@ onMounted(() => {
     toolbarState.value.filters = { ...initialFilters.value }
     toolbarKey.value++ // remount toolbar with initialFilters
   }
+  // Auto-open Add Entry modal from dashboard quick action
+  if (route.query.action === 'add-entry') {
+    openAddEntry()
+    router.replace({ query: { ...route.query, action: undefined } })
+  }
+  fetchSummary()
+  fetchEntries()
+})
+
+// ── Re-fetch on country change ───────────────────────────────────────────
+watch(() => countryStore.activeCountry, () => {
+  currentPage.value = 1
   fetchSummary()
   fetchEntries()
 })
@@ -207,7 +228,7 @@ const unallocatedPct = computed(() => 100 - allocatedPct.value)
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function fmtCurrency(amount) {
-  return 'R\u00a0' + Math.abs(Number(amount) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+  return countryStore.formatCurrency(Math.abs(Number(amount) || 0))
 }
 
 function fmtSigned(amount, type) {
@@ -245,8 +266,8 @@ const pageNumbers = computed(() => {
 // ── Add Entry modal ───────────────────────────────────────────────────────
 const showAddEntry       = ref(false)
 const submittingEntry    = ref(false)
-const estateOptions      = ref([])
-const estatesLoading     = ref(false)
+const communityOptions      = ref([])
+const communitiesLoading     = ref(false)
 const unitOptionsForAdd  = ref([])
 const unitsLoadingForAdd = ref(false)
 
@@ -256,7 +277,7 @@ const ENTRY_TYPE_OPTS = [
 ]
 
 const newEntry = ref({
-  estate_id:   '',
+  community_id:   '',
   date:        '',
   type:        'credit',
   description: '',
@@ -265,23 +286,25 @@ const newEntry = ref({
   notes:       '',
 })
 
-async function fetchEstates() {
-  estatesLoading.value = true
+async function fetchCommunities() {
+  communitiesLoading.value = true
   try {
-    const { data } = await api.get('/estates', { params: { _per_page: 100 } })
-    estateOptions.value = (data.data ?? []).map(e => ({ value: e.id, label: e.name }))
+    const params = { _per_page: 100 }
+    if (countryStore.activeCountry) params.country = countryStore.activeCountry
+    const { data } = await api.get('/communities', { params })
+    communityOptions.value = (data.data ?? []).map(e => ({ value: e.id, label: e.name }))
   } finally {
-    estatesLoading.value = false
+    communitiesLoading.value = false
   }
 }
 
-watch(() => newEntry.value.estate_id, async (estateId) => {
+watch(() => newEntry.value.community_id, async (communityId) => {
   newEntry.value.unit_id = ''
   unitOptionsForAdd.value = []
-  if (!estateId) return
+  if (!communityId) return
   unitsLoadingForAdd.value = true
   try {
-    const { data } = await api.get(`/estates/${estateId}/units`, { params: { _per_page: 200 } })
+    const { data } = await api.get(`/communities/${communityId}/units`, { params: { _per_page: 200 } })
     unitOptionsForAdd.value = (data.data ?? []).map(u => ({ value: u.id, label: u.unit_number }))
   } finally {
     unitsLoadingForAdd.value = false
@@ -289,17 +312,17 @@ watch(() => newEntry.value.estate_id, async (estateId) => {
 })
 
 function openAddEntry() {
-  fetchEstates()
+  fetchCommunities()
   showAddEntry.value = true
 }
 
 async function handleAddEntry() {
-  const { estate_id, date, type, description, amount } = newEntry.value
-  if (submittingEntry.value || !estate_id || !date || !description || !amount) return
+  const { community_id, date, type, description, amount } = newEntry.value
+  if (submittingEntry.value || !community_id || !date || !description || !amount) return
   submittingEntry.value = true
   try {
     await api.post('/cashbook', {
-      estate_id,
+      community_id,
       date,
       type,
       description,
@@ -308,7 +331,8 @@ async function handleAddEntry() {
       notes:   newEntry.value.notes   || undefined,
     })
     showAddEntry.value = false
-    newEntry.value = { estate_id: '', date: '', type: 'credit', description: '', amount: '', unit_id: '', notes: '' }
+    newEntry.value = { community_id: '', date: '', type: 'credit', description: '', amount: '', unit_id: '', notes: '' }
+    success('Entry added successfully.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ } finally {
     submittingEntry.value = false
@@ -328,30 +352,10 @@ const submittingAllocate      = ref(false)
 
 // ── Smart invoice scoring ─────────────────────────────────────────────────
 const CHARGE_KEYWORDS = {
-  LEVY:                   ['levy'],
-  RENT:                   ['rent'],
-  SPECIAL_LEVY:           ['special'],
-  WATER_RECOVERY:         ['water'],
-  ELECTRICITY_RECOVERY:   ['electricity', 'elec'],
-  GAS_RECOVERY:           ['gas'],
-  SEWERAGE_RECOVERY:      ['sewerage', 'sewer'],
-  REFUSE_RECOVERY:        ['refuse', 'waste'],
-  LATE_INTEREST:          ['interest'],
-  LATE_PENALTY:           ['penalty', 'fine'],
-  INSURANCE_EXCESS:       ['insurance', 'excess'],
-  DAMAGE_DEPOSIT:         ['damage', 'deposit'],
-  KEY_DEPOSIT:            ['key'],
-  PARKING_RENTAL:         ['parking'],
-  STORAGE_RENTAL:         ['storage'],
-  MOVING_IN:              ['moving'],
-  MOVING_OUT:             ['moving'],
-  ACCESS_CARD:            ['access', 'card', 'remote'],
-  GYM_ACCESS:             ['gym'],
-  POOL_ACCESS:            ['pool'],
-  GARDEN_MAINT:           ['garden'],
-  PET_LEVY:               ['pet'],
-  SECURITY_CONTRIB:       ['security'],
-  LEGAL_RECOVERY:         ['legal', 'attorney'],
+  admin_levy:   ['levy', 'admin'],
+  reserve_levy: ['reserve', 'levy'],
+  csos_levy:    ['csos'],
+  rent:         ['rent'],
 }
 
 const MONTH_ABBREVS = {
@@ -366,10 +370,10 @@ function scoreInvoice(inv, entry) {
   const amount      = parseFloat(entry.amount) || 0
   const outstanding = parseFloat(inv.outstanding ?? inv.amount) || 0
 
-  // 1. Charge type keyword match (highest weight — most predictive)
-  const code     = inv.charge_type?.code ?? ''
-  const typeName = (inv.charge_type?.name ?? '').toLowerCase()
-  const kws      = CHARGE_KEYWORDS[code] ?? [typeName]
+  // 1. Ledger keyword match (highest weight — most predictive)
+  const ledgerKey = inv.ledger?.type ?? ''
+  const typeName      = (inv.ledger?.name ?? '').toLowerCase()
+  const kws           = CHARGE_KEYWORDS[ledgerKey] ?? [typeName]
   for (const kw of kws) {
     if (desc.includes(kw)) { score += 30; break }
   }
@@ -418,14 +422,14 @@ function openAllocate(entry) {
   allocateInvoices.value  = []
   allocateUnits.value     = []
   showAllocate.value      = true
-  fetchAllocateUnits(entry.estate_id)
+  fetchAllocateUnits(entry.community_id)
 }
 
-async function fetchAllocateUnits(estateId) {
-  if (!estateId) return
+async function fetchAllocateUnits(communityId) {
+  if (!communityId) return
   allocateUnitsLoading.value = true
   try {
-    const { data } = await api.get(`/estates/${estateId}/units`, { params: { _per_page: 200 } })
+    const { data } = await api.get(`/communities/${communityId}/units`, { params: { _per_page: 200 } })
     allocateUnits.value = (data.data ?? []).map(u => ({ value: u.id, label: u.unit_number }))
   } finally {
     allocateUnitsLoading.value = false
@@ -463,6 +467,7 @@ async function handleAllocate() {
     })
     showAllocate.value    = false
     allocatingEntry.value = null
+    success('Payment allocated successfully.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ } finally {
     submittingAllocate.value = false
@@ -473,6 +478,7 @@ async function handleAllocate() {
 async function handleAutoAllocate() {
   try {
     await api.post('/cashbook/auto-allocate')
+    success('Auto-allocation completed.')
     await Promise.all([fetchSummary(), fetchEntries()])
   } catch { /* silent */ }
 }
@@ -488,14 +494,14 @@ const cashFlowData = computed(() => ({
   }],
 }))
 
-const cashFlowOpts = {
+const cashFlowOpts = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
     tooltip: {
       callbacks: {
-        label: ctx => ' R\u00a0' + Math.abs(ctx.parsed.y).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0'),
+        label: ctx => ' ' + countryStore.formatCurrency(Math.abs(ctx.parsed.y)),
       },
     },
   },
@@ -510,11 +516,11 @@ const cashFlowOpts = {
       ticks: {
         font: { size: 11, family: "'DM Sans', sans-serif" },
         color: MUTED,
-        callback: v => 'R ' + (v >= 1000 ? Math.round(v / 1000) + 'k' : v),
+        callback: v => countryStore.formatCurrencyCompact(v),
       },
     },
   },
-}
+}))
 
 // ── Chart: Allocation Status ──────────────────────────────────────────────
 const centerTextPlugin = {
@@ -994,13 +1000,13 @@ const hasAllocationData = computed(() => allCount.value > 0)
     <AppModal :show="showAddEntry" title="Add Cashbook Entry" size="md" @close="showAddEntry = false">
       <div class="space-y-3">
 
-        <!-- Estate -->
+        <!-- Community -->
         <AppSelect
-          v-model="newEntry.estate_id"
-          label="Estate"
-          :options="estateOptions"
-          :placeholder="estatesLoading ? 'Loading estates...' : 'Select estate...'"
-          :disabled="estatesLoading"
+          v-model="newEntry.community_id"
+          label="Community"
+          :options="communityOptions"
+          :placeholder="communitiesLoading ? 'Loading communities...' : 'Select community...'"
+          :disabled="communitiesLoading"
           required
         />
 
@@ -1026,7 +1032,9 @@ const hasAllocationData = computed(() => allCount.value > 0)
             type="number"
             placeholder="0.00"
             required
-            prefix="R"
+            :prefix="countryStore.currencySymbol"
+            :min="0.01"
+            :max="9999999999.99"
           />
           <div>
             <label class="block text-sm font-medium text-foreground mb-1.5">
@@ -1035,8 +1043,8 @@ const hasAllocationData = computed(() => allCount.value > 0)
             <AppSelect
               v-model="newEntry.unit_id"
               :options="unitOptionsForAdd"
-              :placeholder="unitsLoadingForAdd ? 'Loading units...' : (newEntry.estate_id ? 'Select unit...' : 'Select estate first')"
-              :disabled="!newEntry.estate_id || unitsLoadingForAdd"
+              :placeholder="unitsLoadingForAdd ? 'Loading units...' : (newEntry.community_id ? 'Select unit...' : 'Select community first')"
+              :disabled="!newEntry.community_id || unitsLoadingForAdd"
             />
           </div>
         </div>
@@ -1053,7 +1061,7 @@ const hasAllocationData = computed(() => allCount.value > 0)
         <AppButton variant="outline" @click="showAddEntry = false">Cancel</AppButton>
         <AppButton
           variant="primary"
-          :disabled="submittingEntry || !newEntry.estate_id || !newEntry.date || !newEntry.description || !newEntry.amount"
+          :disabled="submittingEntry || !newEntry.community_id || !newEntry.date || !newEntry.description || !newEntry.amount"
           @click="handleAddEntry"
         >
           {{ submittingEntry ? 'Adding...' : 'Add Entry' }}
@@ -1133,7 +1141,7 @@ const hasAllocationData = computed(() => allCount.value > 0)
                   >Best match</span>
                 </div>
                 <p class="text-xs text-muted-foreground">
-                  {{ inv.charge_type?.name ?? 'Charge' }}
+                  {{ inv.ledger?.name ?? 'Charge' }}
                   <span v-if="inv.billing_period"> · {{ new Date(inv.billing_period + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) }}</span>
                 </p>
               </div>

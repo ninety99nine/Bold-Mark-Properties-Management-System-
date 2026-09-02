@@ -16,11 +16,11 @@ class CashbookEntryResource extends JsonResource
     {
         return [
             'id'              => $this->id,
-            'estate_id'       => $this->estate_id,
-            'tenant_id'       => $this->tenant_id,
+            'community_id'       => $this->community_id,
+            'organization_id'       => $this->organization_id,
             'unit_id'         => $this->unit_id,
             'invoice_id'      => $this->invoice_id,
-            'charge_type_id'  => $this->charge_type_id,
+            'ledger_id'  => $this->ledger_id,
             'parent_entry_id' => $this->parent_entry_id,
             'description'     => $this->description,
             'amount'          => (float) $this->amount,
@@ -30,15 +30,17 @@ class CashbookEntryResource extends JsonResource
             'proof_of_payment_url' => $this->proof_of_payment_path
                 ? Storage::disk('public')->url($this->proof_of_payment_path)
                 : null,
+            'allocated_by_name' => $this->allocated_by_name,
+            'allocated_at'      => ($this->allocated_at ?? $this->created_at)?->toDateTimeString(),
             'created_at'      => $this->created_at?->toDateTimeString(),
             'updated_at'      => $this->updated_at?->toDateTimeString(),
 
             'is_allocated' => $this->is_allocated,
 
-            'estate'        => EstateResource::make($this->whenLoaded('estate')),
+            'community'        => CommunityResource::make($this->whenLoaded('community')),
             'unit'          => UnitResource::make($this->whenLoaded('unit')),
             'invoice'       => InvoiceResource::make($this->whenLoaded('invoice')),
-            'charge_type'   => ChargeTypeResource::make($this->whenLoaded('chargeType')),
+            'ledger'   => LedgerResource::make($this->whenLoaded('ledger')),
             'parent_entry'  => CashbookEntryResource::make($this->whenLoaded('parentEntry')),
             'child_entries' => CashbookEntryResource::collection($this->whenLoaded('childEntries')),
         ];

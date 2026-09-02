@@ -1,0 +1,298 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - paragraph [ref=e7]: Bold Mark Properties
+      - paragraph [ref=e8]: Moving People Forward
+    - navigation [ref=e9]:
+      - paragraph [ref=e10]: Menu
+      - link "Home" [ref=e11] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e12]
+        - generic [ref=e15]: Home
+      - button "Portfolio" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+        - generic [ref=e20]: Portfolio
+        - img [ref=e21]
+      - generic [ref=e23]:
+        - link "Estates" [ref=e24] [cursor=pointer]:
+          - /url: /estates
+          - img [ref=e25]
+          - generic [ref=e30]: Estates
+        - link "Vacancies" [ref=e31] [cursor=pointer]:
+          - /url: /vacancies
+          - img [ref=e32]
+          - generic [ref=e35]: Vacancies
+      - link "Billing" [ref=e36] [cursor=pointer]:
+        - /url: /billing
+        - img [ref=e37]
+        - generic [ref=e40]: Billing
+      - link "Cashbook" [ref=e41] [cursor=pointer]:
+        - /url: /cashbook
+        - img [ref=e42]
+        - generic [ref=e45]: Cashbook
+      - button "Collections" [ref=e46] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e49]: Collections
+        - img [ref=e50]
+      - generic [ref=e52]:
+        - link "Arrears" [ref=e53] [cursor=pointer]:
+          - /url: /arrears
+          - img [ref=e54]
+          - generic [ref=e56]: Arrears
+        - link "Age Analysis" [ref=e57] [cursor=pointer]:
+          - /url: /age-analysis
+          - img [ref=e58]
+          - generic [ref=e61]: Age Analysis
+      - link "Compliance" [ref=e62] [cursor=pointer]:
+        - /url: /compliance
+        - img [ref=e63]
+        - generic [ref=e67]: Compliance
+      - link "Users" [ref=e68] [cursor=pointer]:
+        - /url: /users
+        - img [ref=e69]
+        - generic [ref=e74]: Users
+    - generic [ref=e75]:
+      - link "Settings" [ref=e76] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e77]
+        - generic [ref=e80]: Settings
+      - button "Collapse" [ref=e81] [cursor=pointer]:
+        - img [ref=e82]
+        - generic [ref=e85]: Collapse
+  - generic [ref=e86]:
+    - banner [ref=e87]:
+      - generic [ref=e91]:
+        - img
+        - textbox "Search estates, units, people..." [ref=e92]
+      - generic [ref=e93]:
+        - button "🇿🇦 South Africa" [ref=e296] [cursor=pointer]:
+          - generic [ref=e297]: 🇿🇦
+          - generic [ref=e298]: South Africa
+          - img [ref=e299]
+        - button [ref=e95] [cursor=pointer]:
+          - img [ref=e96]
+        - button "Justin Company Admin" [ref=e101] [cursor=pointer]:
+          - img [ref=e103]
+          - generic [ref=e106]:
+            - paragraph [ref=e107]: Justin
+            - paragraph [ref=e108]: Company Admin
+          - img [ref=e109]
+    - main [ref=e111]:
+      - generic [ref=e302]:
+        - generic [ref=e303]:
+          - generic [ref=e304]:
+            - heading "Estates" [level=1] [ref=e305]
+            - paragraph [ref=e306]: Manage your property portfolio
+          - button "Add Estate" [ref=e307] [cursor=pointer]:
+            - img [ref=e308]
+            - text: Add Estate
+        - generic [ref=e309]:
+          - generic [ref=e311]:
+            - paragraph [ref=e579]: "7"
+            - paragraph [ref=e313]: Estates
+          - generic [ref=e315]:
+            - paragraph [ref=e580]: "140"
+            - paragraph [ref=e317]: Units
+          - generic [ref=e319]:
+            - paragraph [ref=e581]: "127"
+            - paragraph [ref=e321]: Occupied
+          - generic [ref=e323]:
+            - paragraph [ref=e582]: "13"
+            - paragraph [ref=e325]: Vacant
+          - generic [ref=e327]:
+            - paragraph [ref=e583]: R 1 806 000
+            - paragraph [ref=e329]: Monthly Revenue
+        - generic [ref=e330]:
+          - generic [ref=e331]:
+            - generic [ref=e334]:
+              - img
+              - textbox "Search estates..." [ref=e335]
+            - button "Date Range" [ref=e336] [cursor=pointer]:
+              - img [ref=e337]
+              - text: Date Range
+            - button "Filter" [ref=e339] [cursor=pointer]:
+              - img [ref=e340]
+              - text: Filter
+            - button "Sort" [ref=e342] [cursor=pointer]:
+              - img [ref=e343]
+              - text: Sort
+          - generic [ref=e346]:
+            - button "All" [ref=e347] [cursor=pointer]
+            - button "Add View" [ref=e348] [cursor=pointer]:
+              - img [ref=e349]
+              - text: Add View
+        - generic [ref=e351]:
+          - generic [ref=e585] [cursor=pointer]:
+            - generic [ref=e586]:
+              - heading "Rosebank Gardens Body Corporate" [level=3] [ref=e587]
+              - generic [ref=e589]: Sectional Title
+            - generic [ref=e590]:
+              - img [ref=e591]
+              - paragraph [ref=e594]: 14 Bath Avenue, Rosebank, Johannesburg, 2196
+            - generic [ref=e595]:
+              - generic [ref=e596]:
+                - paragraph [ref=e597]: "0"
+                - paragraph [ref=e598]: Units
+              - generic [ref=e599]:
+                - paragraph [ref=e600]: "0"
+                - paragraph [ref=e601]: Occupied
+              - generic [ref=e602]:
+                - paragraph [ref=e603]: "0"
+                - paragraph [ref=e604]: Vacant
+            - generic [ref=e605]:
+              - generic [ref=e606]:
+                - generic [ref=e607]: Default Levy
+                - generic [ref=e608]: R 3 500
+              - generic [ref=e609]:
+                - generic [ref=e610]: Monthly Revenue
+                - generic [ref=e611]: R 0
+          - generic [ref=e353] [cursor=pointer]:
+            - generic [ref=e354]:
+              - heading "Umhlanga Ridge Office Park" [level=3] [ref=e355]
+              - generic [ref=e357]: Commercial
+            - generic [ref=e358]:
+              - img [ref=e359]
+              - paragraph [ref=e362]: 10 Umhlanga Ridge Boulevard, Umhlanga, Durban, 4319
+            - generic [ref=e363]:
+              - generic [ref=e364]:
+                - paragraph [ref=e365]: "20"
+                - paragraph [ref=e366]: Units
+              - generic [ref=e367]:
+                - paragraph [ref=e368]: "18"
+                - paragraph [ref=e369]: Occupied
+              - generic [ref=e370]:
+                - paragraph [ref=e371]: "2"
+                - paragraph [ref=e372]: Vacant
+            - generic [ref=e373]:
+              - generic [ref=e374]:
+                - generic [ref=e375]: Default Rent
+                - generic [ref=e376]: R 28 000
+              - generic [ref=e377]:
+                - generic [ref=e378]: Monthly Revenue
+                - generic [ref=e379]: R 553 000
+          - generic [ref=e381] [cursor=pointer]:
+            - generic [ref=e382]:
+              - heading "Camps Bay Terrace Homes" [level=3] [ref=e383]
+              - generic [ref=e385]: Residential
+            - generic [ref=e386]:
+              - img [ref=e387]
+              - paragraph [ref=e390]: 12 Victoria Road, Camps Bay, Cape Town, 8005
+            - generic [ref=e391]:
+              - generic [ref=e392]:
+                - paragraph [ref=e393]: "20"
+                - paragraph [ref=e394]: Units
+              - generic [ref=e395]:
+                - paragraph [ref=e396]: "18"
+                - paragraph [ref=e397]: Occupied
+              - generic [ref=e398]:
+                - paragraph [ref=e399]: "2"
+                - paragraph [ref=e400]: Vacant
+            - generic [ref=e401]:
+              - generic [ref=e402]:
+                - generic [ref=e403]: Default Rent
+                - generic [ref=e404]: R 22 000
+              - generic [ref=e405]:
+                - generic [ref=e406]: Monthly Revenue
+                - generic [ref=e407]: R 440 000
+          - generic [ref=e409] [cursor=pointer]:
+            - generic [ref=e410]:
+              - heading "The Marc Residences" [level=3] [ref=e411]
+              - generic [ref=e413]: Sectional Title
+            - generic [ref=e414]:
+              - img [ref=e415]
+              - paragraph [ref=e418]: 129 Rivonia Road, Sandton, Johannesburg, 2196
+            - generic [ref=e419]:
+              - generic [ref=e420]:
+                - paragraph [ref=e421]: "20"
+                - paragraph [ref=e422]: Units
+              - generic [ref=e423]:
+                - paragraph [ref=e424]: "18"
+                - paragraph [ref=e425]: Occupied
+              - generic [ref=e426]:
+                - paragraph [ref=e427]: "2"
+                - paragraph [ref=e428]: Vacant
+            - generic [ref=e429]:
+              - generic [ref=e430]:
+                - generic [ref=e431]: Default Levy
+                - generic [ref=e432]: R 4 500
+              - generic [ref=e433]:
+                - generic [ref=e434]: Monthly Revenue
+                - generic [ref=e435]: R 90 000
+          - generic [ref=e437] [cursor=pointer]:
+            - generic [ref=e438]:
+              - heading "Sandton Skye Body Corporate" [level=3] [ref=e439]
+              - generic [ref=e441]: Sectional Title
+            - generic [ref=e442]:
+              - img [ref=e443]
+              - paragraph [ref=e446]: 75 Maude Street, Sandton, Johannesburg, 2196
+            - generic [ref=e447]:
+              - generic [ref=e448]:
+                - paragraph [ref=e449]: "25"
+                - paragraph [ref=e450]: Units
+              - generic [ref=e451]:
+                - paragraph [ref=e452]: "23"
+                - paragraph [ref=e453]: Occupied
+              - generic [ref=e454]:
+                - paragraph [ref=e455]: "2"
+                - paragraph [ref=e456]: Vacant
+            - generic [ref=e457]:
+              - generic [ref=e458]:
+                - generic [ref=e459]: Default Levy
+                - generic [ref=e460]: R 5 200
+              - generic [ref=e461]:
+                - generic [ref=e462]: Monthly Revenue
+                - generic [ref=e463]: R 130 000
+          - generic [ref=e465] [cursor=pointer]:
+            - generic [ref=e466]:
+              - heading "Waterfall Country Village" [level=3] [ref=e467]
+              - generic [ref=e469]: Mixed
+            - generic [ref=e470]:
+              - img [ref=e471]
+              - paragraph [ref=e474]: Waterfall Country Village, Waterfall Drive, Jukskei View, Midrand, 1682
+            - generic [ref=e475]:
+              - generic [ref=e476]:
+                - paragraph [ref=e477]: "25"
+                - paragraph [ref=e478]: Units
+              - generic [ref=e479]:
+                - paragraph [ref=e480]: "23"
+                - paragraph [ref=e481]: Occupied
+              - generic [ref=e482]:
+                - paragraph [ref=e483]: "2"
+                - paragraph [ref=e484]: Vacant
+            - generic [ref=e485]:
+              - generic [ref=e486]:
+                - generic [ref=e487]: Default Levy
+                - generic [ref=e488]: R 3 200
+              - generic [ref=e489]:
+                - generic [ref=e490]: Default Rent
+                - generic [ref=e491]: R 14 500
+              - generic [ref=e492]:
+                - generic [ref=e493]: Monthly Revenue
+                - generic [ref=e494]: R 442 500
+          - generic [ref=e496] [cursor=pointer]:
+            - generic [ref=e497]:
+              - heading "Menlyn Maine Lifestyle Estate" [level=3] [ref=e498]
+              - generic [ref=e500]: Mixed
+            - generic [ref=e501]:
+              - img [ref=e502]
+              - paragraph [ref=e505]: Menlyn Maine, cnr Aramand & Corobay Avenue, Waterkloof Glen, Pretoria, 0181
+            - generic [ref=e506]:
+              - generic [ref=e507]:
+                - paragraph [ref=e508]: "30"
+                - paragraph [ref=e509]: Units
+              - generic [ref=e510]:
+                - paragraph [ref=e511]: "27"
+                - paragraph [ref=e512]: Occupied
+              - generic [ref=e513]:
+                - paragraph [ref=e514]: "3"
+                - paragraph [ref=e515]: Vacant
+            - generic [ref=e516]:
+              - generic [ref=e517]:
+                - generic [ref=e518]: Default Levy
+                - generic [ref=e519]: R 3 800
+              - generic [ref=e520]:
+                - generic [ref=e521]: Default Rent
+                - generic [ref=e522]: R 15 000
+              - generic [ref=e523]:
+                - generic [ref=e524]: Monthly Revenue
+                - generic [ref=e525]: R 564 500

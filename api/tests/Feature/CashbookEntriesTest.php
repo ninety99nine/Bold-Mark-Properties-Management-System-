@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\CashbookEntry;
-use App\Models\ChargeType;
-use App\Models\Estate;
+use App\Models\Ledger;
+use App\Models\Community;
 use App\Models\Invoice;
 use App\Models\Owner;
 use App\Models\Unit;
@@ -28,13 +28,13 @@ it('returns 401 on all cashbook routes when unauthenticated', function (string $
 // GET /cashbook (index)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns a paginated list of cashbook entries scoped to tenant', function () {
+it('returns a paginated list of cashbook entries scoped to occupant', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->count(3)->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->count(3)->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     CashbookEntry::factory()->count(2)->create([
-        'estate_id' => Estate::factory()->create(['tenant_id' => createTenant()->id])->id,
-        'tenant_id' => createTenant()->id,
+        'community_id' => Community::factory()->create(['organization_id' => createOrganization()->id])->id,
+        'organization_id' => createOrganization()->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
@@ -49,24 +49,24 @@ it('returns a paginated list of cashbook entries scoped to tenant', function () 
 // GET /cashbook — _relationships (eager loading)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns estate relationship on cashbook entries index when requested', function () {
+it('returns community relationship on cashbook entries index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=estate')
+        ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=community')
         ->assertOk();
 
-    expect($response->json('data.0.estate'))->toHaveKey('id');
-    expect($response->json('data.0.estate.id'))->toBe($estate->id);
+    expect($response->json('data.0.community'))->toHaveKey('id');
+    expect($response->json('data.0.community.id'))->toBe($community->id);
 });
 
 it('returns unit relationship on cashbook entries index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id, 'unit_id' => $unit->id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=unit')
@@ -75,36 +75,36 @@ it('returns unit relationship on cashbook entries index when requested', functio
     expect($response->json('data.0.unit'))->toHaveKey('id');
 });
 
-it('returns chargeType relationship on cashbook entries index when requested', function () {
+it('returns ledger relationship on cashbook entries index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     CashbookEntry::factory()->create([
-        'estate_id'      => $estate->id,
-        'tenant_id'      => $user->tenant_id,
-        'charge_type_id' => $chargeType->id,
+        'community_id'      => $community->id,
+        'organization_id'      => $user->organization_id,
+        'ledger_id' => $ledger->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=chargeType')
+        ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=ledger')
         ->assertOk();
 
-    expect($response->json('data.0.charge_type'))->toHaveKey('id');
+    expect($response->json('data.0.ledger'))->toHaveKey('id');
 });
 
 it('returns invoice relationship on cashbook entries index when requested', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
+        'ledger_id' => $ledger->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
     CashbookEntry::factory()->create([
-        'estate_id'  => $estate->id,
-        'tenant_id'  => $user->tenant_id,
+        'community_id'  => $community->id,
+        'organization_id'  => $user->organization_id,
         'invoice_id' => $invoice->id,
     ]);
 
@@ -117,14 +117,14 @@ it('returns invoice relationship on cashbook entries index when requested', func
 
 it('returns multiple relationships on cashbook entries index when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=estate,childEntries')
+        ->getJson(route('api.v1.show.cashbook.entries') . '?_relationships=community,childEntries')
         ->assertOk();
 
-    expect($response->json('data.0.estate'))->toHaveKey('id');
+    expect($response->json('data.0.community'))->toHaveKey('id');
     expect($response->json('data.0.child_entries'))->toBeArray();
 });
 
@@ -146,11 +146,11 @@ it('returns cashbook summary statistics', function () {
 
 it('creates a credit cashbook entry with valid data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'EFT – Sarah van der Merwe Levy Apr',
@@ -162,11 +162,11 @@ it('creates a credit cashbook entry with valid data', function () {
 
 it('creates a debit cashbook entry with valid data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-06',
             'type'        => 'debit',
             'description' => 'Security Services – March',
@@ -176,7 +176,7 @@ it('creates a debit cashbook entry with valid data', function () {
         ->assertJsonPath('data.type', 'debit');
 });
 
-it('returns 422 when estate_id is missing', function () {
+it('returns 422 when community_id is missing', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
@@ -187,31 +187,31 @@ it('returns 422 when estate_id is missing', function () {
             'amount'      => 100,
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['estate_id']);
+        ->assertJsonValidationErrors(['community_id']);
 });
 
-it('returns 422 when estate_id is not a valid uuid', function () {
+it('returns 422 when community_id is not a valid uuid', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => 'not-uuid',
+            'community_id'   => 'not-uuid',
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
             'amount'      => 100,
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['estate_id']);
+        ->assertJsonValidationErrors(['community_id']);
 });
 
 it('returns 422 when date is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'type'        => 'credit',
             'description' => 'Test',
             'amount'      => 100,
@@ -222,11 +222,11 @@ it('returns 422 when date is missing', function () {
 
 it('returns 422 when type is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'description' => 'Test',
             'amount'      => 100,
@@ -237,11 +237,11 @@ it('returns 422 when type is missing', function () {
 
 it('returns 422 when type is invalid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'income',
             'description' => 'Test',
@@ -253,11 +253,11 @@ it('returns 422 when type is invalid', function () {
 
 it('accepts all valid cashbook entry type values', function (string $type) {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => $type,
             'description' => 'Test entry',
@@ -268,11 +268,11 @@ it('accepts all valid cashbook entry type values', function (string $type) {
 
 it('returns 422 when description is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id' => $estate->id,
+            'community_id' => $community->id,
             'date'      => '2026-04-02',
             'type'      => 'credit',
             'amount'    => 100,
@@ -283,11 +283,11 @@ it('returns 422 when description is missing', function () {
 
 it('returns 422 when description exceeds 500 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => str_repeat('x', 501),
@@ -299,11 +299,11 @@ it('returns 422 when description exceeds 500 characters', function () {
 
 it('returns 422 when amount is zero', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -315,11 +315,11 @@ it('returns 422 when amount is zero', function () {
 
 it('returns 422 when amount is negative', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -331,11 +331,11 @@ it('returns 422 when amount is negative', function () {
 
 it('returns 422 when notes exceeds 1000 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -348,11 +348,11 @@ it('returns 422 when notes exceeds 1000 characters', function () {
 
 it('returns 422 when unit_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -365,11 +365,11 @@ it('returns 422 when unit_id is not a valid uuid', function () {
 
 it('returns 422 when invoice_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.create.cashbook.entry'), [
-            'estate_id'   => $estate->id,
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -384,13 +384,13 @@ it('returns 422 when invoice_id is not a valid uuid', function () {
 // POST /cashbook — _relationships on create response
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns estate relationship in cashbook entry create response when requested', function () {
+it('returns community relationship in cashbook entry create response when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.cashbook.entry') . '?_relationships=estate', [
-            'estate_id'   => $estate->id,
+        ->postJson(route('api.v1.create.cashbook.entry') . '?_relationships=community', [
+            'community_id'   => $community->id,
             'date'        => '2026-04-02',
             'type'        => 'credit',
             'description' => 'Test',
@@ -398,17 +398,17 @@ it('returns estate relationship in cashbook entry create response when requested
         ])
         ->assertCreated();
 
-    expect($response->json('data.estate'))->toHaveKey('id');
+    expect($response->json('data.community'))->toHaveKey('id');
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
 // GET /cashbook/{cashbookEntry} (show)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns a single cashbook entry belonging to the user tenant', function () {
+it('returns a single cashbook entry belonging to the user occupant', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $entry))
@@ -416,11 +416,11 @@ it('returns a single cashbook entry belonging to the user tenant', function () {
         ->assertJsonPath('data.id', $entry->id);
 });
 
-it('returns 404 when showing a cashbook entry from another tenant', function () {
+it('returns 404 when showing a cashbook entry from another occupant', function () {
     $user        = adminUser();
-    $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherEntry  = CashbookEntry::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
+    $otherOccupant = createOrganization();
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
+    $otherEntry  = CashbookEntry::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $otherOccupant->id]);
 
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $otherEntry))
@@ -431,22 +431,22 @@ it('returns 404 when showing a cashbook entry from another tenant', function () 
 // GET /cashbook/{cashbookEntry} — _relationships
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns estate relationship on cashbook entry show when requested', function () {
+it('returns community relationship on cashbook entry show when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.cashbook.entry', $entry) . '?_relationships=estate')
+        ->getJson(route('api.v1.show.cashbook.entry', $entry) . '?_relationships=community')
         ->assertOk();
 
-    expect($response->json('data.estate'))->toHaveKey('id');
+    expect($response->json('data.community'))->toHaveKey('id');
 });
 
 it('returns childEntries relationship on cashbook entry show when requested', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.cashbook.entry', $entry) . '?_relationships=childEntries')
@@ -461,8 +461,8 @@ it('returns childEntries relationship on cashbook entry show when requested', fu
 
 it('updates a cashbook entry with valid data', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), [
@@ -474,8 +474,8 @@ it('updates a cashbook entry with valid data', function () {
 
 it('returns 422 when update type is invalid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['type' => 'invalid_type'])
@@ -485,8 +485,8 @@ it('returns 422 when update type is invalid', function () {
 
 it('returns 422 when update description exceeds 500 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['description' => str_repeat('x', 501)])
@@ -496,8 +496,8 @@ it('returns 422 when update description exceeds 500 characters', function () {
 
 it('returns 422 when update amount is zero', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['amount' => 0])
@@ -507,8 +507,8 @@ it('returns 422 when update amount is zero', function () {
 
 it('returns 422 when update notes exceeds 1000 characters', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['notes' => str_repeat('x', 1001)])
@@ -518,8 +518,8 @@ it('returns 422 when update notes exceeds 1000 characters', function () {
 
 it('returns 422 when update unit_id is not a valid uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $entry), ['unit_id' => 'not-uuid'])
@@ -527,11 +527,11 @@ it('returns 422 when update unit_id is not a valid uuid', function () {
         ->assertJsonValidationErrors(['unit_id']);
 });
 
-it('returns 404 when updating a cashbook entry from another tenant', function () {
+it('returns 404 when updating a cashbook entry from another occupant', function () {
     $user        = adminUser();
-    $otherTenant = createTenant();
-    $otherEstate = Estate::factory()->create(['tenant_id' => $otherTenant->id]);
-    $otherEntry  = CashbookEntry::factory()->create(['estate_id' => $otherEstate->id, 'tenant_id' => $otherTenant->id]);
+    $otherOccupant = createOrganization();
+    $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
+    $otherEntry  = CashbookEntry::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $otherOccupant->id]);
 
     $this->actingAs($user, 'api')
         ->putJson(route('api.v1.update.cashbook.entry', $otherEntry), ['description' => 'Hacked'])
@@ -544,18 +544,18 @@ it('returns 404 when updating a cashbook entry from another tenant', function ()
 
 it('allocates a cashbook entry to an invoice', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
+        'ledger_id' => $ledger->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
         'amount' => 100,
     ]);
     $entry = CashbookEntry::factory()->unallocated()->create([
-        'estate_id' => $estate->id,
-        'tenant_id' => $user->tenant_id,
+        'community_id' => $community->id,
+        'organization_id' => $user->organization_id,
         'amount'    => 100,
     ]);
 
@@ -569,9 +569,9 @@ it('allocates a cashbook entry to an invoice', function () {
 
 it('returns 422 when allocate invoice_id is missing', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -583,15 +583,15 @@ it('returns 422 when allocate invoice_id is missing', function () {
 
 it('returns 422 when allocate unit_id is missing', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
+        'ledger_id' => $ledger->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
-    $entry = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $entry = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -603,9 +603,9 @@ it('returns 422 when allocate unit_id is missing', function () {
 
 it('returns 422 when allocate invoice_id is not a uuid', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit   = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -618,15 +618,15 @@ it('returns 422 when allocate invoice_id is not a uuid', function () {
 
 it('returns 422 when allocate unit_id is not a uuid', function () {
     $user       = adminUser();
-    $estate     = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $unit       = Unit::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
-    $chargeType = ChargeType::factory()->create(['tenant_id' => $user->tenant_id]);
-    $owner      = Owner::where('unit_id', $unit->id)->firstOrFail();
+    $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $owner      = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
     $invoice    = Invoice::factory()->create([
-        'tenant_id' => $user->tenant_id, 'unit_id' => $unit->id,
-        'charge_type_id' => $chargeType->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id,
+        'ledger_id' => $ledger->id, 'billed_to_type' => 'owner', 'billed_to_id' => $owner->id,
     ]);
-    $entry = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $entry = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->postJson(route('api.v1.allocate.cashbook.entry', $entry), [
@@ -643,8 +643,8 @@ it('returns 422 when allocate unit_id is not a uuid', function () {
 
 it('deletes a single cashbook entry', function () {
     $user   = adminUser();
-    $estate = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entry  = CashbookEntry::factory()->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entry  = CashbookEntry::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entry', $entry))
@@ -657,10 +657,10 @@ it('deletes a single cashbook entry', function () {
 // DELETE /cashbook (bulk delete) — validation
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('bulk deletes own-tenant cashbook entries', function () {
+it('bulk deletes own-occupant cashbook entries', function () {
     $user    = adminUser();
-    $estate  = Estate::factory()->create(['tenant_id' => $user->tenant_id]);
-    $entries = CashbookEntry::factory()->count(3)->create(['estate_id' => $estate->id, 'tenant_id' => $user->tenant_id]);
+    $community  = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $entries = CashbookEntry::factory()->count(3)->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
         ->deleteJson(route('api.v1.delete.cashbook.entries'), [
