@@ -135,7 +135,7 @@
                   <AgeStatusIcon
                     class="mt-0.5"
                     :status="row.collection_status"
-                    :customer-name="row.customer_name"
+                    :status-changed-by="row.status_changed_by"
                     :transfer-active="row.transfer_active"
                     :debit-order="row.debit_order"
                   />

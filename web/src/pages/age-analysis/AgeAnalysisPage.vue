@@ -383,7 +383,7 @@ watch(communityId, () => {
                     <div class="flex items-center gap-2">
                       <AgeStatusIcon
                         :status="row.collection_status"
-                        :customer-name="row.customer_name"
+                        :status-changed-by="row.status_changed_by"
                         :transfer-active="row.transfer_active"
                         :debit-order="row.debit_order"
                       />

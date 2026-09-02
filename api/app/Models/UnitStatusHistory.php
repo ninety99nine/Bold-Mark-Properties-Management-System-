@@ -55,4 +55,30 @@ class UnitStatusHistory extends Model
     {
         return $this->belongsTo(Unit::class);
     }
+
+    /**
+     * The name of the user who most recently applied each status, keyed
+     * [unit_id][status]. Used to label who set a customer's current collection
+     * status — e.g. the "Handed over to Attorneys (name)" marker, where the name
+     * is the acting user, not the customer.
+     *
+     * @param array<string> $unitIds
+     * @return array<string, array<string, string|null>>
+     */
+    public static function latestActorsByUnit(array $unitIds): array
+    {
+        if (empty($unitIds)) {
+            return [];
+        }
+
+        return static::whereIn('unit_id', $unitIds)
+            ->orderByDesc('status_date')
+            ->orderByDesc('created_at')
+            ->get(['unit_id', 'status', 'changed_by_name'])
+            ->groupBy('unit_id')
+            ->map(fn ($rows) => $rows->groupBy('status')
+                ->map(fn ($group) => $group->first()->changed_by_name)
+                ->toArray())
+            ->toArray();
+    }
 }

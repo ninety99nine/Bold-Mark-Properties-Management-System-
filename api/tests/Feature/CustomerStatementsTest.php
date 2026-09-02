@@ -5,6 +5,7 @@ use App\Models\Invoice;
 use App\Models\Ledger;
 use App\Models\Owner;
 use App\Models\Unit;
+use App\Models\UnitStatusHistory;
 
 /**
  * Helper: create a unit + owner + one unpaid invoice for `$amount`, overdue by
@@ -64,6 +65,34 @@ it('lists customers with their balance as at the date and a totals sum', functio
     expect($data['rows'])->toHaveCount(2);
     expect(round($data['totals']['balance'], 2))->toBe(800.00);
     expect($data['rows'][0])->toHaveKeys(['unit_id', 'customer_code', 'customer_name', 'collection_status', 'balance']);
+});
+
+it('surfaces the acting user (not the customer) who applied the collection status', function (): void {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    $unit = statementUnit($user->organization_id, $community, 16000.00);
+    $unit->update(['collection_status' => 'handed_over']);
+
+    UnitStatusHistory::create([
+        'unit_id'         => $unit->id,
+        'community_id'    => $community->id,
+        'organization_id' => $user->organization_id,
+        'status'          => 'handed_over',
+        'status_date'     => now()->toDateString(),
+        'changed_by_name' => 'Bold Mark Admin',
+    ]);
+
+    $row = collect($this->actingAs($user, 'api')
+        ->getJson(statementsRoute($community))
+        ->assertOk()
+        ->json('rows'))
+        ->firstWhere('unit_id', $unit->id);
+
+    expect($row['collection_status'])->toBe('handed_over');
+    // The flag tooltip name must be the acting user, never the customer.
+    expect($row['status_changed_by'])->toBe('Bold Mark Admin');
+    expect($row['status_changed_by'])->not->toBe($row['customer_name']);
 });
 
 it('respects the hide-zero filter', function (): void {

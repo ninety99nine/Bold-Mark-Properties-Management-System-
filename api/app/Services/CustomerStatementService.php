@@ -44,6 +44,7 @@ class CustomerStatementService extends BaseService
             'customer_email'          => $r['customer_email'] ?? null,
             'collection_status'       => $r['collection_status'],
             'collection_status_label' => $r['collection_status_label'],
+            'status_changed_by'       => $r['status_changed_by'] ?? null,
             'transfer_active'         => $r['transfer_active'] ?? false,
             'debit_order'             => $r['debit_order'] ?? false,
             'is_sold'                 => $r['is_sold'] ?? false,

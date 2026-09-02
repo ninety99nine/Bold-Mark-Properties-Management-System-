@@ -25,7 +25,9 @@ import { computed } from 'vue'
 
 const props = defineProps({
   status:         { type: String,  default: 'none' },
-  customerName:   { type: String,  default: '' },
+  // The user who applied the status (e.g. handed the customer over to attorneys),
+  // shown in the "Handed over to Attorneys (name)" tooltip — NOT the customer.
+  statusChangedBy: { type: String, default: '' },
   transferActive: { type: Boolean, default: false },
   debitOrder:     { type: Boolean, default: false },
 })
@@ -44,8 +46,8 @@ const STATUS = {
 const statusMarker = computed(() => {
   const m = STATUS[props.status]
   if (!m) return null
-  const tip = props.status === 'handed_over' && props.customerName
-    ? `${m.tip} (${props.customerName})`
+  const tip = props.status === 'handed_over' && props.statusChangedBy
+    ? `${m.tip} (${props.statusChangedBy})`
     : m.tip
   return { ...m, tip }
 })

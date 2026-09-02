@@ -17,11 +17,17 @@ describe('AgeStatusIcon', () => {
     expect(w.text()).toContain('1st Notice')
   })
 
-  it('appends the customer name to the Handed Over tooltip', () => {
+  it('appends the acting user to the Handed Over tooltip', () => {
     const w = mount(AgeStatusIcon, {
-      props: { status: 'handed_over', label: 'Handed over to Attorneys', customerName: 'R Lefakane' },
+      props: { status: 'handed_over', statusChangedBy: 'R Lefakane' },
     })
     expect(w.text()).toContain('Handed over to Attorneys (R Lefakane)')
+  })
+
+  it('shows the Handed Over tooltip with no parentheses when the actor is unknown', () => {
+    const w = mount(AgeStatusIcon, { props: { status: 'handed_over' } })
+    expect(w.text()).toContain('Handed over to Attorneys')
+    expect(w.text()).not.toContain('(')
   })
 
   it('renders a document marker for Letter of Demand sent', () => {

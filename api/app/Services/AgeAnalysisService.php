@@ -6,6 +6,7 @@ use App\Enums\CollectionStatus;
 use App\Enums\UnitStatus;
 use App\Models\Community;
 use App\Models\Unit;
+use App\Models\UnitStatusHistory;
 use App\Exports\AgeAnalysisExport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -135,6 +136,9 @@ class AgeAnalysisService extends BaseService
             ->withCount('collectionNotes')
             ->get();
 
+        // Who applied each customer's current collection status (acting user).
+        $statusActors = UnitStatusHistory::latestActorsByUnit($affectedUnitIds);
+
         $customerGroupId = $data['customer_group_id'] ?? null;
 
         // ── Build a row per unit ─────────────────────────────────────────
@@ -190,6 +194,7 @@ class AgeAnalysisService extends BaseService
                 'person_role'             => $unit->owner ? 'owner' : ($unit->currentOccupant ? 'occupant' : null),
                 'collection_status'       => $status->value,
                 'collection_status_label' => $status->label(),
+                'status_changed_by'       => $statusActors[$unit->id][$status->value] ?? null,
                 'debit_order'             => (bool) $unit->debit_order,
                 'transfer_active'         => (bool) $unit->transfer_active,
                 'is_sold'                 => $isSold,

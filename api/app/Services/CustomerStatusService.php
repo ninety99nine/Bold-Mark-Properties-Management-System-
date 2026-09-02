@@ -383,6 +383,9 @@ class CustomerStatusService extends BaseService
 
         $unitIds = $units->pluck('id')->all();
 
+        // Who applied each customer's current collection status (acting user).
+        $statusActors = UnitStatusHistory::latestActorsByUnit($unitIds);
+
         // ── Customer subledger (GL) aged as at the report date ──
         // Every customer transaction is a CUSTOMER journal line. Debits age by
         // their due_date into the buckets; credits net oldest-bucket-first —
@@ -458,6 +461,7 @@ class CustomerStatusService extends BaseService
                 'customer_phone'          => $owner?->phone,
                 'collection_status'       => $status->value,
                 'collection_status_label' => $status->label(),
+                'status_changed_by'       => $statusActors[$unit->id][$status->value] ?? null,
                 'debit_order'             => (bool) $unit->debit_order,
                 'transfer_active'         => (bool) $unit->transfer_active,
                 'interest_exempt'         => (bool) $unit->interest_exempt,
