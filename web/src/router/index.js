@@ -214,6 +214,11 @@ const routes = [
         component: () => import('@/pages/supplier-management/SupplierAgeAnalysisPage.vue'),
       },
       {
+        path: 'suppliers/statements',
+        name: 'supplier-statements',
+        component: () => import('@/pages/supplier-management/SupplierStatementsPage.vue'),
+      },
+      {
         path: 'suppliers/manage',
         name: 'manage-suppliers',
         component: () => import('@/pages/suppliers/ManageSuppliersPage.vue'),

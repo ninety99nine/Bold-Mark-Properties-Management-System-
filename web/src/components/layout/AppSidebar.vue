@@ -142,7 +142,7 @@ const communityNav = computed(() => {
           { name: 'Invoice',                 to: '/suppliers/invoices' },
           { name: 'Recurring Invoices',      soon: true },
           { name: 'Debit Notes',             soon: true },
-          { name: 'Statements',              soon: true },
+          { name: 'Statements',              to: '/suppliers/statements' },
           { name: 'Detailed Supplier Ledger', to: '/suppliers/ledger' },
           { name: 'Age Analysis',            to: '/suppliers/age-analysis' },
           { name: 'Manage Suppliers',        to: '/suppliers/manage' },
