@@ -272,8 +272,17 @@ watch(communityId, () => {
 
       <!-- ══════════ Table card ══════════ -->
       <div class="rounded-b-lg border border-t-0 border-border bg-white p-5">
-        <!-- Toolbar: Download Excel + Search -->
-        <div class="mb-4 flex items-center justify-end gap-3">
+        <!-- Toolbar: Search + Download Excel grouped together on the right -->
+        <div class="mb-4 flex flex-wrap items-center justify-end gap-3">
+          <div v-if="!openLedger" class="flex items-center gap-2 text-sm">
+            <label class="text-muted-foreground">Search:</label>
+            <input
+              v-model="search"
+              type="text"
+              class="h-9 w-56 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
+              @input="debouncedFetchData"
+            />
+          </div>
           <button
             type="button"
             class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-[#2f6fb0] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2a63a0]"
@@ -284,16 +293,6 @@ watch(communityId, () => {
             </svg>
             Download Excel
           </button>
-        </div>
-
-        <div v-if="!openLedger" class="mb-3 flex items-center justify-end gap-2 text-sm">
-          <label class="text-muted-foreground">Search:</label>
-          <input
-            v-model="search"
-            type="text"
-            class="h-9 w-56 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
-            @input="debouncedFetchData"
-          />
         </div>
 
         <!-- ── Summary view ── -->

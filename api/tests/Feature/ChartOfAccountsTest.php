@@ -56,6 +56,23 @@ it('classifies every income sub-account as Sales (WeConnectU-exact)', function (
     }
 });
 
+it('flags income-statement sub-accounts as budget items by default', function (): void {
+    $org = createOrganization();
+    (new ChartOfAccountsSeeder())->seedForOrganization($org->id);
+
+    $value = fn (string $code) => Ledger::where('organization_id', $org->id)->where('code', $code)->value('is_budget_item');
+
+    // Income-statement leaves (income + expenses) are budget items (green).
+    expect($value('1000/001'))->toBeTrue();
+    expect($value('2000/001'))->toBeTrue();
+    expect($value('RFI/001'))->toBeTrue();
+
+    // Main headers and balance-sheet accounts are not (grey).
+    expect($value('1000/000'))->toBeFalse();
+    expect($value('7000/002'))->toBeFalse();
+    expect($value('5000/002'))->toBeFalse();
+});
+
 it('is idempotent across repeated seeding', function (): void {
     $org = createOrganization();
     (new ChartOfAccountsSeeder())->seedForOrganization($org->id);

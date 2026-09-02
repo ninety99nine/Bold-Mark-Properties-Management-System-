@@ -80,7 +80,7 @@ async function load() {
   const failed = []
 
   await Promise.allSettled([
-    api.get('/ledgers', { params: { _per_page: 500, is_active: true } })
+    api.get('/ledgers', { params: { _per_page: 500, is_active: true, postable: 1 } })
       .then((r) => { ledgers.value = rows(r) })
       .catch(() => failed.push('accounts')),
     api.get(`/communities/${communityId}/billing-setup`)

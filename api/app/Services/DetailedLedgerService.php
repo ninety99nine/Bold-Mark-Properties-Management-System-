@@ -218,29 +218,53 @@ class DetailedLedgerService extends BaseService
 
         $events = [];
         if ($showLineItems) {
+            // WeConnectU expands an invoice into one row per line item: the Source
+            // reads "Invoice INV05281 (Line 2)" and the Description carries the item
+            // (e.g. "Levies"). Number the lines 1-based within each source document.
+            $lineNoByBatch = [];
             foreach ($lines as $j) {
+                $isInvoice = ! empty($j['invoice_number']);
+                $source    = $j['source'];
+
+                if ($isInvoice) {
+                    $key                 = $j['batch_id'] ?? $j['invoice_id'];
+                    $lineNoByBatch[$key] = ($lineNoByBatch[$key] ?? 0) + 1;
+                    $source              = 'Invoice ' . $j['invoice_number'] . ' (Line ' . $lineNoByBatch[$key] . ')';
+                }
+
                 $events[] = [
-                    'date'        => $j['date'],
-                    'source'      => $j['source'],
-                    'description' => $j['description'],
-                    'remarks'     => '',
-                    'debit'       => $j['debit'],
-                    'credit'      => $j['credit'],
+                    'date'           => $j['date'],
+                    'source'         => $source,
+                    'description'    => $j['description'],
+                    'remarks'        => '',
+                    'debit'          => $j['debit'],
+                    'credit'         => $j['credit'],
+                    'invoice_id'     => $j['invoice_id'] ?? null,
+                    'invoice_number' => $j['invoice_number'] ?? null,
+                    'allocated_by'   => $j['allocated_by'] ?? null,
+                    'allocated_at'   => $j['allocated_at'] ?? null,
                 ];
             }
         } else {
-            // Collapse each source document (a batch) into one row per source.
+            // Collapse each source document (a batch) into one row per source. An
+            // invoice shows its number (INV05281) in the Description — a link to the
+            // invoice PDF, exactly like WeConnectU.
             $grouped = [];
             foreach ($lines as $j) {
                 $key = $j['batch_id'] ?? uniqid('b', true);
                 if (! isset($grouped[$key])) {
+                    $isInvoice = ! empty($j['invoice_number']);
                     $grouped[$key] = [
-                        'date'        => $j['date'],
-                        'source'      => $j['source'],
-                        'description' => $j['description'],
-                        'remarks'     => '',
-                        'debit'       => 0.0,
-                        'credit'      => 0.0,
+                        'date'           => $j['date'],
+                        'source'         => $j['source'],
+                        'description'    => $isInvoice ? $j['invoice_number'] : $j['description'],
+                        'remarks'        => '',
+                        'debit'          => 0.0,
+                        'credit'         => 0.0,
+                        'invoice_id'     => $j['invoice_id'] ?? null,
+                        'invoice_number' => $j['invoice_number'] ?? null,
+                        'allocated_by'   => $j['allocated_by'] ?? null,
+                        'allocated_at'   => $j['allocated_at'] ?? null,
                     ];
                 }
                 $grouped[$key]['debit']  += $j['debit'];
@@ -255,13 +279,17 @@ class DetailedLedgerService extends BaseService
         $debitTotal  = 0.0;
         $creditTotal = 0.0;
         $rows        = [[
-            'date'        => $from ?: ($events[0]['date'] ?? $to),
-            'source'      => '',
-            'description' => 'Balance b/f',
-            'remarks'     => '',
-            'debit'       => round($opening, 2),
-            'credit'      => 0.0,
-            'balance'     => round($opening, 2),
+            'date'           => $from ?: ($events[0]['date'] ?? $to),
+            'source'         => '',
+            'description'    => 'Balance b/f',
+            'remarks'        => '',
+            'debit'          => round($opening, 2),
+            'credit'         => 0.0,
+            'balance'        => round($opening, 2),
+            'invoice_id'     => null,
+            'invoice_number' => null,
+            'allocated_by'   => null,
+            'allocated_at'   => null,
         ]];
 
         foreach ($events as $e) {
@@ -269,15 +297,21 @@ class DetailedLedgerService extends BaseService
             $debitTotal  += $e['debit'];
             $creditTotal += $e['credit'];
             $rows[]       = [
-                'date'        => $e['date'],
-                'source'      => $e['source'],
-                'description' => $e['description'],
-                'remarks'     => $e['remarks'],
-                'debit'       => round($e['debit'], 2),
-                'credit'      => round($e['credit'], 2),
-                'balance'     => round($balance, 2),
+                'date'           => $e['date'],
+                'source'         => $e['source'],
+                'description'    => $e['description'],
+                'remarks'        => $e['remarks'],
+                'debit'          => round($e['debit'], 2),
+                'credit'         => round($e['credit'], 2),
+                'balance'        => round($balance, 2),
+                'invoice_id'     => $e['invoice_id'] ?? null,
+                'invoice_number' => $e['invoice_number'] ?? null,
+                'allocated_by'   => $e['allocated_by'] ?? null,
+                'allocated_at'   => $e['allocated_at'] ?? null,
             ];
         }
+
+        $rows = $this->insertBalancePaidMarkers($rows);
 
         $code = $unit->owner?->customer_code ?: $unit->customer_code;
 
@@ -294,6 +328,49 @@ class DetailedLedgerService extends BaseService
                 'balance' => round($balance, 2),
             ],
         ];
+    }
+
+    /**
+     * Insert WeConnectU "Balance-paid / Balance Paid" marker rows. When a receipt
+     * (credit) settles the account — the running balance crosses from owing (> 0)
+     * to paid-up / in-credit (≤ 0) — WeConnectU drops a zero-value marker row on
+     * that date. (BM is balance-forward, so the marker is dated on the settling
+     * receipt itself, not WeConnectU's separate allocation-run date.)
+     *
+     * @param array $rows
+     * @return array
+     */
+    private function insertBalancePaidMarkers(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $i => $row) {
+            $out[] = $row;
+
+            if ($i === 0) {
+                continue; // never after the opening "Balance b/f"
+            }
+
+            $prevBalance = $rows[$i - 1]['balance'];
+            $settledNow  = $row['credit'] > 0.005 && $prevBalance > 0.005 && $row['balance'] <= 0.005;
+
+            if ($settledNow) {
+                $out[] = [
+                    'date'           => $row['date'],
+                    'source'         => 'Balance-paid',
+                    'description'    => 'Balance Paid',
+                    'remarks'        => '',
+                    'debit'          => 0.0,
+                    'credit'         => 0.0,
+                    'balance'        => $row['balance'],
+                    'invoice_id'     => null,
+                    'invoice_number' => null,
+                    'allocated_by'   => null,
+                    'allocated_at'   => null,
+                ];
+            }
+        }
+
+        return $out;
     }
 
     /**

@@ -179,6 +179,49 @@ it('returns a per-supplier detailed ledger with a running cumulative', function 
         ->and($resp->json('ledger.rows'))->toHaveCount(2);
 });
 
+it('surfaces the GRV link and cashbook allocation tooltip on the supplier ledger', function () {
+    $user      = adminUser();
+    $org       = $user->organization_id;
+    $community = Community::factory()->create(['organization_id' => $org]);
+    $s         = agSupplier($org, $community, 'BOD001', 'Bodacious Energy');
+
+    // A supplier invoice (GRV) → Cr Accounts Payable.
+    agGrv($org, $community, $s, 1000.00, '2026-07-01', 7);
+
+    // A bank payment allocated to the supplier, carrying allocation metadata.
+    $bank = BankAccount::factory()->create([
+        'organization_id' => $org, 'community_id' => $community->id,
+        'bank_name' => 'Standard Bank', 'account_number' => '282475699',
+    ]);
+    CashbookEntry::factory()->create([
+        'organization_id'        => $org, 'community_id' => $community->id,
+        'bank_account_id'        => $bank->id, 'supplier_id' => $s->id,
+        'allocation_ledger_type' => JournalLineType::SUPPLIER->value,
+        'type'                   => CashbookEntryType::DEBIT->value,
+        'amount'                 => 400.00, 'date' => '2026-07-10',
+        'allocated_by_name'      => 'Justin, K.', 'allocated_at' => '2026-07-10 09:06:39',
+    ]);
+
+    $rows = $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.community.supplier.age.analysis.ledger', [
+            'community' => $community->id, 'supplier' => $s->id, 'ageing_date' => '2026-09-30',
+        ]))
+        ->assertOk()
+        ->json('ledger.rows');
+
+    // GRV row carries the blue-link metadata (id + number → downloads the PDF).
+    $grvRow = collect($rows)->first(fn ($r) => ! empty($r['grv']));
+    expect($grvRow)->not->toBeNull()
+        ->and($grvRow['grv']['number'])->toBe('GRV00007')
+        ->and($grvRow['grv']['id'])->not->toBeNull();
+
+    // Bank payment row: "STANDARD BANK: 282475699" source + allocation tooltip.
+    $bankRow = collect($rows)->firstWhere('source', 'STANDARD BANK: 282475699');
+    expect($bankRow)->not->toBeNull()
+        ->and($bankRow['allocated_by'])->toBe('Justin, K.')
+        ->and($bankRow['allocated_at'])->toBe('10/07/2026 09:06:39');
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // GRV (supplier invoice) create + posting
 // ──────────────────────────────────────────────────────────────────────────────

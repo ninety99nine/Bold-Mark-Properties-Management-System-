@@ -154,6 +154,9 @@ class DetailedSupplierLedgerService extends BaseService
             'debit'       => $opening > 0 ? round($opening, 2) : 0.0,
             'credit'      => $opening < 0 ? round(-$opening, 2) : 0.0,
             'balance'     => round($opening, 2),
+            'grv'          => null,
+            'allocated_by' => null,
+            'allocated_at' => null,
         ]];
 
         foreach ($inPeriod as $e) {
@@ -161,13 +164,16 @@ class DetailedSupplierLedgerService extends BaseService
             $debitTotal  += $e['debit'];
             $creditTotal += $e['credit'];
             $rows[]       = [
-                'date'        => $e['date'],
-                'source'      => $e['source'],
-                'description' => $e['description'],
-                'remarks'     => $e['remarks'],
-                'debit'       => round($e['debit'], 2),
-                'credit'      => round($e['credit'], 2),
-                'balance'     => round($balance, 2),
+                'date'         => $e['date'],
+                'source'       => $e['source'],
+                'description'  => $e['description'],
+                'remarks'      => $e['remarks'],
+                'debit'        => round($e['debit'], 2),
+                'credit'       => round($e['credit'], 2),
+                'balance'      => round($balance, 2),
+                'grv'          => $e['grv'] ?? null,
+                'allocated_by' => $e['allocated_by'] ?? null,
+                'allocated_at' => $e['allocated_at'] ?? null,
             ];
         }
 

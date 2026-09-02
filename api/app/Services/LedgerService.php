@@ -49,6 +49,25 @@ class LedgerService extends BaseService
             $query->where('is_system', $isSystem);
         }
 
+        // Postable accounts only — the WeConnectU "Select your ledger" set used by
+        // supplier/customer invoice + credit-note pickers: real sub-accounts in the
+        // main fund, never a group header, a bank account, the reserve fund, or a
+        // singleton control account (AR / AP / VAT Control / Retained Income).
+        if (!empty($data['postable']) && filter_var($data['postable'], FILTER_VALIDATE_BOOLEAN)) {
+            $query->whereNotNull('parent_id')
+                ->where('fund', 'main')
+                ->where(function ($q) {
+                    $q->whereNull('financial_category')
+                      ->orWhereNotIn('financial_category', [
+                          FinancialCategory::BANK->value,
+                          FinancialCategory::ACCOUNTS_RECEIVABLE->value,
+                          FinancialCategory::ACCOUNTS_PAYABLE->value,
+                          FinancialCategory::VAT_CONTROL->value,
+                          FinancialCategory::RETAINED_INCOME->value,
+                      ]);
+                });
+        }
+
         // Default sort by sort_order then name; override with _sort if provided
         if (!request()->has('_sort')) {
             $query = $query->orderBy('sort_order')->orderBy('name');

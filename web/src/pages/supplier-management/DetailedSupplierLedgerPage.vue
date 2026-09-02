@@ -12,6 +12,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton      from '@/components/common/AppButton.vue'
 import AppMultiSelect from '@/components/common/AppMultiSelect.vue'
+import AppTooltip     from '@/components/common/AppTooltip.vue'
 import api            from '@/composables/useApi'
 import { useToast }   from '@/composables/useToast'
 import { useCommunityStore } from '@/stores/community'
@@ -150,6 +151,27 @@ async function downloadExcel() {
   } catch { toastError('Could not download the Excel file.') }
 }
 
+// WeConnectU cashbook-allocation tooltip: "Allocated by {name} on {datetime}".
+function allocationTip(r) {
+  const who = r.allocated_by ? `Allocated by ${r.allocated_by}` : 'Allocated'
+  return r.allocated_at ? `${who} on ${r.allocated_at}` : who
+}
+
+// Download a supplier invoice (GRV) PDF when its number/icon is clicked.
+async function downloadSupplierInvoice(grvId, grvNumber) {
+  if (!grvId) return
+  try {
+    const res = await api.get(`/communities/${communityId.value}/supplier-invoices/${grvId}/pdf`, { responseType: 'blob' })
+    let filename = `${grvNumber || 'grv'}.pdf`
+    const cd = res.headers['content-disposition'] || ''
+    const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd)
+    if (m) filename = decodeURIComponent(m[1].replace(/"/g, ''))
+    const url = URL.createObjectURL(res.data)
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
+  } catch { toastError('Could not download the supplier invoice.') }
+}
+
 function toggleCollapse(id) {
   const s = new Set(collapsed.value)
   s.has(id) ? s.delete(id) : s.add(id)
@@ -272,8 +294,25 @@ watch(communityId, () => { ledgers.value = []; hasRun.value = false; boot() })
               <tbody>
                 <tr v-for="(r, i) in l.rows" :key="i" class="border-b border-border last:border-0">
                   <td class="px-3 py-2 whitespace-nowrap">{{ r.date }}</td>
-                  <td class="px-3 py-2">{{ r.source }}</td>
-                  <td class="px-3 py-2">{{ r.description }}</td>
+                  <td class="px-3 py-2">
+                    <span class="inline-flex items-center gap-1.5">
+                      {{ r.source }}
+                      <AppTooltip v-if="r.allocated_by || r.allocated_at" :text="allocationTip(r)">
+                        <svg class="h-4 w-4 text-[#2f8fe0]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 7zm1.25 10h-2.5v-6h2.5z"/></svg>
+                      </AppTooltip>
+                    </span>
+                  </td>
+                  <td class="px-3 py-2">
+                    <template v-if="r.grv">
+                      <button type="button" class="text-left text-[#2f8fe0] hover:underline" @click="downloadSupplierInvoice(r.grv.id, r.grv.number)">{{ r.description }}</button>
+                      <div class="mt-1">
+                        <button type="button" title="Download PDF" class="text-[#e2483d] hover:text-[#c53a30]" @click="downloadSupplierInvoice(r.grv.id, r.grv.number)">
+                          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5zM8 13h1.5a1.5 1.5 0 0 1 0 3H9v1.5H8V13zm1 2h.5a.5.5 0 0 0 0-1H9v1zm3.5-2H14a1.5 1.5 0 0 1 1.5 1.5v0A1.5 1.5 0 0 1 14 16h-.5v1.5h-1V13zm1 2h.5a.5.5 0 0 0 .5-.5v0a.5.5 0 0 0-.5-.5h-.5v1zM16.5 13H18v1h-1v.75h1v1h-1V17h-.5v-4z"/></svg>
+                        </button>
+                      </div>
+                    </template>
+                    <template v-else>{{ r.description }}</template>
+                  </td>
                   <td class="px-3 py-2 text-muted-foreground">{{ r.remarks }}</td>
                   <td class="px-3 py-2 text-right tabular-nums">{{ fmt(r.debit) }}</td>
                   <td class="px-3 py-2 text-right tabular-nums">{{ fmt(r.credit) }}</td>

@@ -87,8 +87,10 @@ class SupplierLedgerService
         $source  = $this->sourceLabel($l);
 
         // Blue GRV link, when this line came from a supplier invoice.
-        $grv     = null;
-        $remarks = '';
+        $grv         = null;
+        $remarks     = '';
+        $allocatedBy = null;
+        $allocatedAt = null;
         if ($batch->source === \App\Enums\JournalSource::SUPPLIER_INVOICE) {
             $inv = $batch->sourceDocument;
             if ($inv instanceof \App\Models\SupplierInvoice) {
@@ -98,19 +100,23 @@ class SupplierLedgerService
         } elseif ($batch->source === \App\Enums\JournalSource::CASHBOOK) {
             $entry = $batch->sourceDocument;
             if ($entry instanceof \App\Models\CashbookEntry) {
-                $remarks = (string) ($entry->allocation_remarks ?? '');
+                $remarks     = (string) ($entry->allocation_remarks ?? '');
+                $allocatedBy = $entry->allocated_by_name;
+                $allocatedAt = optional($entry->allocated_at)->format('d/m/Y H:i:s');
             }
         }
 
         return [
-            'supplier_id' => $l->supplier_id,
-            'date'        => optional($batch->date)->toDateString(),
-            'source'      => $source,
-            'description' => $grv ? $this->grvLabel($batch->sourceDocument) : (string) ($l->description ?? ''),
-            'remarks'     => $remarks,
-            'debit'       => $isDebit ? (float) $l->amount : 0.0,
-            'credit'      => ! $isDebit ? (float) $l->amount : 0.0,
-            'grv'         => $grv,
+            'supplier_id'  => $l->supplier_id,
+            'date'         => optional($batch->date)->toDateString(),
+            'source'       => $source,
+            'description'  => $grv ? $this->grvLabel($batch->sourceDocument) : (string) ($l->description ?? ''),
+            'remarks'      => $remarks,
+            'debit'        => $isDebit ? (float) $l->amount : 0.0,
+            'credit'       => ! $isDebit ? (float) $l->amount : 0.0,
+            'grv'          => $grv,
+            'allocated_by' => $allocatedBy,
+            'allocated_at' => $allocatedAt,
         ];
     }
 
@@ -171,14 +177,16 @@ class SupplierLedgerService
             $debitTotal  += $e['debit'];
             $creditTotal += $e['credit'];
             $rows[]       = [
-                'date'        => $e['date'],
-                'source'      => $e['source'],
-                'description' => $e['description'],
-                'remarks'     => $e['remarks'],
-                'debit'       => round($e['debit'], 2),
-                'credit'      => round($e['credit'], 2),
-                'cumulative'  => round($cumulative, 2),
-                'grv'         => $e['grv'],
+                'date'         => $e['date'],
+                'source'       => $e['source'],
+                'description'  => $e['description'],
+                'remarks'      => $e['remarks'],
+                'debit'        => round($e['debit'], 2),
+                'credit'       => round($e['credit'], 2),
+                'cumulative'   => round($cumulative, 2),
+                'grv'          => $e['grv'],
+                'allocated_by' => $e['allocated_by'] ?? null,
+                'allocated_at' => $e['allocated_at'] ?? null,
             ];
         }
 

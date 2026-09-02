@@ -223,7 +223,7 @@ async function loadRefs() {
   const failed = []
 
   const jobs = [
-    api.get('/ledgers', { params: { _per_page: 500, is_active: true } })
+    api.get('/ledgers', { params: { _per_page: 500, is_active: true, postable: 1 } })
       .then((r) => { ledgers.value = rows(r) })
       .catch(() => failed.push('accounts')),
   ]

@@ -13,6 +13,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton      from '@/components/common/AppButton.vue'
 import AppMultiSelect from '@/components/common/AppMultiSelect.vue'
+import AppTooltip     from '@/components/common/AppTooltip.vue'
 import api            from '@/composables/useApi'
 import { useToast }   from '@/composables/useToast'
 import { useCommunityStore } from '@/stores/community'
@@ -175,6 +176,36 @@ async function downloadReport(report) {
     const a = Object.assign(document.createElement('a'), { href: url, download: filename })
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
   } catch { toastError('Could not download the report.') }
+}
+
+// WeConnectU cashbook-allocation tooltip: "Allocated by {name} on {datetime}".
+function allocationTip(r) {
+  const who = r.allocated_by ? `Allocated by ${r.allocated_by}` : 'Allocated'
+  return r.allocated_at ? `${who} on ${r.allocated_at}` : who
+}
+
+// Split a cell's text around the invoice number so it can be rendered with the
+// number as a clickable link (WeConnectU: "Invoice INV05281 (Line 1)" / "INV05281").
+function invoiceParts(text, number) {
+  const t = String(text ?? '')
+  if (!number || !t.includes(number)) return null
+  const idx = t.indexOf(number)
+  return { before: t.slice(0, idx), after: t.slice(idx + number.length) }
+}
+
+// Download an invoice PDF (WeConnectU-style) when its number is clicked in the ledger.
+async function downloadInvoice(invoiceId, invoiceNumber) {
+  if (!invoiceId) return
+  try {
+    const res = await api.get(`/invoices/${invoiceId}/download-pdf`, { responseType: 'blob' })
+    let filename = `${invoiceNumber || 'invoice'}.pdf`
+    const cd = res.headers['content-disposition'] || ''
+    const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd)
+    if (m) filename = decodeURIComponent(m[1].replace(/"/g, ''))
+    const url = URL.createObjectURL(res.data)
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
+  } catch { toastError('Could not download the invoice.') }
 }
 
 async function downloadExcel() {
@@ -362,8 +393,23 @@ watch(communityId, () => { ledgers.value = []; hasRun.value = false; boot() })
               <tbody>
                 <tr v-for="(r, i) in l.rows" :key="i" class="border-b border-border last:border-0">
                   <td class="px-3 py-2 whitespace-nowrap">{{ r.date }}</td>
-                  <td class="px-3 py-2">{{ r.source }}</td>
-                  <td class="px-3 py-2">{{ r.description }}</td>
+                  <td class="px-3 py-2">
+                    <span class="inline-flex items-center gap-1.5">
+                      <template v-if="r.invoice_id && invoiceParts(r.source, r.invoice_number)">
+                        <span>{{ invoiceParts(r.source, r.invoice_number).before }}</span><button type="button" class="text-[#2f8fe0] hover:underline" @click="downloadInvoice(r.invoice_id, r.invoice_number)">{{ r.invoice_number }}</button><span>{{ invoiceParts(r.source, r.invoice_number).after }}</span>
+                      </template>
+                      <template v-else>{{ r.source }}</template>
+                      <AppTooltip v-if="r.allocated_by || r.allocated_at" :text="allocationTip(r)">
+                        <svg class="h-4 w-4 text-[#2f8fe0]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 7zm1.25 10h-2.5v-6h2.5z"/></svg>
+                      </AppTooltip>
+                    </span>
+                  </td>
+                  <td class="px-3 py-2">
+                    <template v-if="r.invoice_id && invoiceParts(r.description, r.invoice_number)">
+                      <span>{{ invoiceParts(r.description, r.invoice_number).before }}</span><button type="button" class="text-[#2f8fe0] hover:underline" @click="downloadInvoice(r.invoice_id, r.invoice_number)">{{ r.invoice_number }}</button><span>{{ invoiceParts(r.description, r.invoice_number).after }}</span>
+                    </template>
+                    <template v-else>{{ r.description }}</template>
+                  </td>
                   <td class="px-3 py-2 text-muted-foreground">{{ r.remarks }}</td>
                   <td class="px-3 py-2 text-right tabular-nums">{{ fmt(r.debit) }}</td>
                   <td class="px-3 py-2 text-right tabular-nums">{{ fmt(r.credit) }}</td>

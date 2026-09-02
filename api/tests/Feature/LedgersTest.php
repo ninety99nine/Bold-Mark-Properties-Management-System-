@@ -40,6 +40,32 @@ it('returns a paginated list of ledgers scoped to occupant', function () {
     expect($response->json('meta.total'))->toBe($ownBaseline + 3);
 });
 
+it('postable=1 returns only the WeConnectU allocatable sub-account set', function () {
+    $user = adminUser();
+
+    $codes = collect(
+        $this->actingAs($user, 'api')
+            ->getJson(route('api.v1.show.ledgers', ['postable' => 1, '_per_page' => 500]))
+            ->assertOk()
+            ->json('data')
+    )->pluck('code');
+
+    // Excludes group headers, reserve fund, and the accounts WeConnectU flags
+    // "cannot be allocated to" (banks + the singleton control accounts + VAT).
+    expect($codes)->not->toContain('1000/000')  // main header
+        ->and($codes)->not->toContain('5000/001') // Retained Income
+        ->and($codes)->not->toContain('6000/001') // VAT Control
+        ->and($codes)->not->toContain('6000/003') // Supplier Control (AP)
+        ->and($codes)->not->toContain('7000/001') // Customer Control (AR)
+        ->and($codes)->not->toContain('RFI/001');  // reserve fund
+
+    // Keeps ordinary income/expense sub-accounts, control accounts and suspense.
+    expect($codes)->toContain('1000/001')
+        ->and($codes)->toContain('2000/001')
+        ->and($codes)->toContain('6050/001')
+        ->and($codes)->toContain('9900/001');
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // GET /ledgers — _relationships (eager loading)
 // ──────────────────────────────────────────────────────────────────────────────

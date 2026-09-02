@@ -68,6 +68,10 @@ const cat  = (l) => l?.financial_category_label ?? '—'
 const type = (l) => l?.account_type_label ?? '—'
 const tax  = (l) => l?.tax_type_label ?? '—'
 
+// WeConnectU flags these categories "(cannot be allocated to)".
+const NON_ALLOCATABLE = ['bank', 'accounts_receivable', 'accounts_payable', 'retained_income']
+const cannotAllocate = (l) => NON_ALLOCATABLE.includes(l?.financial_category)
+
 // ── Budget Item toggle ───────────────────────────────────────────────────────
 async function toggleBudgetItem(l) {
   const next = !l.is_budget_item
@@ -297,7 +301,10 @@ async function doDelete() {
                     </button>
                   </div>
                 </td>
-                <td class="py-2.5 px-3 font-semibold text-navy-dark">{{ cat(g.main) }}</td>
+                <td class="py-2.5 px-3 font-semibold text-navy-dark">
+                  {{ cat(g.main) }}
+                  <span v-if="cannotAllocate(g.main)" class="block text-xs font-normal text-red-600">(cannot be allocated to)</span>
+                </td>
                 <td class="py-2.5 px-3 font-semibold text-navy-dark">{{ type(g.main) }}</td>
                 <td class="py-2.5 px-3 font-semibold text-navy-dark">{{ tax(g.main) }}</td>
               </tr>
@@ -322,7 +329,10 @@ async function doDelete() {
                     </button>
                   </div>
                 </td>
-                <td class="py-2.5 px-3 text-muted-foreground">{{ cat(s) }}</td>
+                <td class="py-2.5 px-3 text-muted-foreground">
+                  {{ cat(s) }}
+                  <span v-if="cannotAllocate(s)" class="block text-xs text-red-600">(cannot be allocated to)</span>
+                </td>
                 <td class="py-2.5 px-3 text-muted-foreground">{{ type(s) }}</td>
                 <td class="py-2.5 px-3 text-muted-foreground">{{ tax(s) }}</td>
               </tr>

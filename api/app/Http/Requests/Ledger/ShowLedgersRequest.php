@@ -17,6 +17,7 @@ class ShowLedgersRequest extends FormRequest
         return [
             'fund'       => ['sometimes', 'in:main,reserve'],
             'grouped'    => ['sometimes', 'boolean'],
+            'postable'   => ['sometimes', 'boolean'],
             'applies_to' => ['sometimes', 'string'],
             // next-code preview params
             'type'       => ['sometimes', 'in:main,sub'],

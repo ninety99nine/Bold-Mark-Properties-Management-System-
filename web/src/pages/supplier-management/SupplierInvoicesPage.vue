@@ -110,7 +110,7 @@ async function loadRefs() {
   try {
     const [s, l] = await Promise.all([
       api.get('/suppliers', { params: { community_id: communityId.value, _per_page: 500 } }),
-      api.get('/ledgers',   { params: { _per_page: 500, is_active: true } }),
+      api.get('/ledgers',   { params: { _per_page: 500, is_active: true, postable: 1 } }),
     ])
     suppliers.value = rowsFrom(s)
     ledgers.value   = rowsFrom(l)

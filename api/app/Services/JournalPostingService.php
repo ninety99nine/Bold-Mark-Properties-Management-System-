@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Enums\JournalEntryType;
 use App\Enums\JournalLineType;
+use App\Models\CashbookEntry;
+use App\Models\Invoice;
 use App\Models\JournalLine;
 use Illuminate\Support\Collection;
 
@@ -42,14 +44,46 @@ class JournalPostingService
             return collect();
         }
 
-        return JournalLine::whereIn('unit_id', $ids)
+        $lines = JournalLine::whereIn('unit_id', $ids)
             ->where('line_type', JournalLineType::CUSTOMER)
-            ->with('batch:id,batch_number,date,source')
+            ->with('batch:id,batch_number,date,source,source_type,source_id')
             ->orderBy('created_at')
             ->orderBy('id')
             ->get()
-            ->filter(fn (JournalLine $l) => $l->batch !== null)
-            ->map(function (JournalLine $l) {
+            ->filter(fn (JournalLine $l) => $l->batch !== null);
+
+        // Bulk-resolve invoice numbers for invoice-sourced batches so a ledger row
+        // can show / link the invoice number (INV05281) exactly like WeConnectU.
+        $invoiceIds = $lines
+            ->filter(fn (JournalLine $l) => $l->batch->source_type === Invoice::class)
+            ->pluck('batch.source_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $invoiceNumbers = $invoiceIds->isEmpty()
+            ? collect()
+            : Invoice::whereIn('id', $invoiceIds->all())->pluck('invoice_number', 'id');
+
+        // Bulk-resolve cashbook entries (with their bank account) for cashbook
+        // allocations so a receipt row shows the bank ("STANDARD BANK: 282475699")
+        // in the Source column plus who allocated it and when (WeConnectU tooltip).
+        $cashbookIds = $lines
+            ->filter(fn (JournalLine $l) => $l->batch->source_type === CashbookEntry::class)
+            ->pluck('batch.source_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $cashbookEntries = $cashbookIds->isEmpty()
+            ? collect()
+            : CashbookEntry::with('bankAccount:id,bank_name,account_number')
+                ->whereIn('id', $cashbookIds->all())
+                ->get()
+                ->keyBy('id');
+
+        return $lines
+            ->map(function (JournalLine $l) use ($invoiceNumbers, $cashbookEntries) {
                 $isDebit = $l->entry_type === JournalEntryType::DEBIT;
                 $batch   = $l->batch;
 
@@ -59,15 +93,38 @@ class JournalPostingService
                     ? 'Journal Batch ' . $batch->batch_number
                     : ($batch->source instanceof \App\Enums\JournalSource ? $batch->source->label() : 'Journal');
 
+                $isInvoice     = $batch->source_type === Invoice::class;
+                $invoiceId     = $isInvoice ? $batch->source_id : null;
+                $invoiceNumber = $isInvoice ? ($invoiceNumbers[$batch->source_id] ?? null) : null;
+
+                // Cashbook allocation: bank Source label + "allocated by / at" tooltip.
+                $allocatedBy = null;
+                $allocatedAt = null;
+                if ($batch->source_type === CashbookEntry::class) {
+                    $entry = $cashbookEntries->get($batch->source_id);
+                    if ($entry) {
+                        $bank = $entry->bankAccount;
+                        if ($bank && $bank->bank_name) {
+                            $source = strtoupper((string) $bank->bank_name) . ': ' . $bank->account_number;
+                        }
+                        $allocatedBy = $entry->allocated_by_name;
+                        $allocatedAt = optional($entry->allocated_at)->format('d/m/Y H:i:s');
+                    }
+                }
+
                 return [
-                    'unit_id'     => $l->unit_id,
-                    'batch_id'    => $l->journal_batch_id,
-                    'date'        => optional($batch->date)->toDateString(),
-                    'due_date'    => optional($l->due_date)->toDateString(),
-                    'source'      => $source,
-                    'description' => (string) ($l->description ?? ''),
-                    'debit'       => $isDebit ? (float) $l->amount : 0.0,
-                    'credit'      => ! $isDebit ? (float) $l->amount : 0.0,
+                    'unit_id'        => $l->unit_id,
+                    'batch_id'       => $l->journal_batch_id,
+                    'date'           => optional($batch->date)->toDateString(),
+                    'due_date'       => optional($l->due_date)->toDateString(),
+                    'source'         => $source,
+                    'description'    => (string) ($l->description ?? ''),
+                    'invoice_id'     => $invoiceId,
+                    'invoice_number' => $invoiceNumber,
+                    'allocated_by'   => $allocatedBy,
+                    'allocated_at'   => $allocatedAt,
+                    'debit'          => $isDebit ? (float) $l->amount : 0.0,
+                    'credit'         => ! $isDebit ? (float) $l->amount : 0.0,
                 ];
             })
             ->sortBy('date')
