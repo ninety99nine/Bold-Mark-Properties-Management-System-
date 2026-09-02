@@ -336,50 +336,6 @@ onUnmounted(() => {
     <!-- Right: action icons (Search · Notifications · Calendar · Communities · Profile) -->
     <div class="flex items-center gap-2">
 
-      <!-- Country switcher — only when communities span multiple countries -->
-      <div v-if="countryStore.isMultiCountry" class="relative" ref="countryRef">
-        <button
-          @click="toggleCountry"
-          class="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium transition-colors"
-          :class="countryOpen ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
-        >
-          <span class="text-base leading-none">{{ countryStore.activeCountryInfo?.flag }}</span>
-          <span class="hidden sm:inline">{{ countryStore.activeCountryInfo?.name }}</span>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 transition-transform" :class="countryOpen ? 'rotate-180' : ''">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </button>
-
-        <Transition
-          enter-active-class="transition duration-150 ease-out"
-          enter-from-class="opacity-0 scale-[0.97] translate-y-[-4px]"
-          enter-to-class="opacity-100 scale-100 translate-y-0"
-          leave-active-class="transition duration-100 ease-in"
-          leave-from-class="opacity-100 scale-100 translate-y-0"
-          leave-to-class="opacity-0 scale-[0.97] translate-y-[-4px]"
-        >
-          <div v-if="countryOpen" class="absolute right-0 top-full mt-1.5 w-56 rounded-lg bg-card border border-border shadow-lg py-1 z-50">
-            <p class="px-3 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Portfolio Region</p>
-            <button
-              v-for="c in countryStore.countries"
-              :key="c.code"
-              @click="selectCountry(c.code)"
-              class="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left"
-              :class="c.code === countryStore.activeCountry ? 'bg-primary/5 text-foreground font-medium' : 'text-foreground hover:bg-muted'"
-            >
-              <span class="text-base leading-none">{{ c.flag }}</span>
-              <span class="flex-1">{{ c.name }}</span>
-              <span class="w-[20px] text-center text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">{{ c.communityCount }}</span>
-              <span class="w-3.5 shrink-0 flex items-center justify-center">
-                <svg v-if="c.code === countryStore.activeCountry" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-primary">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              </span>
-            </button>
-          </div>
-        </Transition>
-      </div>
-
       <!-- Search -->
       <div class="relative" ref="searchRef">
         <button
