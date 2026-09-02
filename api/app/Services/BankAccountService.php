@@ -196,11 +196,16 @@ class BankAccountService extends BaseService
      */
     protected function ledgerName(BankAccount $bankAccount): string
     {
-        $type = $bankAccount->type instanceof \BackedEnum ? $bankAccount->type->value : $bankAccount->type;
+        // Title-cased account type, so the GL description reads "First National
+        // Bank Current 0500000000123" (matches WeConnectU), not lowercase.
+        $type = $bankAccount->type instanceof \App\Enums\BankAccountType
+            ? $bankAccount->type
+            : \App\Enums\BankAccountType::tryFrom((string) $bankAccount->type);
+        $typeLabel = $type?->label() ?? ucfirst((string) $bankAccount->type);
 
         $name = trim(implode(' ', array_filter([
             $bankAccount->bank_name,
-            $type,
+            $typeLabel,
             $bankAccount->account_number,
         ])));
 

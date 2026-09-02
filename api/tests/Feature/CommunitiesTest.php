@@ -1638,3 +1638,32 @@ it('rejects an invalid notices_exemption value', function () {
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['notices_exemption.0']);
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Every new community starts with the standard chart of accounts (WeConnectU)
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('seeds the standard chart of accounts for the organization when a community is created', function () {
+    $user = adminUser();
+    $orgId = $user->organization_id;
+
+    // Simulate an org with no chart yet (the real app creation flow, unlike the
+    // test factory, doesn't pre-seed it) — clear it, then create a community.
+    \App\Models\Ledger::where('organization_id', $orgId)->delete();
+    expect(\App\Models\Ledger::where('organization_id', $orgId)->count())->toBe(0);
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.community'), [
+            'name'        => 'Brand New Estate',
+            'entity_type' => 'body_corporate',
+        ])
+        ->assertOk();
+
+    // The full standard chart now exists for the org, incl. the 8000/000 - BANK
+    // main account and the four control accounts.
+    $ledgers = \App\Models\Ledger::where('organization_id', $orgId);
+    expect($ledgers->count())->toBeGreaterThanOrEqual(100);
+    expect((clone $ledgers)->where('code', '8000/000')->exists())->toBeTrue();  // BANK
+    expect((clone $ledgers)->where('code', '7000/001')->exists())->toBeTrue();  // Customer control
+    expect((clone $ledgers)->where('code', '6000/003')->exists())->toBeTrue();  // Supplier control
+});

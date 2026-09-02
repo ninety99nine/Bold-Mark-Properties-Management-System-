@@ -372,3 +372,39 @@ it('deletes a bank account', function () {
 
     $this->assertDatabaseMissing('bank_accounts', ['id' => $account->id]);
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// WeConnectU parity — Savings type + title-cased GL description
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('accepts the WeConnectU "savings" account type', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.bank.account'), validBankAccountPayload([
+            'type'         => 'savings',
+            'community_id' => $community->id,
+        ]))
+        ->assertOk()
+        ->assertJsonPath('data.type', 'savings');
+});
+
+it('builds a title-cased GL account label "code - Bank Type AccountNumber" like WeConnectU', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+
+    $account = $this->actingAs($user, 'api')
+        ->postJson(route('api.v1.create.bank.account'), validBankAccountPayload([
+            'name'           => 'FNB',
+            'bank_name'      => 'First National Bank',
+            'type'           => 'current',
+            'account_number' => '0500000000123',
+            'community_id'   => $community->id,
+        ]))
+        ->assertOk()
+        ->json('data');
+
+    expect($account['general_ledger_account'])
+        ->toBe('8000/001 - First National Bank Current 0500000000123');
+});

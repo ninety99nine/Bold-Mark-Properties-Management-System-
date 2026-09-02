@@ -19,11 +19,9 @@ import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useCommunityStore } from '@/stores/community'
-import { useCountryStore } from '@/stores/country'
-import AppBadge from '@/components/common/AppBadge.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppConfirm from '@/components/common/AppConfirm.vue'
-import CashbookModal from '@/components/settings/financial/CashbookModal.vue'
+import CashbookForm from '@/components/settings/financial/CashbookForm.vue'
 import GeneralLedgerTab from '@/components/settings/financial/GeneralLedgerTab.vue'
 import BudgetTab from '@/components/settings/financial/BudgetTab.vue'
 import ReserveFundLedgerTab from '@/components/settings/financial/ReserveFundLedgerTab.vue'
@@ -33,7 +31,6 @@ import AllocationRulesTab from '@/components/settings/financial/AllocationRulesT
 
 const { success, error } = useToast()
 const community = useCommunityStore()
-const country = useCountryStore()
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 const TABS = [
@@ -96,25 +93,31 @@ async function loadAccounts() {
 onMounted(() => { loadAccounts(); loadYears() })
 watch(() => community.selectedId, () => { loadAccounts(); loadYears() })
 
-function fmtMoney(v) {
-  return country.formatCurrency(v ?? 0)
-}
-
-// ── Cashbook Add / Edit modal ────────────────────────────────────────────────
-const showModal = ref(false)
-const modalMode = ref('add')
+// ── Cashbook inline Add / Edit form (WeConnectU) ─────────────────────────────
+const showForm = ref(false)
+const formMode = ref('add')
 const editing = ref(null)
 const saving = ref(false)
 const saveError = ref(null)
 
+// GL account number preview — 8000/00n. Next position for a new cashbook, or the
+// existing account's code when editing (matches WeConnectU's read-only field).
+const glCodePreview = computed(() => {
+  if (formMode.value === 'edit' && editing.value) {
+    return editing.value.gl_account || editing.value.general_ledger_code || '8000/001'
+  }
+  const n = (accounts.value?.length ?? 0) + 1
+  return '8000/' + String(n).padStart(3, '0')
+})
+
 function openAdd() {
-  modalMode.value = 'add'
+  formMode.value = 'add'
   editing.value = null
   saveError.value = null
-  showModal.value = true
+  showForm.value = true
 }
 async function openEdit(acct) {
-  modalMode.value = 'edit'
+  formMode.value = 'edit'
   saveError.value = null
   try {
     const { data } = await api.get(`/bank-accounts/${acct.id}`)
@@ -122,27 +125,39 @@ async function openEdit(acct) {
   } catch (e) {
     editing.value = acct
   }
-  showModal.value = true
+  showForm.value = true
+}
+function cancelForm() {
+  showForm.value = false
+  editing.value = null
 }
 
 async function saveAccount(payload) {
   saving.value = true
   saveError.value = null
   try {
-    if (modalMode.value === 'add') {
+    if (formMode.value === 'add') {
       await api.post('/bank-accounts', { ...payload, community_id: cid.value })
-      success('Cashbook added.')
+      success('The cashbook has been added successfully.')
     } else {
       await api.put(`/bank-accounts/${editing.value.id}`, payload)
-      success('Cashbook updated.')
+      success('The cashbook has been updated successfully.')
     }
-    showModal.value = false
+    showForm.value = false
+    editing.value = null
     await loadAccounts()
   } catch (e) {
     saveError.value = e?.response?.data?.message ?? 'Failed to save cashbook.'
   } finally {
     saving.value = false
   }
+}
+
+// Branch label "MAIN MALL (250655)" like WeConnectU.
+function branchLabel(a) {
+  const name = (a.branch_name || '').toUpperCase()
+  if (name && a.branch_code) return `${name} (${a.branch_code})`
+  return name || a.branch_code || '—'
 }
 
 // ── Cashbook delete ──────────────────────────────────────────────────────────
@@ -184,15 +199,6 @@ async function confirmDelete() {
           <template v-if="community.selected"> · {{ community.selected.name }}</template>
         </p>
       </div>
-      <button
-        v-if="cid && activeTab === 'cashbooks'"
-        type="button"
-        class="inline-flex items-center gap-2 rounded-md bg-navy-dark px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity shrink-0"
-        @click="openAdd"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-        Add Cashbook
-      </button>
     </div>
 
     <!-- No community -->
@@ -239,53 +245,63 @@ async function confirmDelete() {
       </div>
 
       <!-- ── Cashbooks tab ─────────────────────────────────────────────── -->
-      <div v-if="activeTab === 'cashbooks'" class="rounded-lg border border-border bg-white p-6">
+      <div v-if="activeTab === 'cashbooks'" class="rounded-lg border border-border bg-white p-6 space-y-5">
+        <h2 class="font-body text-xl font-bold text-navy-dark">Cashbooks</h2>
+
+        <!-- Add new Cashbook / Bank Account link (WeConnectU) -->
+        <button type="button" class="inline-flex items-center gap-1.5 text-sm font-medium text-[#2f6fb0] hover:underline" @click="openAdd">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 11h-2v3a1 1 0 1 1-2 0v-3H6a1 1 0 1 1 0-2h3V8a1 1 0 1 1 2 0v3h3a1 1 0 1 1 0 2Z"/></svg>
+          Add new Cashbook / Bank Account
+        </button>
+
+        <!-- Inline Add / Edit form -->
+        <CashbookForm
+          v-if="showForm"
+          :mode="formMode"
+          :account="editing"
+          :gl-code="glCodePreview"
+          :saving="saving"
+          :error="saveError"
+          @save="saveAccount"
+          @cancel="cancelForm"
+        />
+
         <div v-if="loading" class="py-12 text-center text-muted-foreground text-sm">Loading…</div>
 
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-sm">
+          <table class="w-full text-sm border border-border">
             <thead>
-              <tr class="border-b border-border">
-                <th class="py-2.5 px-3 text-left font-bold text-navy-dark">Cashbook Name</th>
-                <th class="py-2.5 px-3 text-left font-bold text-navy-dark">Bank</th>
-                <th class="py-2.5 px-3 text-left font-bold text-navy-dark">Account Number</th>
-                <th class="py-2.5 px-3 text-left font-bold text-navy-dark">GL Account</th>
-                <th class="py-2.5 px-3 text-right font-bold text-navy-dark">Opening Balance</th>
-                <th class="py-2.5 px-3 text-left font-bold text-navy-dark">Status</th>
-                <th class="py-2.5 px-3 w-24 text-right font-bold text-navy-dark">Actions</th>
+              <tr class="bg-[#eef1f5]">
+                <th class="py-2.5 px-3 text-left font-bold text-navy-dark border border-border">Bank</th>
+                <th class="py-2.5 px-3 text-left font-bold text-navy-dark border border-border">Acc No.</th>
+                <th class="py-2.5 px-3 text-left font-bold text-navy-dark border border-border">Acc Type</th>
+                <th class="py-2.5 px-3 text-left font-bold text-navy-dark border border-border">Branch</th>
+                <th class="py-2.5 px-3 text-left font-bold text-navy-dark border border-border">General Ledger Account</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="a in accounts" :key="a.id" class="border-b border-border/60 odd:bg-muted/20 hover:bg-muted/40">
-                <td class="py-2.5 px-3">
-                  <button type="button" class="text-[#2f6fb0] hover:underline text-left" title="Edit cashbook" @click="openEdit(a)">
-                    {{ a.name }}
-                  </button>
-                  <span class="block text-xs text-muted-foreground capitalize">{{ a.type }}</span>
-                </td>
-                <td class="py-2.5 px-3 text-muted-foreground">{{ a.bank_name || '—' }}</td>
-                <td class="py-2.5 px-3 text-muted-foreground">{{ a.account_number || '—' }}</td>
-                <td class="py-2.5 px-3 font-mono text-muted-foreground">{{ a.gl_account || '—' }}</td>
-                <td class="py-2.5 px-3 text-right tabular-nums">{{ fmtMoney(a.balance) }}</td>
-                <td class="py-2.5 px-3">
-                  <AppBadge :variant="a.is_active ? 'success' : 'default'">
-                    {{ a.is_active ? 'Active' : 'Inactive' }}
-                  </AppBadge>
-                </td>
-                <td class="py-2.5 px-3">
-                  <div class="flex items-center justify-end gap-1">
-                    <button type="button" class="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted" title="Edit" @click="openEdit(a)">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              <tr v-for="a in accounts" :key="a.id" class="hover:bg-muted/30">
+                <td class="py-2.5 px-3 border border-border">
+                  <div class="flex items-center gap-2">
+                    <button type="button" class="font-bold text-[#2f6fb0] hover:underline text-left uppercase" title="Edit Cashbook" @click="openEdit(a)">
+                      {{ a.bank_name || a.name }}
                     </button>
-                    <button type="button" class="p-1.5 rounded text-destructive hover:bg-destructive/10" title="Delete" @click="askDelete(a)">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <span v-if="a.is_active" title="Active" class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#2c9b67] text-white">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="h-2.5 w-2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                    </span>
+                    <button type="button" class="text-destructive hover:text-destructive/80" title="Delete Cashbook" @click="askDelete(a)">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
                   </div>
                 </td>
+                <td class="py-2.5 px-3 border border-border">{{ a.account_number || '—' }}</td>
+                <td class="py-2.5 px-3 border border-border uppercase">{{ a.type }}</td>
+                <td class="py-2.5 px-3 border border-border font-medium">{{ branchLabel(a) }}</td>
+                <td class="py-2.5 px-3 border border-border font-medium">{{ a.general_ledger_account || a.gl_account || '—' }}</td>
               </tr>
               <tr v-if="!accounts.length">
-                <td colspan="7" class="py-10 text-center text-sm text-muted-foreground">
-                  No cashbooks yet. Click “Add Cashbook” to create one.
+                <td colspan="5" class="py-8 text-center text-sm text-muted-foreground border border-border">
+                  No data available in table
                 </td>
               </tr>
             </tbody>
@@ -311,17 +327,6 @@ async function confirmDelete() {
       <!-- ── Allocation Rules tab ──────────────────────────────────────── -->
       <AllocationRulesTab v-else-if="activeTab === 'allocation'" />
     </template>
-
-    <!-- ── Cashbook Add / Edit modal ──────────────────────────────────────── -->
-    <CashbookModal
-      :show="showModal"
-      :mode="modalMode"
-      :account="editing"
-      :saving="saving"
-      :error="saveError"
-      @close="showModal = false"
-      @save="saveAccount"
-    />
 
     <!-- ── Cashbook delete confirm ────────────────────────────────────────── -->
     <AppConfirm
