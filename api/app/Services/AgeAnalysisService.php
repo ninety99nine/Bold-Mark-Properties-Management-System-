@@ -2,14 +2,9 @@
 
 namespace App\Services;
 
-use App\Enums\CashbookEntryType;
 use App\Enums\CollectionStatus;
-use App\Enums\InvoiceStatus;
 use App\Enums\UnitStatus;
-use App\Models\CashbookEntry;
 use App\Models\Community;
-use App\Models\Invoice;
-use App\Models\Ledger;
 use App\Models\Unit;
 use App\Exports\AgeAnalysisExport;
 use Carbon\Carbon;
@@ -38,9 +33,6 @@ class AgeAnalysisService extends BaseService
 {
     /** Bucket keys, oldest → newest (credits net oldest-first). */
     private const BUCKETS = ['120_plus', '90_days', '60_days', '30_days', 'current'];
-
-    /** Ledger name/category keywords excluded by "Exclude Debit/Arrear charges". */
-    private const DEBIT_ARREAR_KEYWORDS = ['interest', 'arrear', 'penalty', 'debit order'];
 
     /**
      * Build the age-analysis table for a community.
@@ -101,70 +93,32 @@ class AgeAnalysisService extends BaseService
      */
     private function buildRows(Community $community, array $data, Carbon $ageingDate): array
     {
-        $organizationId = Auth::user()->organization_id;
-        $unitIds        = Unit::where('community_id', $community->id)->pluck('id');
+        $unitIds = Unit::where('community_id', $community->id)->pluck('id');
 
         if ($unitIds->isEmpty()) {
             return [];
         }
 
-        // Ledgers excluded by "Exclude Debit/Arrear charges".
-        $excludeLedgerIds = $this->excludedLedgerIds($organizationId, $data);
-
-        // ── Outstanding invoices that existed as at the ageing date ──────
-        $invoiceQuery = Invoice::whereIn('unit_id', $unitIds)
-            ->where('organization_id', $organizationId)
-            ->whereIn('status', [
-                InvoiceStatus::UNPAID->value,
-                InvoiceStatus::OVERDUE->value,
-                InvoiceStatus::PARTIALLY_PAID->value,
-            ])
-            ->whereRaw('DATE(COALESCE(invoice_date, created_at)) <= ?', [$ageingDate->toDateString()]);
-
-        if (!empty($data['ledger_id'])) {
-            $invoiceQuery->where('ledger_id', $data['ledger_id']);
-        }
-        if (!empty($excludeLedgerIds)) {
-            $invoiceQuery->whereNotIn('ledger_id', $excludeLedgerIds);
-        }
-
-        $invoices   = $invoiceQuery->get(['id', 'unit_id', 'due_date', 'amount', 'status']);
-        $invoiceIds = $invoices->pluck('id');
-
-        // Payments allocated to those invoices, received on/before the ageing date.
-        $paidByInvoice = $invoiceIds->isEmpty()
-            ? collect()
-            : CashbookEntry::whereIn('invoice_id', $invoiceIds)
-                ->where('type', CashbookEntryType::CREDIT->value)
-                ->whereRaw('DATE(COALESCE(date, created_at)) <= ?', [$ageingDate->toDateString()])
-                ->selectRaw('invoice_id, SUM(amount) as total')
-                ->groupBy('invoice_id')
-                ->pluck('total', 'invoice_id');
-
+        // ── Customer subledger (GL) aged as at the ageing date ───────────
+        // Every customer transaction — invoice AR debit, credit note, allocated
+        // receipt, manual journal — is a CUSTOMER journal line. Debits age by
+        // their due_date into the buckets; credits are a lump netted
+        // oldest-bucket-first, keeping Age Analysis in lock-step with the
+        // customer statement / ledger and UnitBalanceService.
         $bucketsByUnit = [];
-        foreach ($invoices as $invoice) {
-            $outstanding = round((float) $invoice->amount - (float) ($paidByInvoice[$invoice->id] ?? 0), 2);
-            if ($outstanding <= 0) {
-                continue;
-            }
+        $creditsByUnit = [];
 
-            $bucket = $this->bucketFor($invoice->due_date, $ageingDate);
-            if (!isset($bucketsByUnit[$invoice->unit_id])) {
-                $bucketsByUnit[$invoice->unit_id] = array_fill_keys(self::BUCKETS, 0.0);
+        $journalByUnit = (new JournalPostingService())->agedCustomerByUnit($unitIds->all(), $ageingDate->toDateString());
+        foreach ($journalByUnit as $uid => $effect) {
+            if ($effect['credit'] > 0) {
+                $creditsByUnit[$uid] = ($creditsByUnit[$uid] ?? 0) + $effect['credit'];
             }
-            $bucketsByUnit[$invoice->unit_id][$bucket] += $outstanding;
+            foreach ($effect['debits'] as $debit) {
+                $bucket                       = $this->bucketFor($debit['date'], $ageingDate);
+                $bucketsByUnit[$uid]          ??= array_fill_keys(self::BUCKETS, 0.0);
+                $bucketsByUnit[$uid][$bucket] += $debit['amount'];
+            }
         }
-
-        // ── Unallocated credits per unit, received on/before the ageing date ──
-        $creditsByUnit = CashbookEntry::whereIn('unit_id', $unitIds)
-            ->whereNull('invoice_id')
-            ->where('type', CashbookEntryType::CREDIT->value)
-            ->whereRaw('DATE(COALESCE(date, created_at)) <= ?', [$ageingDate->toDateString()])
-            ->selectRaw('unit_id, SUM(amount) as total')
-            ->groupBy('unit_id')
-            ->pluck('total', 'unit_id')
-            ->map(fn ($v) => (float) $v)
-            ->toArray();
 
         // ── Load the units that have arrears or credits ──────────────────
         $affectedUnitIds = array_values(array_unique(array_merge(
@@ -325,30 +279,6 @@ class AgeAnalysisService extends BaseService
             new AgeAnalysisExport($community->name, $result['ageing_date'], $result['rows'], $result['totals']),
             $filename
         );
-    }
-
-    /**
-     * Resolve the ledger ids excluded by "Exclude Debit/Arrear charges".
-     *
-     * @param string $organizationId
-     * @param array $data
-     * @return array
-     */
-    private function excludedLedgerIds(string $organizationId, array $data): array
-    {
-        if (empty($data['exclude_debit_arrear']) || !filter_var($data['exclude_debit_arrear'], FILTER_VALIDATE_BOOLEAN)) {
-            return [];
-        }
-
-        return Ledger::where('organization_id', $organizationId)
-            ->where(function ($q) {
-                foreach (self::DEBIT_ARREAR_KEYWORDS as $kw) {
-                    $q->orWhere('name', 'like', "%{$kw}%")
-                      ->orWhere('category', 'like', "%{$kw}%");
-                }
-            })
-            ->pluck('id')
-            ->all();
     }
 
     /**

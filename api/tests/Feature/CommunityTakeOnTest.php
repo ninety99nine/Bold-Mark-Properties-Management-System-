@@ -240,11 +240,12 @@ it('round-trips: the budget template downloads pre-filled with the exact 80-line
     $path = tempnam(sys_get_temp_dir(), 'bt') . '.xlsx';
     file_put_contents($path, $content);
 
+    // The organisation is pre-seeded with the standard chart of accounts, so the
+    // budget import upserts those ledgers rather than creating them all anew.
     $this->actingAs($user, 'api')
         ->post(route('api.v1.community.budget.import', $community), ['file' => new UploadedFile($path, 'budget.xlsx', null, null, true)])
         ->assertOk()
-        ->assertJsonPath('imported_lines', 80)
-        ->assertJsonPath('created_ledgers', 80);
+        ->assertJsonPath('imported_lines', 80);
 
     $this->assertDatabaseHas('ledgers', ['organization_id' => $community->organization_id, 'code' => '1000/001', 'name' => 'Levies']);
     $this->assertDatabaseHas('ledgers', ['organization_id' => $community->organization_id, 'code' => '4000/009', 'name' => 'WCA']);
@@ -264,8 +265,7 @@ it('imports a budget, auto-creating ledgers and writing monthly figures', functi
         ->post(route('api.v1.community.budget.import', $community), ['file' => $file])
         ->assertOk()
         ->assertJsonPath('year', 2026)
-        ->assertJsonPath('imported_lines', 2)
-        ->assertJsonPath('created_ledgers', 2);
+        ->assertJsonPath('imported_lines', 2);
 
     $this->assertDatabaseHas('ledgers', ['code' => '1000/001', 'organization_id' => $community->organization_id]);
 

@@ -2,9 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\CashbookEntry;
-use App\Models\CreditNote;
-use App\Models\Invoice;
 use App\Models\Unit;
 use Illuminate\Support\Facades\DB;
 
@@ -13,58 +10,26 @@ class UnitBalanceService
     /**
      * Recompute and persist the stored balance for a single unit.
      *
-     * Formula: balance = unallocated_credits + credit_notes − outstanding_amount
-     *
-     *   outstanding_amount  = sum of (invoice.amount − payments already allocated to it)
-     *                         for all invoices in unpaid / overdue / partially_paid status.
-     *                         GREATEST(0, …) prevents a rounding edge case where allocated
-     *                         payments exceed the invoice amount producing a negative term.
-     *
-     *   unallocated_credits = sum of cashbook credit entries that have no invoice_id,
-     *                         i.e. advance payments / overpayment remainders on account.
-     *
-     *   credit_notes        = sum of credit note totals raised against the unit; a credit
-     *                         note credits the customer's account, reducing what they owe.
+     * The balance is now purely the GL customer-control position (WeConnectU
+     * balance-forward): it is Σ(credit − debit) over the unit's Accounts
+     * Receivable journal lines. Every customer document — invoices (Dr → −),
+     * receipts and credit notes (Cr → +) — posts a balanced GL batch, so the GL
+     * is the single source of truth. The document tables are no longer read here.
      *
      * Result semantics:
      *   balance < 0  → unit is in arrears
      *   balance = 0  → clear
      *   balance > 0  → credit on account
      *
-     * This method is called from InvoiceService and CashbookEntryService after every
-     * write operation that can move money into or out of a unit's ledger position.
-     *
      * @param Unit $unit
      * @return void
      */
     public function recalculate(Unit $unit): void
     {
-        $unitId = $unit->id;
-
-        // Outstanding: net amount still owed on open invoices.
-        $outstandingRows = Invoice::where('unit_id', $unitId)
-            ->whereIn('status', ['unpaid', 'overdue', 'partially_paid'])
-            ->get(['id', 'amount']);
-
-        $outstandingAmount = 0.0;
-        foreach ($outstandingRows as $invoice) {
-            $paid             = (float) CashbookEntry::where('invoice_id', $invoice->id)->sum('amount');
-            $outstandingAmount += max(0, (float) $invoice->amount - $paid);
-        }
-
-        // Unallocated credits: money received but not yet matched to an invoice.
-        $unallocatedCredits = (float) CashbookEntry::where('unit_id', $unitId)
-            ->whereNull('invoice_id')
-            ->where('type', 'credit')
-            ->sum('amount');
-
-        // Credit notes: documents that credit the customer's account.
-        $creditNotes = (float) CreditNote::where('unit_id', $unitId)->sum('amount');
-
-        $balance = $unallocatedCredits + $creditNotes - $outstandingAmount;
+        $balance = (new JournalPostingService())->balanceEffect($unit->id);
 
         DB::table('units')
-            ->where('id', $unitId)
+            ->where('id', $unit->id)
             ->update(['balance' => $balance]);
     }
 

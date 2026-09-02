@@ -3,6 +3,11 @@
 namespace App\Services;
 
 use App\Enums\BilledToType;
+use App\Enums\FinancialCategory;
+use App\Enums\JournalEntryType;
+use App\Enums\JournalLineType;
+use App\Enums\JournalSource;
+use App\Models\Ledger;
 use App\Jobs\SendCreditNoteEmail;
 use App\Http\Resources\CreditNoteResource;
 use App\Http\Resources\CreditNoteResources;
@@ -25,6 +30,102 @@ class CreditNoteService extends BaseService
     public function __construct(private readonly UnitBalanceService $unitBalance)
     {
         parent::__construct();
+    }
+
+    /**
+     * Post (or re-post) the balanced GL batch for a credit note — the reverse of
+     * an invoice: Dr each item income ledger (net, or Suspense when unassigned),
+     * Dr VAT Control (Σtax) and Cr Accounts Receivable [unit] for the total. The
+     * net customer effect is +total (the unit owes less).
+     *
+     * Idempotent; skipped when the credit note has no unit.
+     *
+     * @param CreditNote $creditNote
+     * @return void
+     */
+    public function postCreditNoteLedger(CreditNote $creditNote): void
+    {
+        if (! $creditNote->unit_id) {
+            return;
+        }
+
+        $unit = $creditNote->unit()->with('community')->first();
+        $community = $unit?->community;
+
+        if (! $unit || ! $community) {
+            return;
+        }
+
+        $orgId = $creditNote->organization_id;
+        $date  = $creditNote->credit_note_date ?? $creditNote->created_at ?? Carbon::now();
+
+        $gl       = app(GeneralLedgerPostingService::class);
+        $suspense = Ledger::suspense($orgId);
+
+        $lines    = [];
+        $taxTotal = 0.0;
+
+        $creditNote->loadMissing('items');
+
+        if ($creditNote->items->isNotEmpty()) {
+            foreach ($creditNote->items as $item) {
+                $gross = (float) $item->line_total;
+                $tax   = (float) $item->tax_amount;
+                $net   = round($gross - $tax, 2);
+                $taxTotal += $tax;
+
+                // Dr income ledger (net) — reversing the income the invoice raised.
+                $lines[] = [
+                    'line_type'   => JournalLineType::GENERAL,
+                    'entry_type'  => JournalEntryType::DEBIT,
+                    'amount'      => $net,
+                    'ledger_id'   => $item->ledger_id ?: $suspense?->id,
+                    'description' => $item->description ?: $creditNote->credit_note_number,
+                ];
+            }
+        } else {
+            $gross = (float) $creditNote->amount;
+            $tax   = (float) ($creditNote->vat_amount ?? 0);
+            $net   = round($gross - $tax, 2);
+            $taxTotal = $tax;
+
+            $lines[] = [
+                'line_type'   => JournalLineType::GENERAL,
+                'entry_type'  => JournalEntryType::DEBIT,
+                'amount'      => $net,
+                'ledger_id'   => $suspense?->id,
+                'description' => $creditNote->credit_note_number,
+            ];
+        }
+
+        if (round($taxTotal, 2) > 0) {
+            $vat = $gl->controlAccount($orgId, FinancialCategory::VAT_CONTROL);
+            $lines[] = [
+                'line_type'   => JournalLineType::GENERAL,
+                'entry_type'  => JournalEntryType::DEBIT,
+                'amount'      => round($taxTotal, 2),
+                'ledger_id'   => $vat->id,
+                'description' => 'VAT on ' . $creditNote->credit_note_number,
+            ];
+        }
+
+        // Cr Accounts Receivable [unit] for the full credit-note total.
+        $lines[] = [
+            'line_type'   => JournalLineType::CUSTOMER,
+            'entry_type'  => JournalEntryType::CREDIT,
+            'amount'      => (float) $creditNote->amount,
+            'unit_id'     => $unit->id,
+            'description' => $creditNote->credit_note_number,
+        ];
+
+        $gl->repostFor(
+            $community,
+            Carbon::parse($date),
+            JournalSource::CREDIT_NOTE,
+            $creditNote,
+            'Customer Recovery',
+            $lines,
+        );
     }
 
     /**
@@ -251,6 +352,7 @@ class CreditNoteService extends BaseService
             return $creditNote;
         });
 
+        $this->postCreditNoteLedger($creditNote);
         $this->unitBalance->recalculate($unit);
 
         if (!empty($data['email_credit_note'])) {

@@ -3,9 +3,11 @@
 namespace Database\Factories;
 
 use App\Enums\BilledToType;
+use App\Enums\FinancialCategory;
 use App\Enums\InvoiceStatus;
 use App\Models\Ledger;
 use App\Models\Invoice;
+use App\Services\InvoiceService;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -15,6 +17,29 @@ use Illuminate\Support\Str;
 class InvoiceFactory extends Factory
 {
     protected $model = Invoice::class;
+
+    /**
+     * Post the invoice's balanced GL batch on creation (Dr Accounts Receivable
+     * [unit] / Cr income), so factory invoices move the unit balance exactly like
+     * real ones. Skipped when the invoice has no unit (no customer account to
+     * post) or the organisation has no chart of accounts yet.
+     *
+     * @return static
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Invoice $invoice): void {
+            if (! $invoice->unit_id || ! $invoice->organization_id) {
+                return;
+            }
+
+            if (! Ledger::controlAccount($invoice->organization_id, FinancialCategory::ACCOUNTS_RECEIVABLE)) {
+                return;
+            }
+
+            app(InvoiceService::class)->postInvoiceLedger($invoice);
+        });
+    }
 
     public function definition(): array
     {

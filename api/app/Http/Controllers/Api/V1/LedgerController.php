@@ -30,9 +30,38 @@ class LedgerController extends Controller
      * @param ShowLedgersRequest $request
      * @return LedgerResources
      */
-    public function showLedgers(ShowLedgersRequest $request): LedgerResources
+    public function showLedgers(ShowLedgersRequest $request): LedgerResources|array
     {
-        return $this->service->showLedgers($request->validated());
+        $data = $request->validated();
+
+        if (($data['grouped'] ?? false) || filter_var($request->query('grouped'), FILTER_VALIDATE_BOOLEAN)) {
+            return $this->service->showGroupedLedgers($data);
+        }
+
+        return $this->service->showLedgers($data);
+    }
+
+    /**
+     * Return the "Add General Ledger Account" form options (main-account picker,
+     * financial categories, account types, tax types).
+     *
+     * @param ShowLedgersRequest $request
+     * @return array
+     */
+    public function ledgerOptions(ShowLedgersRequest $request): array
+    {
+        return $this->service->ledgerOptions();
+    }
+
+    /**
+     * Preview the next auto-generated GL account number (read-only modal field).
+     *
+     * @param ShowLedgersRequest $request
+     * @return array
+     */
+    public function nextCode(ShowLedgersRequest $request): array
+    {
+        return $this->service->nextCodePreview($request->validated());
     }
 
     /**

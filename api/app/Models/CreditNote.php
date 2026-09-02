@@ -16,6 +16,19 @@ class CreditNote extends Model
 {
     use HasFactory, HasUuids, SoftDeletes;
 
+    /**
+     * Remove this credit note's GL batch whenever it is deleted, so the customer
+     * control account no longer carries the credit it posted.
+     *
+     * @return void
+     */
+    protected static function booted(): void
+    {
+        static::deleted(function (CreditNote $creditNote): void {
+            app(\App\Services\GeneralLedgerPostingService::class)->deleteBatchesFor($creditNote);
+        });
+    }
+
     protected $casts = [
         'billed_to_type'   => BilledToType::class,
         'amount'           => 'float',

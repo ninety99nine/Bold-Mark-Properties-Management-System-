@@ -8,6 +8,8 @@ Route::prefix('ledgers')
     ->middleware(['auth:api'])
     ->group(function () {
         Route::get('/', 'showLedgers')->name('show.charge.types');
+        Route::get('/options', 'ledgerOptions')->name('show.ledger.options');
+        Route::get('/next-code', 'nextCode')->name('show.ledger.next.code');
         Route::post('/', 'createLedger')->name('create.charge.type');
         Route::delete('/', 'deleteLedgers')->name('delete.charge.types');
 

@@ -25,6 +25,7 @@ use App\Services\CommunityLedgerService;
 use App\Services\UnitBalanceService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -119,6 +120,20 @@ class DemoSeeder extends Seeder
         $this->seedSuperAdmin();
         $this->seedOrganization();
         $this->seedDefaultLedgers();
+
+        // Seed the full WeConnectU chart of accounts (with GL classification) for
+        // every organisation so the double-entry control accounts exist — Accounts
+        // Receivable (7000/001), Accounts Payable (6000/003), VAT Control
+        // (6000/001), Suspense (9900/001), Retained Income (5000/001). The GL
+        // posting engine resolves control accounts by financial category, and the
+        // gl:backfill at the end of this seed needs them. Idempotent.
+        $this->call(ChartOfAccountsSeeder::class);
+
+        // The default billing ledgers (charge types like "Admin Levy") are created
+        // without a GL code/classification; classify them as income accounts so
+        // they appear on the Trial Balance / Income Statement and the books tie out.
+        $this->classifyBillingLedgers();
+
         $this->seedAllUsers();
         $this->seedExternalUsers();
         $this->seedCommunities();
@@ -129,6 +144,21 @@ class DemoSeeder extends Seeder
         // Customer Notices page has data for every seeded community.
         $this->command?->info('Seeding legal notice batches...');
         $this->call(NoticeBatchDemoSeeder::class);
+
+        // Finance demo extras: unit PQ columns, suppliers, supplier groups and
+        // supplier invoices (GRVs) for the last 3 months. The supplier invoices
+        // post their own balanced GL batches; the gl:backfill below is a safety
+        // net. Idempotent, so it is safe to re-run against a seeded database.
+        $this->command?->info('Seeding finance demo extras (units PQ, suppliers, supplier invoices)...');
+        $this->call(DemoFinanceExtrasSeeder::class);
+
+        // Post the double-entry General Ledger for every seeded document (invoices,
+        // credit notes, supplier invoices, cashbook entries) plus bank opening
+        // balances. The documents above are created via Model::create() and do not
+        // post GL on their own; the backfill is idempotent, so any factory-posted
+        // batches (Phase 1/2 afterCreating) are simply skipped.
+        $this->command?->info('Posting General Ledger for seeded documents...');
+        Artisan::call('gl:backfill', [], $this->command?->getOutput());
 
         $this->command?->info('Demo seed complete.');
     }
@@ -334,6 +364,35 @@ class DemoSeeder extends Seeder
         }
     }
 
+    /**
+     * Give any code-less billing ledger a proper income-account classification
+     * (code 1000/1nn, Sales / Income Statement, main fund, under the 1000/000
+     * INCOME main account) so GL reports include it and the Trial Balance ties out.
+     */
+    private function classifyBillingLedgers(): void
+    {
+        foreach (Organization::all() as $organization) {
+            $main = Ledger::where('organization_id', $organization->id)->where('code', '1000/000')->first();
+            $seq  = 100;
+
+            Ledger::where('organization_id', $organization->id)
+                ->whereNull('code')
+                ->orderBy('name')
+                ->get()
+                ->each(function (Ledger $ledger) use (&$seq, $main) {
+                    $seq++;
+                    $ledger->update([
+                        'code'               => '1000/' . $seq,
+                        'category'           => '1000/000 - INCOME',
+                        'account_type'       => 'income_statement',
+                        'financial_category' => \App\Enums\FinancialCategory::SALES->value,
+                        'fund'               => 'main',
+                        'parent_id'          => $main?->id,
+                    ]);
+                });
+        }
+    }
+
     /* ------------------------------------------------------------------ */
     /*  USERS (internal + 4th admin)                                        */
     /* ------------------------------------------------------------------ */
@@ -456,6 +515,10 @@ class DemoSeeder extends Seeder
         Unit::where('organization_id', $this->organizationId)->each(function (Unit $unit) use ($balanceService) {
             $balanceService->recalculate($unit);
         });
+
+        // Default journal groups (managed list) for every seeded community.
+        $this->command?->info('Seeding journal groups...');
+        $this->call(JournalGroupSeeder::class);
 
         // Spread collection statuses / debit-order / transfer flags so the Age
         // Analysis status markers show the full WeConnectU range.

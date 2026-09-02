@@ -14,6 +14,14 @@ class ShowLedgersRequest extends FormRequest
 
     public function rules(): array
     {
-        return [];
+        return [
+            'fund'       => ['sometimes', 'in:main,reserve'],
+            'grouped'    => ['sometimes', 'boolean'],
+            'applies_to' => ['sometimes', 'string'],
+            // next-code preview params
+            'type'       => ['sometimes', 'in:main,sub'],
+            'prefix'     => ['sometimes', 'string'],
+            'parent_id'  => ['sometimes', 'uuid'],
+        ];
     }
 }

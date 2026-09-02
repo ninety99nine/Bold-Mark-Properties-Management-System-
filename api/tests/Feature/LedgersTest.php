@@ -24,6 +24,11 @@ it('returns 401 on all ledger routes when unauthenticated', function (string $me
 
 it('returns a paginated list of ledgers scoped to occupant', function () {
     $user = adminUser();
+
+    // The organisation is seeded with the full chart of accounts, so scope the
+    // assertion to the exact own-org ledger count vs the other org's ledgers.
+    $ownBaseline = Ledger::where('organization_id', $user->organization_id)->count();
+
     Ledger::factory()->count(3)->create(['organization_id' => $user->organization_id]);
     Ledger::factory()->count(2)->create(['organization_id' => createOrganization()->id]);
 
@@ -32,7 +37,7 @@ it('returns a paginated list of ledgers scoped to occupant', function () {
         ->assertOk()
         ->assertJsonStructure(['data', 'links', 'meta']);
 
-    expect($response->json('meta.total'))->toBe(3);
+    expect($response->json('meta.total'))->toBe($ownBaseline + 3);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────

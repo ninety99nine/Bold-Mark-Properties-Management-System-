@@ -33,7 +33,7 @@ it('returns the WeConnectU dashboard payload shape', function () {
                 'bank_balance' => ['value', 'count', 'as_at'],
                 'investments'  => ['value', 'count', 'as_at'],
                 'outstanding_debt',
-                'debt_trend'   => ['total', 'percent_change', 'series'],
+                'debt_trend'   => ['total', 'percent_change', 'series' => ['*' => ['label', 'date', 'value']]],
             ],
             'counts' => ['open_tasks', 'pending_transfers', 'warnings', 'penalties', 'fines'],
             'pending_transfers',

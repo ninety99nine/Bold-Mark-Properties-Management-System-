@@ -144,30 +144,50 @@ it('aggregates multiple invoices for the same unit into one row', function () {
 it('excludes fully paid units', function () {
     $user      = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
-    $unit      = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
-    $owner     = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
-    $ledger    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    Invoice::factory()->create([
-        'organization_id' => $user->organization_id, 'unit_id' => $unit->id, 'ledger_id' => $ledger->id,
-        'billed_to_type' => 'owner', 'billed_to_id' => $owner->id, 'amount' => 500, 'status' => 'paid',
-        'due_date' => now()->subDays(45)->toDateString(),
+    // An invoice (AR debit) fully settled by an allocated receipt (AR credit)
+    // nets to a zero GL balance, so the customer drops off the age analysis.
+    $unit = arrearsUnit($user->organization_id, $community, 500, 45);
+
+    $bank = \App\Models\BankAccount::factory()->create([
+        'organization_id' => $user->organization_id,
+        'community_id'    => $community->id,
+    ]);
+    $entry = CashbookEntry::factory()->create([
+        'organization_id' => $user->organization_id, 'community_id' => $community->id,
+        'bank_account_id' => $bank->id, 'unit_id' => null, 'invoice_id' => null,
+        'type' => 'credit', 'amount' => 500,
+    ]);
+    app(\App\Services\AllocationPostingService::class)->post($entry, [
+        'ledger_type' => 'customer', 'unit_id' => $unit->id,
     ]);
 
     expect($this->actingAs($user, 'api')->getJson(ageRoute($community))->json('totals.customer_count'))->toBe(0);
 });
 
-it('nets unallocated credits oldest-first and can produce a negative balance', function () {
+it('nets credits oldest-first and can produce a negative balance', function () {
     $user      = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit      = arrearsUnit($user->organization_id, $community, 1000, 120); // 120+ bucket
 
-    CashbookEntry::factory()->create([
+    $bank = \App\Models\BankAccount::factory()->create([
         'organization_id' => $user->organization_id,
         'community_id'    => $community->id,
-        'unit_id'         => $unit->id,
+    ]);
+
+    // A receipt allocated to the customer posts a Cr Accounts-Receivable line —
+    // the GL credit lump the age analysis nets oldest-bucket-first.
+    $entry = CashbookEntry::factory()->create([
+        'organization_id' => $user->organization_id,
+        'community_id'    => $community->id,
+        'bank_account_id' => $bank->id,
+        'unit_id'         => null,
         'invoice_id'      => null,
         'type'            => 'credit',
         'amount'          => 1500,
+    ]);
+    app(\App\Services\AllocationPostingService::class)->post($entry, [
+        'ledger_type' => 'customer',
+        'unit_id'     => $unit->id,
     ]);
 
     $row = $this->actingAs($user, 'api')->getJson(ageRoute($community))->json('rows.0');

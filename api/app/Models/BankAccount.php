@@ -18,10 +18,13 @@ class BankAccount extends Model
      * @var array
      */
     protected $casts = [
-        'type'          => BankAccountType::class,
-        'balance'       => 'float',
-        'balance_as_at' => 'date',
-        'is_active'     => 'boolean',
+        'type'                   => BankAccountType::class,
+        'balance'                => 'float',
+        'balance_as_at'          => 'date',
+        'is_active'              => 'boolean',
+        'is_default'             => 'boolean',
+        'tenant_billing_account' => 'boolean',
+        'opening_balance'        => 'float',
     ];
 
     /**
@@ -40,12 +43,28 @@ class BankAccount extends Model
         'balance',
         'balance_as_at',
         'is_active',
+        'is_default',
+        'tenant_billing_account',
+        'opening_balance',
+        'ledger_id',
         'organization_id',
         'community_id',
     ];
 
     /**
+     * The GL ledger (8000/00n Bank account) backing this bank account.
+     *
+     * @return BelongsTo
+     */
+    public function ledger(): BelongsTo
+    {
+        return $this->belongsTo(Ledger::class);
+    }
+
+    /**
      * The community this bank account belongs to.
+     *
+     * @return BelongsTo
      */
     public function community(): BelongsTo
     {

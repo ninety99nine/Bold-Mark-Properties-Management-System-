@@ -20,7 +20,9 @@ class CashbookEntryResource extends JsonResource
             'organization_id'       => $this->organization_id,
             'unit_id'         => $this->unit_id,
             'invoice_id'      => $this->invoice_id,
+            'bank_account_id' => $this->bank_account_id,
             'ledger_id'  => $this->ledger_id,
+            'supplier_id' => $this->supplier_id,
             'parent_entry_id' => $this->parent_entry_id,
             'description'     => $this->description,
             'amount'          => (float) $this->amount,
@@ -36,6 +38,13 @@ class CashbookEntryResource extends JsonResource
             'updated_at'      => $this->updated_at?->toDateTimeString(),
 
             'is_allocated' => $this->is_allocated,
+            'is_split'     => (bool) $this->is_split,
+            'allocation_ledger_type' => $this->allocation_ledger_type instanceof \BackedEnum
+                ? $this->allocation_ledger_type->value
+                : $this->allocation_ledger_type,
+            'vat_type'           => $this->vat_type,
+            'allocation_remarks' => $this->allocation_remarks,
+            'account_label'      => app(\App\Services\AllocationPostingService::class)->accountLabelFor($this->resource),
 
             'community'        => CommunityResource::make($this->whenLoaded('community')),
             'unit'          => UnitResource::make($this->whenLoaded('unit')),

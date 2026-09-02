@@ -129,6 +129,14 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ComplianceChecklist::class, ComplianceChecklistPolicy::class);
         Gate::policy(ComplianceChecklistItem::class, ComplianceChecklistItemPolicy::class);
         Gate::policy(ComplianceTemplate::class, ComplianceTemplatePolicy::class);
+        Gate::policy(\App\Models\JournalBatch::class, \App\Policies\JournalBatchPolicy::class);
+        Gate::policy(\App\Models\Supplier::class, \App\Policies\SupplierPolicy::class);
+        Gate::policy(\App\Models\SupplierInvoice::class, \App\Policies\SupplierInvoicePolicy::class);
+        Gate::policy(\App\Models\SupplierGroup::class, \App\Policies\SupplierGroupPolicy::class);
+        Gate::policy(\App\Models\AllocationRule::class, \App\Policies\AllocationRulePolicy::class);
+        Gate::policy(\App\Models\SplitTemplate::class, \App\Policies\SplitTemplatePolicy::class);
+        Gate::policy(\App\Models\JournalGroup::class, \App\Policies\JournalGroupPolicy::class);
+        Gate::policy(\App\Models\CommunityBudget::class, \App\Policies\CommunityBudgetPolicy::class);
     }
 
     /**
@@ -151,6 +159,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Route::model('creditNote', \App\Models\CreditNote::class);
+        Route::model('journalBatch', \App\Models\JournalBatch::class);
 
         // Resolves {deletedInvoice} route parameters — includes soft-deleted records
         Route::bind('deletedInvoice', function (string $value) {
@@ -171,5 +180,13 @@ class AppServiceProvider extends ServiceProvider
         Route::model('communicationLog', \App\Models\Communication::class);
         Route::model('messageTemplate', \App\Models\MessageTemplate::class);
         Route::model('ledgerReport', \App\Models\LedgerReportBatch::class);
+        Route::model('bankAccount', BankAccount::class);
+        Route::model('supplier', \App\Models\Supplier::class);
+        Route::model('supplierInvoice', \App\Models\SupplierInvoice::class);
+        Route::model('supplierGroup', \App\Models\SupplierGroup::class);
+        Route::model('supplierDocument', \App\Models\SupplierDocument::class);
+        Route::model('allocationRule', \App\Models\AllocationRule::class);
+        Route::model('splitTemplate', \App\Models\SplitTemplate::class);
+        Route::model('journalGroup', \App\Models\JournalGroup::class);
     }
 }

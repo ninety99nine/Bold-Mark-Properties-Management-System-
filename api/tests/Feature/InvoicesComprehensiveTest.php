@@ -96,6 +96,54 @@ it('returns the complete invoice payload on index', function () {
     ]);
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Balance-forward FIFO: total_paid / outstanding / is_paid derive from the GL
+// (a customer receipt allocated to the unit settles oldest arrears first).
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('derives invoice paid/outstanding FIFO from an allocated customer receipt', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    $unit      = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
+    $ledger    = Ledger::factory()->create(['organization_id' => $user->organization_id]);
+    $owner     = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
+    $bank      = \App\Models\BankAccount::factory()->create([
+        'organization_id' => $user->organization_id, 'community_id' => $community->id,
+    ]);
+
+    // Oldest invoice (May) then newest (June); each posts an AR debit batch.
+    $may = Invoice::factory()->create([
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id, 'ledger_id' => $ledger->id,
+        'billed_to_type' => 'owner', 'billed_to_id' => $owner->id, 'amount' => 1000,
+        'billing_period' => '2026-05-01', 'invoice_date' => '2026-05-01', 'due_date' => '2026-05-08',
+    ]);
+    $june = Invoice::factory()->create([
+        'organization_id' => $user->organization_id, 'unit_id' => $unit->id, 'ledger_id' => $ledger->id,
+        'billed_to_type' => 'owner', 'billed_to_id' => $owner->id, 'amount' => 1000,
+        'billing_period' => '2026-06-01', 'invoice_date' => '2026-06-01', 'due_date' => '2026-06-08',
+    ]);
+
+    // A 1200 receipt allocated to the customer settles May in full and 200 of June.
+    $receipt = CashbookEntry::factory()->create([
+        'organization_id' => $user->organization_id, 'community_id' => $community->id,
+        'bank_account_id' => $bank->id, 'type' => 'credit', 'amount' => 1200, 'date' => '2026-06-15',
+    ]);
+    app(\App\Services\AllocationPostingService::class)->post($receipt, [
+        'ledger_type' => 'customer',
+        'unit_id'     => $unit->id,
+    ]);
+
+    expect($may->fresh()->total_paid)->toBe(1000.0)
+        ->and($may->fresh()->outstanding)->toBe(0.0)
+        ->and($may->fresh()->is_paid)->toBeTrue()
+        ->and($june->fresh()->total_paid)->toBe(200.0)
+        ->and($june->fresh()->outstanding)->toBe(800.0)
+        ->and($june->fresh()->is_paid)->toBeFalse();
+
+    // The unit balance is the GL customer-control position: −2000 + 1200 = −800.
+    expect((float) $unit->fresh()->balance)->toBe(-800.0);
+});
+
 it('invoice amount is returned as a float', function () {
     ['user' => $user] = makeInvoice(['amount' => 1500]);
 

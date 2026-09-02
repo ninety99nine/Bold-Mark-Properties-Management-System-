@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CashbookEntryType;
+use App\Enums\JournalLineType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -16,6 +17,20 @@ class CashbookEntry extends Model
     use HasFactory, HasUuids;
 
     /**
+     * Remove this entry's GL batch whenever it is deleted, so the bank ledger no
+     * longer carries a movement for a line that no longer exists. Child (split)
+     * rows never post their own batch, so there is nothing to remove for them.
+     *
+     * @return void
+     */
+    protected static function booted(): void
+    {
+        static::deleted(function (CashbookEntry $entry): void {
+            app(\App\Services\GeneralLedgerPostingService::class)->deleteBatchesFor($entry);
+        });
+    }
+
+    /**
      * The attributes that should be cast.
      *
      * @var array
@@ -25,6 +40,8 @@ class CashbookEntry extends Model
         'type'   => CashbookEntryType::class,
         'date'   => 'date',
         'allocated_at' => 'datetime',
+        'allocation_ledger_type' => JournalLineType::class,
+        'is_split' => 'boolean',
     ];
 
     /**
@@ -42,8 +59,14 @@ class CashbookEntry extends Model
         'organization_id',
         'ledger_id',
         'unit_id',
+        'supplier_id',
         'invoice_id',
+        'bank_account_id',
         'parent_entry_id',
+        'allocation_ledger_type',
+        'is_split',
+        'vat_type',
+        'allocation_remarks',
         'proof_of_payment_path',
         'allocated_by_name',
         'allocated_at',
@@ -64,7 +87,8 @@ class CashbookEntry extends Model
     }
 
     /**
-     * Scope to allocated entries only (invoice_id is set).
+     * Scope to allocated entries only (a ledger type has been assigned or the
+     * line has been split into child allocations).
      *
      * @param Builder $query
      * @return void
@@ -72,11 +96,14 @@ class CashbookEntry extends Model
     #[Scope]
     protected function allocated(Builder $query): void
     {
-        $query->whereNotNull('invoice_id');
+        $query->where(function (Builder $query) {
+            $query->whereNotNull('allocation_ledger_type')
+                  ->orWhere('is_split', true);
+        });
     }
 
     /**
-     * Scope to unallocated entries only (invoice_id is null).
+     * Scope to unallocated entries only (no ledger type assigned and not split).
      *
      * @param Builder $query
      * @return void
@@ -84,7 +111,8 @@ class CashbookEntry extends Model
     #[Scope]
     protected function unallocated(Builder $query): void
     {
-        $query->whereNull('invoice_id');
+        $query->whereNull('allocation_ledger_type')
+              ->where('is_split', false);
     }
 
     /**
@@ -162,6 +190,26 @@ class CashbookEntry extends Model
     }
 
     /**
+     * Get the supplier this entry is allocated to.
+     *
+     * @return BelongsTo
+     */
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    /**
+     * Get the bank account (cashbook) this entry belongs to.
+     *
+     * @return BelongsTo
+     */
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
+
+    /**
      * Get the parent entry (if this entry was created by splitting a larger payment).
      *
      * @return BelongsTo
@@ -182,12 +230,13 @@ class CashbookEntry extends Model
     }
 
     /**
-     * Determine if this entry has been allocated to an invoice.
+     * Determine if this entry has been allocated (a ledger type is assigned or
+     * the line has been split into child allocations).
      *
      * @return bool
      */
     public function getIsAllocatedAttribute(): bool
     {
-        return $this->invoice_id !== null;
+        return $this->allocation_ledger_type !== null || $this->is_split;
     }
 }

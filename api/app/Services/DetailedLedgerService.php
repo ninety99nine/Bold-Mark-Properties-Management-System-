@@ -2,12 +2,8 @@
 
 namespace App\Services;
 
-use App\Enums\CollectionStatus;
 use App\Exports\DetailedLedgerExport;
-use App\Models\BankAccount;
-use App\Models\CashbookEntry;
 use App\Models\Community;
-use App\Models\Invoice;
 use App\Models\LedgerReportBatch;
 use App\Models\Unit;
 use Illuminate\Support\Arr;
@@ -36,12 +32,9 @@ class DetailedLedgerService extends BaseService
 
         $units = $this->resolveUnits($community, $data);
 
-        $bank       = $this->communityBank($community);
-        $bankSource = $bank ? strtoupper((string) $bank->bank_name) . ': ' . $bank->account_number : 'Receipt';
-
         $ledgers = [];
         foreach ($units as $unit) {
-            $ledger = $this->buildLedger($unit, $from, $to, $showLineItems, $bankSource);
+            $ledger = $this->buildLedger($unit, $from, $to, $showLineItems);
 
             if ($hideZero && abs($ledger['totals']['balance']) < 0.005 && count($ledger['rows']) <= 2) {
                 continue;
@@ -201,72 +194,59 @@ class DetailedLedgerService extends BaseService
     }
 
     /**
-     * Build a single customer's ledger.
+     * Build a single customer's ledger from the general ledger (customer
+     * subledger) alone. Every row is a CUSTOMER journal line: an invoice posts
+     * one debit per item (carrying the item's description), a credit note / an
+     * allocated receipt posts a credit. When line items are hidden, consecutive
+     * lines sharing the same source batch are collapsed into a single row per
+     * source document.
      *
      * @param Unit $unit
      * @param string|null $from
      * @param string|null $to
      * @param bool $showLineItems
-     * @param string $bankSource
      * @return array
      */
-    private function buildLedger(Unit $unit, ?string $from, ?string $to, bool $showLineItems, string $bankSource): array
+    private function buildLedger(Unit $unit, ?string $from, ?string $to, bool $showLineItems): array
     {
-        $invoices = Invoice::where('unit_id', $unit->id)->with('items.ledger')->get();
-        $payments = CashbookEntry::where('unit_id', $unit->id)->where('type', 'credit')->get();
+        $posting = new JournalPostingService();
 
-        // Opening balance = debits − credits strictly before the "from" date.
-        $opening = 0.0;
-        if ($from) {
-            $opening += (float) $invoices->filter(fn ($i) => optional($i->billing_period)->toDateString() < $from)->sum('amount');
-            $opening -= (float) $payments->filter(fn ($p) => optional($p->date)->toDateString() < $from)->sum('amount');
-        }
+        // Opening "Balance b/f" = debits − credits strictly before the "from" date.
+        $opening = $posting->openingBefore($unit->id, $from);
+
+        $lines = $posting->eventsForUnit($unit->id, $from, $to);
 
         $events = [];
-        foreach ($invoices as $inv) {
-            $d = optional($inv->billing_period)->toDateString() ?? optional($inv->created_at)->toDateString();
-            if (($from && $d < $from) || ($to && $d > $to)) {
-                continue;
-            }
-
-            if ($showLineItems && $inv->items->isNotEmpty()) {
-                $line = 1;
-                foreach ($inv->items as $item) {
-                    $events[] = [
-                        'date'        => $d,
-                        'source'      => 'Invoice ' . $inv->invoice_number . ' (Line ' . $line . ')',
-                        'description' => $item->description ?: ($item->ledger?->name ?? ''),
-                        'remarks'     => '',
-                        'debit'       => (float) $item->amount,
-                        'credit'      => 0.0,
-                    ];
-                    $line++;
-                }
-            } else {
+        if ($showLineItems) {
+            foreach ($lines as $j) {
                 $events[] = [
-                    'date'        => $d,
-                    'source'      => 'Invoice ' . $inv->invoice_number,
-                    'description' => $inv->description ?: '',
+                    'date'        => $j['date'],
+                    'source'      => $j['source'],
+                    'description' => $j['description'],
                     'remarks'     => '',
-                    'debit'       => (float) $inv->amount,
-                    'credit'      => 0.0,
+                    'debit'       => $j['debit'],
+                    'credit'      => $j['credit'],
                 ];
             }
-        }
-
-        foreach ($payments as $p) {
-            $d = optional($p->date)->toDateString() ?? optional($p->created_at)->toDateString();
-            if (($from && $d < $from) || ($to && $d > $to)) {
-                continue;
+        } else {
+            // Collapse each source document (a batch) into one row per source.
+            $grouped = [];
+            foreach ($lines as $j) {
+                $key = $j['batch_id'] ?? uniqid('b', true);
+                if (! isset($grouped[$key])) {
+                    $grouped[$key] = [
+                        'date'        => $j['date'],
+                        'source'      => $j['source'],
+                        'description' => $j['description'],
+                        'remarks'     => '',
+                        'debit'       => 0.0,
+                        'credit'      => 0.0,
+                    ];
+                }
+                $grouped[$key]['debit']  += $j['debit'];
+                $grouped[$key]['credit'] += $j['credit'];
             }
-            $events[] = [
-                'date'        => $d,
-                'source'      => $bankSource,
-                'description' => $p->description ?: 'Payment received',
-                'remarks'     => $p->reference ?? '',
-                'debit'       => 0.0,
-                'credit'      => (float) $p->amount,
-            ];
+            $events = array_values($grouped);
         }
 
         usort($events, fn ($a, $b) => ($a['date'] ?? '') <=> ($b['date'] ?? ''));
@@ -314,20 +294,6 @@ class DetailedLedgerService extends BaseService
                 'balance' => round($balance, 2),
             ],
         ];
-    }
-
-    /**
-     * Community's primary (current) active bank account.
-     *
-     * @param Community $community
-     * @return BankAccount|null
-     */
-    private function communityBank(Community $community): ?BankAccount
-    {
-        return BankAccount::where('community_id', $community->id)
-            ->where('is_active', true)
-            ->orderByRaw("CASE WHEN type = 'current' THEN 0 ELSE 1 END")
-            ->first();
     }
 
     /**

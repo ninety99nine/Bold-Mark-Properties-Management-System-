@@ -4,14 +4,10 @@ namespace App\Services;
 
 use Exception;
 use App\Models\Community;
-use App\Models\Invoice;
 use App\Models\Unit;
 use App\Models\UnitCollectionNote;
 use App\Models\UnitStatusHistory;
-use App\Models\CashbookEntry;
-use App\Enums\CashbookEntryType;
 use App\Enums\CollectionStatus;
-use App\Enums\InvoiceStatus;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -376,9 +372,8 @@ class CustomerStatusService extends BaseService
      */
     private function computeRows(Community $community, array $data): array
     {
-        $user     = Auth::user();
-        $asAt     = Carbon::parse($data['status_date'] ?? Carbon::today()->toDateString());
-        $excludeDebt = filter_var($data['exclude_debt_arrear'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $user = Auth::user();
+        $asAt = Carbon::parse($data['status_date'] ?? Carbon::today()->toDateString());
 
         $units = Unit::where('community_id', $community->id)
             ->where('organization_id', $user->organization_id)
@@ -388,36 +383,25 @@ class CustomerStatusService extends BaseService
 
         $unitIds = $units->pluck('id')->all();
 
-        // ── Outstanding invoices → per-unit bucket sums (as-at the report date) ──
-        $invoiceQuery = Invoice::whereIn('unit_id', $unitIds)
-            ->whereIn('status', [InvoiceStatus::UNPAID->value, InvoiceStatus::OVERDUE->value, InvoiceStatus::PARTIALLY_PAID->value]);
-
-        if ($excludeDebt) {
-            $invoiceQuery->whereDoesntHave('ledger', function ($q) {
-                $q->where('code', 'like', '%INTEREST%')->orWhere('code', 'like', '%PENALTY%');
-            });
-        }
-
+        // ── Customer subledger (GL) aged as at the report date ──
+        // Every customer transaction is a CUSTOMER journal line. Debits age by
+        // their due_date into the buckets; credits net oldest-bucket-first —
+        // keeping Status Management in lock-step with Age Analysis, the customer
+        // statement and UnitBalanceService.
         $bucketsByUnit = [];
-        foreach ($invoiceQuery->get(['id', 'unit_id', 'due_date', 'amount', 'status']) as $invoice) {
-            $outstanding = (float) $invoice->outstanding;
-            if ($outstanding <= 0) {
-                continue;
-            }
-            $bucket = $this->bucketFor($invoice->due_date, $asAt);
-            $bucketsByUnit[$invoice->unit_id] ??= array_fill_keys(self::BUCKETS, 0.0);
-            $bucketsByUnit[$invoice->unit_id][$bucket] += $outstanding;
-        }
+        $creditsByUnit = [];
 
-        // ── Unallocated credits per unit ──
-        $creditsByUnit = CashbookEntry::whereIn('unit_id', $unitIds)
-            ->whereNull('invoice_id')
-            ->where('type', CashbookEntryType::CREDIT->value)
-            ->selectRaw('unit_id, SUM(amount) as total')
-            ->groupBy('unit_id')
-            ->pluck('total', 'unit_id')
-            ->map(fn ($v) => (float) $v)
-            ->toArray();
+        $journalByUnit = (new JournalPostingService())->agedCustomerByUnit($unitIds, $asAt->toDateString());
+        foreach ($journalByUnit as $uid => $effect) {
+            if ($effect['credit'] > 0) {
+                $creditsByUnit[$uid] = ($creditsByUnit[$uid] ?? 0) + $effect['credit'];
+            }
+            foreach ($effect['debits'] as $debit) {
+                $bucket                       = $this->bucketFor($debit['date'], $asAt);
+                $bucketsByUnit[$uid]          ??= array_fill_keys(self::BUCKETS, 0.0);
+                $bucketsByUnit[$uid][$bucket] += $debit['amount'];
+            }
+        }
 
         // ── Filters ──
         $statusFilter   = $data['status'] ?? null;         // collection_status value

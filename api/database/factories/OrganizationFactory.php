@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Organization;
+use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -12,6 +13,20 @@ use Illuminate\Support\Str;
 class OrganizationFactory extends Factory
 {
     protected $model = Organization::class;
+
+    /**
+     * Every organisation needs the full WeConnectU chart of accounts so the GL
+     * posting engine can resolve control accounts (Accounts Receivable, VAT
+     * Control, Suspense, …) when documents post balanced journal batches.
+     *
+     * @return static
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Organization $organization): void {
+            (new ChartOfAccountsSeeder)->seedForOrganization($organization->id);
+        });
+    }
 
     public function definition(): array
     {

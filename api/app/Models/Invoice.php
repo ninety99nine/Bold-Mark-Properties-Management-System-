@@ -19,6 +19,20 @@ class Invoice extends Model
     use HasFactory, HasUuids, SoftDeletes;
 
     /**
+     * Remove this invoice's GL batch whenever it is deleted (soft or force), so
+     * the customer control account never carries a debit for a document that no
+     * longer exists. Restore re-posts it (see InvoiceService::restoreInvoice).
+     *
+     * @return void
+     */
+    protected static function booted(): void
+    {
+        static::deleted(function (Invoice $invoice): void {
+            app(\App\Services\GeneralLedgerPostingService::class)->deleteBatchesFor($invoice);
+        });
+    }
+
+    /**
      * The attributes that should be cast.
      *
      * @var array
@@ -239,32 +253,34 @@ class Invoice extends Model
     }
 
     /**
-     * Determine whether this invoice is fully paid.
+     * Determine whether this invoice is fully paid, derived FIFO from the GL
+     * (balance-forward), not from the invoice status flag.
      *
      * @return bool
      */
     public function getIsPaidAttribute(): bool
     {
-        return $this->status === InvoiceStatus::PAID;
+        return app(\App\Services\CustomerAccountService::class)->isPaid($this);
     }
 
     /**
-     * Get total amount paid from allocated cashbook entries.
+     * Total amount applied against this invoice, derived FIFO from the customer
+     * control account (receipts + credit notes settle oldest arrears first).
      *
      * @return float
      */
     public function getTotalPaidAttribute(): float
     {
-        return (float) $this->cashbookEntries()->sum('amount');
+        return app(\App\Services\CustomerAccountService::class)->totalPaidForInvoice($this);
     }
 
     /**
-     * Get outstanding amount on this invoice.
+     * Outstanding amount on this invoice, derived FIFO from the GL.
      *
      * @return float
      */
     public function getOutstandingAttribute(): float
     {
-        return max(0, $this->amount - $this->total_paid);
+        return app(\App\Services\CustomerAccountService::class)->outstandingForInvoice($this);
     }
 }

@@ -141,6 +141,7 @@ it('is_allocated is true when entry has invoice_id', function () {
         'organization_id' => $user->organization_id,
         'community_id'       => $community->id,
         'invoice_id'      => $invoice->id,
+        'allocation_ledger_type' => 'customer',
     ]);
 
     $data = $this->actingAs($user, 'api')

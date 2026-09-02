@@ -1429,6 +1429,7 @@ class UnitService extends BaseService
             $opening += (float) $invoices->filter(fn ($i) => optional($i->billing_period)->toDateString() < $from)->sum('amount');
             $opening -= (float) $payments->filter(fn ($p) => optional($p->date)->toDateString() < $from)->sum('amount');
         }
+        $opening += (new JournalPostingService())->openingBefore($unit->id, $from);
 
         $events = [];
         foreach ($invoices as $inv) {
@@ -1438,6 +1439,9 @@ class UnitService extends BaseService
         foreach ($payments as $p) {
             $d = optional($p->date)->toDateString() ?? optional($p->created_at)->toDateString();
             $events[] = ['date' => $d, 'source' => $p->ledger?->name ?: 'Receipt', 'description' => $p->description ?: 'Payment received', 'debit' => 0.0, 'credit' => (float) $p->amount];
+        }
+        foreach ((new JournalPostingService())->eventsForUnit($unit->id) as $j) {
+            $events[] = ['date' => $j['date'], 'source' => $j['source'], 'description' => $j['description'], 'debit' => $j['debit'], 'credit' => $j['credit']];
         }
 
         $events = array_values(array_filter($events, function ($e) use ($from, $to) {
@@ -1545,6 +1549,7 @@ class UnitService extends BaseService
             $opening += (float) $invoices->filter(fn ($i) => optional($i->billing_period)->toDateString() < $from)->sum('amount');
             $opening -= (float) $payments->filter(fn ($p) => optional($p->date)->toDateString() < $from)->sum('amount');
         }
+        $opening += (new JournalPostingService())->openingBefore($unit->id, $from);
 
         $events = [];
         foreach ($invoices as $inv) {
@@ -1561,6 +1566,9 @@ class UnitService extends BaseService
                 $desc = trim(preg_replace('/\s*-?\s*"[^"]+"/', '', $desc));
             }
             $events[] = ['date' => $d, 'source' => $bankSource, 'description' => $desc, 'remarks' => $remarks, 'debit' => 0.0, 'credit' => (float) $p->amount, 'invoice_id' => null, 'invoice_number' => null];
+        }
+        foreach ((new JournalPostingService())->eventsForUnit($unit->id) as $j) {
+            $events[] = ['date' => $j['date'], 'source' => $j['source'], 'description' => $j['description'], 'remarks' => '', 'debit' => $j['debit'], 'credit' => $j['credit'], 'invoice_id' => null, 'invoice_number' => null];
         }
 
         $events = array_values(array_filter($events, function ($e) use ($from, $to) {
@@ -1642,6 +1650,7 @@ class UnitService extends BaseService
             $opening += (float) $invoices->filter(fn ($i) => optional($i->billing_period)->toDateString() < $from)->sum('amount');
             $opening -= (float) $payments->filter(fn ($p) => optional($p->date)->toDateString() < $from)->sum('amount');
         }
+        $opening += (new JournalPostingService())->openingBefore($unit->id, $from);
 
         $events = [];
         foreach ($invoices as $inv) {
@@ -1651,6 +1660,9 @@ class UnitService extends BaseService
         foreach ($payments as $p) {
             $d = optional($p->date)->toDateString() ?? optional($p->created_at)->toDateString();
             $events[] = ['date' => $d, 'source' => $bankSource, 'description' => $p->description ?: 'Payment received', 'debit' => 0.0, 'credit' => (float) $p->amount, 'invoice_id' => null];
+        }
+        foreach ((new JournalPostingService())->eventsForUnit($unit->id) as $j) {
+            $events[] = ['date' => $j['date'], 'source' => $j['source'], 'description' => $j['description'], 'debit' => $j['debit'], 'credit' => $j['credit'], 'invoice_id' => null];
         }
 
         $events = array_values(array_filter($events, function ($e) use ($from, $to) {

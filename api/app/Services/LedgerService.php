@@ -4,13 +4,17 @@ namespace App\Services;
 
 use Exception;
 use App\Models\Ledger;
+use App\Enums\VatType;
+use App\Enums\FinancialCategory;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use App\Http\Resources\LedgerResource;
 use App\Http\Resources\LedgerResources;
 
 class LedgerService extends BaseService
 {
-    protected array $allowedRelationships = ['communities'];
+    protected array $allowedRelationships = ['communities', 'subAccounts', 'parent'];
+
     /**
      * Return a paginated, filtered list of ledgers for the authenticated occupant.
      *
@@ -24,6 +28,10 @@ class LedgerService extends BaseService
 
         if (!empty($data['applies_to'])) {
             $query->where('applies_to', $data['applies_to']);
+        }
+
+        if (!empty($data['fund'])) {
+            $query->where('fund', $data['fund']);
         }
 
         if (isset($data['is_recurring'])) {
@@ -50,23 +58,200 @@ class LedgerService extends BaseService
     }
 
     /**
-     * Create a new custom ledger for the authenticated occupant.
+     * Return the chart of accounts as WeConnectU-style category groups: each MAIN
+     * account (X000/000 header) with its sub-accounts nested underneath. Supports a
+     * `?fund=main|reserve` filter so the Reserve Fund Ledger tab reuses this method.
      *
      * @param array $data
+     * @return array{data: array}
+     */
+    public function showGroupedLedgers(array $data): array
+    {
+        $user  = Auth::user();
+        $query = Ledger::query()
+            ->where('organization_id', $user->organization_id)
+            ->with(['subAccounts' => fn ($q) => $q->orderBy('code')])
+            ->whereNull('parent_id')
+            ->orderBy('sort_order')
+            ->orderBy('code');
+
+        if (!empty($data['fund'])) {
+            $query->where('fund', $data['fund']);
+        }
+
+        $groups = $query->get()->map(fn (Ledger $main): array => [
+            'id'                 => $main->id,
+            'code'               => $main->code,
+            'name'               => $main->name,
+            'category'           => $main->category,
+            'account_type'       => $main->account_type,
+            'financial_category' => $main->financial_category?->value,
+            'fund'               => $main->fund,
+            'allow_sub_accounts' => (bool) $main->allow_sub_accounts,
+            'main'               => new LedgerResource($main),
+            'sub_accounts'       => LedgerResource::collection($main->subAccounts),
+        ])->all();
+
+        return ['data' => $groups];
+    }
+
+    /**
+     * Options used by the "Add General Ledger Account" form: the parent picker,
+     * financial categories, account types and tax types.
+     *
      * @return array
      */
-    public function createLedger(array $data): array
+    public function ledgerOptions(): array
     {
         $user = Auth::user();
 
-        $ledger = Ledger::create(array_merge(
-            collect($data)->only(['name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])->toArray(),
-            [
-                'organization_id' => $user->organization_id,
-                'is_system' => false,
-                'is_active' => $data['is_active'] ?? true,
-            ]
-        ));
+        $mainAccounts = Ledger::query()
+            ->where('organization_id', $user->organization_id)
+            ->whereNull('parent_id')
+            ->where('allow_sub_accounts', true)
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get(['id', 'code', 'name'])
+            ->map(fn (Ledger $ledger): array => [
+                'id'    => $ledger->id,
+                'code'  => $ledger->code,
+                'label' => $ledger->code . ' - ' . $ledger->name,
+            ])
+            ->all();
+
+        return [
+            'main_accounts'        => $mainAccounts,
+            'financial_categories' => FinancialCategory::options(),
+            'account_types'        => [
+                ['value' => 'income_statement', 'label' => 'Income Statement'],
+                ['value' => 'balance_sheet',    'label' => 'Balance Sheet'],
+            ],
+            'tax_types'            => VatType::options(),
+        ];
+    }
+
+    /**
+     * Create a new General Ledger account (main or sub) for the authenticated occupant.
+     *
+     * Main Account: user supplies a 4-digit prefix; code becomes "{prefix}/000".
+     * Sub-Account : user picks a parent main account; code auto = nextSubAccountCode.
+     * Singleton categories (AP / AR / Retained Income) are rejected when one already exists.
+     *
+     * @param array $data
+     * @return array
+     * @throws ValidationException
+     */
+    /**
+     * Preview the auto-generated account number for a new GL account, without
+     * creating it — powers the read-only "Account Number" field in the modal.
+     * Main account → "{prefix}/000"; sub-account → next free code under the parent.
+     *
+     * @param array $data  type (main|sub), prefix (main), parent_id (sub)
+     * @return array{code: string}
+     */
+    public function nextCodePreview(array $data): array
+    {
+        $orgId = Auth::user()->organization_id;
+        $type  = $data['type'] ?? 'sub';
+
+        if ($type === 'main') {
+            $prefix = trim((string) ($data['prefix'] ?? ''));
+
+            return ['code' => $prefix !== '' ? $prefix . '/000' : ''];
+        }
+
+        $parent = Ledger::where('organization_id', $orgId)->find($data['parent_id'] ?? null);
+
+        return ['code' => $parent ? Ledger::nextSubAccountCode($orgId, $parent->code) : ''];
+    }
+
+    public function createLedger(array $data): array
+    {
+        $user  = Auth::user();
+        $orgId = $user->organization_id;
+
+        // Legacy Charge Type create (no GL `type` field, uses applies_to/is_recurring).
+        if (empty($data['type'])) {
+            $ledger = Ledger::create(array_merge(
+                collect($data)->only(['name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])->toArray(),
+                [
+                    'organization_id' => $orgId,
+                    'is_system'       => false,
+                    'is_active'       => $data['is_active'] ?? true,
+                ]
+            ));
+
+            return $this->showCreatedResource($ledger);
+        }
+
+        $type = $data['type'];
+
+        $category = isset($data['financial_category'])
+            ? FinancialCategory::from($data['financial_category'])
+            : null;
+
+        // Enforce singleton categories (Accounts Payable / Receivable / Retained Income).
+        if ($category && $category->isSingleton()) {
+            $exists = Ledger::where('organization_id', $orgId)
+                ->where('financial_category', $category)
+                ->exists();
+
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'financial_category' => "Only 1 GL account is permitted for the {$category->label()} category.",
+                ]);
+            }
+        }
+
+        if ($type === 'main') {
+            $prefix = $data['prefix'];
+            $fund   = $data['fund'] ?? 'main';
+
+            $ledger = Ledger::create(array_filter([
+                'organization_id'    => $orgId,
+                'code'               => $prefix . '/000',
+                'name'               => $data['name'],
+                'description'        => $data['description'] ?? null,
+                'account_type'       => $data['account_type'] ?? null,
+                'financial_category' => $category,
+                'tax_type'           => $data['tax_type'] ?? null,
+                'fund'               => $fund,
+                'parent_id'          => null,
+                'allow_sub_accounts' => $data['allow_sub_accounts'] ?? true,
+                'is_system'          => false,
+                'is_active'          => true,
+                'is_recurring'       => false,
+                'applies_to'         => 'owner',
+                'sort_order'         => $data['sort_order'] ?? null,
+            ], fn ($v) => !is_null($v)));
+
+            return $this->showCreatedResource($ledger);
+        }
+
+        // Sub-account: inherit from parent, auto-generate code.
+        /** @var Ledger $parent */
+        $parent = Ledger::where('organization_id', $orgId)
+            ->findOrFail($data['parent_id']);
+
+        $code = Ledger::nextSubAccountCode($orgId, $parent->code);
+
+        $ledger = Ledger::create(array_filter([
+            'organization_id'    => $orgId,
+            'code'               => $code,
+            'name'               => $data['name'],
+            'description'        => $data['description'] ?? null,
+            'account_type'       => $data['account_type'] ?? $parent->account_type,
+            'financial_category' => $category ?? $parent->financial_category,
+            'tax_type'           => $data['tax_type'] ?? $parent->tax_type,
+            'fund'               => $parent->fund,
+            'parent_id'          => $parent->id,
+            'allow_sub_accounts' => false,
+            'is_system'          => false,
+            'is_active'          => true,
+            'is_recurring'       => false,
+            'applies_to'         => $parent->applies_to instanceof \BackedEnum ? $parent->applies_to->value : ($parent->applies_to ?? 'owner'),
+            'sort_order'         => $data['sort_order'] ?? null,
+        ], fn ($v) => !is_null($v)));
 
         return $this->showCreatedResource($ledger);
     }
@@ -84,12 +269,13 @@ class LedgerService extends BaseService
         $ledgers = Ledger::whereIn('id', $ids)
             ->where('organization_id', $user->organization_id)
             ->where('is_system', false)  // Never delete system types in bulk
-            ->get();
+            ->get()
+            ->reject(fn (Ledger $ledger): bool => $this->isProtected($ledger));
 
         $total = $ledgers->count();
 
         if ($total === 0) {
-            throw new Exception('No Ledgers deleted (system types cannot be deleted)');
+            throw new Exception('No Ledgers deleted (system / control accounts cannot be deleted)');
         }
 
         foreach ($ledgers as $ledger) {
@@ -114,7 +300,7 @@ class LedgerService extends BaseService
 
     /**
      * Update a ledger.
-     * System types (Levy, Rent) may only have name, description, and sort_order changed.
+     * System / control accounts may only have name, description, and sort_order changed.
      *
      * @param Ledger $ledger
      * @param array      $data
@@ -122,15 +308,15 @@ class LedgerService extends BaseService
      */
     public function updateLedger(Ledger $ledger, array $data): array
     {
-        if ($ledger->is_system) {
-            // System types: only allow safe cosmetic fields
+        if ($this->isProtected($ledger)) {
+            // System / control accounts: only allow safe cosmetic fields
             $updateData = collect($data)
                 ->only(['name', 'description', 'sort_order'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray();
         } else {
             $updateData = collect($data)
-                ->only(['name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])
+                ->only(['name', 'description', 'account_type', 'financial_category', 'tax_type', 'allow_sub_accounts', 'is_active', 'sort_order'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray();
         }
@@ -141,7 +327,7 @@ class LedgerService extends BaseService
     }
 
     /**
-     * Delete a single ledger (system types cannot be deleted).
+     * Delete a single ledger (system / control accounts cannot be deleted).
      *
      * @param Ledger $ledger
      * @return array
@@ -149,8 +335,8 @@ class LedgerService extends BaseService
      */
     public function deleteLedger(Ledger $ledger): array
     {
-        if ($ledger->is_system) {
-            throw new Exception('System ledgers cannot be deleted');
+        if ($this->isProtected($ledger)) {
+            throw new Exception('System / control accounts cannot be deleted');
         }
 
         $deleted = $ledger->delete();
@@ -159,5 +345,18 @@ class LedgerService extends BaseService
             'deleted' => $deleted,
             'message' => $deleted ? 'Ledger deleted' : 'Ledger delete unsuccessful',
         ];
+    }
+
+    /**
+     * Whether a ledger is protected from edits/deletion (system flag or a
+     * singleton control-account category — AP / AR / Retained Income).
+     *
+     * @param Ledger $ledger
+     * @return bool
+     */
+    protected function isProtected(Ledger $ledger): bool
+    {
+        return $ledger->is_system
+            || ($ledger->financial_category instanceof FinancialCategory && $ledger->financial_category->isSingleton());
     }
 }

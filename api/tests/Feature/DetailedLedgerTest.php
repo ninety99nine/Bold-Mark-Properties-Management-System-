@@ -6,10 +6,13 @@ use App\Models\InvoiceItem;
 use App\Models\Ledger;
 use App\Models\Owner;
 use App\Models\Unit;
+use App\Services\InvoiceService;
 
 /**
  * Helper: a unit + owner + one invoice (with `$lines` line items) billed on
- * `$period`, so the customer carries a detailed ledger.
+ * `$period`, so the customer carries a detailed ledger. The invoice posts a
+ * balanced GL batch with one Accounts-Receivable debit PER item (carrying the
+ * item description), which is what the Detailed Ledger reads.
  */
 function ledgerUnit(string $orgId, Community $community, string $period, array $lines): Unit
 {
@@ -26,6 +29,7 @@ function ledgerUnit(string $orgId, Community $community, string $period, array $
         'amount'          => array_sum(array_column($lines, 'amount')),
         'status'          => 'unpaid',
         'billing_period'  => $period,
+        'invoice_date'    => $period,
         'due_date'        => $period,
     ]);
 
@@ -41,6 +45,10 @@ function ledgerUnit(string $orgId, Community $community, string $period, array $
             'sort_order'  => $n++,
         ]);
     }
+
+    // Re-post the GL batch now that the line items exist, so the customer
+    // subledger carries one AR debit per item (with the item's description).
+    app(InvoiceService::class)->postInvoiceLedger($invoice->fresh('items'));
 
     return $unit;
 }
@@ -80,10 +88,10 @@ it('builds a per-customer ledger with a balance b/f, invoice line items and tota
 
     expect($data['ledgers'])->toHaveCount(1);
     $rows = $data['ledgers'][0]['rows'];
-    // Balance b/f + 2 line items.
+    // Balance b/f + one AR-debit row per invoice line item (from the GL).
     expect($rows[0]['description'])->toBe('Balance b/f');
     expect($rows[1]['description'])->toBe('Levies');
-    expect($rows[1]['source'])->toContain('(Line 1)');
+    expect($rows[1]['source'])->toBe('Invoice');
     expect($rows[2]['description'])->toBe('CSOS Levies');
     expect(round($data['ledgers'][0]['totals']['debit'], 2))->toBe(1015.00);
     expect(round($data['ledgers'][0]['totals']['balance'], 2))->toBe(1015.00);

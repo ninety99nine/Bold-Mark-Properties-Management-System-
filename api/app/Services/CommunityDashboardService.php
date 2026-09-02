@@ -177,7 +177,7 @@ class CommunityDashboardService
      *
      * @param  Community  $community
      * @param  float      $totalOutstanding
-     * @return array{total: float, percent_change: float, series: array<int, array{label: string, value: float}>}
+     * @return array{total: float, percent_change: float, series: array<int, array{label: string, date: string, value: float}>}
      */
     private function debtTrend(Community $community, float $totalOutstanding): array
     {
@@ -217,6 +217,7 @@ class CommunityDashboardService
             $running += $byMonth[$month->format('Y-m')] ?? 0;
             $series[] = [
                 'label' => $month->format('M'),
+                'date'  => $month->copy()->endOfMonth()->format('Y-m-d'),
                 'value' => round($running, 2),
             ];
         }

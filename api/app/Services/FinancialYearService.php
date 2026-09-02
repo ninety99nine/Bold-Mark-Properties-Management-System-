@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Community;
+use App\Models\CashbookEntry;
 use App\Models\CommunityBudget;
 use Carbon\Carbon;
 
@@ -78,8 +79,56 @@ class FinancialYearService extends BaseService
         }
 
         return [
-            'periods'      => $periods,
-            'current_year' => $currentEnd->year,
+            'periods'                    => $periods,
+            'current_year'              => $currentEnd->year,
+            'all_transactions_allocated' => $this->allTransactionsAllocated($community),
         ];
+    }
+
+    /**
+     * Whether the community has no unallocated cashbook entries — powers the
+     * WeConnectU "All transactions allocated" indicator above the tabs.
+     *
+     * @param Community $community
+     * @return bool
+     */
+    public function allTransactionsAllocated(Community $community): bool
+    {
+        return ! CashbookEntry::where('community_id', $community->id)
+            ->unallocated()
+            ->exists();
+    }
+
+    /**
+     * Resolve the integer financial year for a given transaction date — the year of
+     * the first financial-year-end on/after that date. Anchored on the community's
+     * financial_year_end_month (defaults to December → a calendar year). Used by all
+     * GL auto-postings to stamp journal_batches.financial_year consistently.
+     *
+     * @param Community $community
+     * @param Carbon $date
+     * @return int
+     */
+    public function resolveForDate(Community $community, Carbon $date): int
+    {
+        $endMonth = (int) ($community->financial_year_end_month ?: 12);
+
+        $end = Carbon::create($date->year, $endMonth, 1)->endOfMonth();
+        if ($end->lt($date)) {
+            $end->addYear();
+        }
+
+        return $end->year;
+    }
+
+    /**
+     * Resolve the integer financial year for today.
+     *
+     * @param Community $community
+     * @return int
+     */
+    public function currentFor(Community $community): int
+    {
+        return $this->resolveForDate($community, Carbon::today());
     }
 }

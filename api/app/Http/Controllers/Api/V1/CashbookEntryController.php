@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\CashbookEntry;
+use App\Models\Community;
 use App\Services\CashbookEntryService;
 use App\Http\Resources\CashbookEntryResource;
 use App\Http\Resources\CashbookEntryResources;
 use Illuminate\Http\JsonResponse;
 use App\Http\Requests\CashbookEntry\ShowCashbookEntriesRequest;
+use App\Http\Requests\CashbookEntry\ShowCashbookTransactionsRequest;
+use App\Http\Requests\CashbookEntry\CreateManualTransactionsRequest;
 use App\Http\Requests\CashbookEntry\ShowCashbookSummaryRequest;
 use App\Http\Requests\CashbookEntry\CreateCashbookEntryRequest;
 use App\Http\Requests\CashbookEntry\AutoAllocateCashbookEntriesRequest;
@@ -18,6 +21,15 @@ use App\Http\Requests\CashbookEntry\AllocateCashbookEntryRequest;
 use App\Http\Requests\CashbookEntry\DeallocateCashbookEntryRequest;
 use App\Http\Requests\CashbookEntry\DeleteCashbookEntryRequest;
 use App\Http\Requests\CashbookEntry\DeleteCashbookEntriesRequest;
+use App\Http\Requests\CashbookEntry\AllocateEntryRequest;
+use App\Http\Requests\CashbookEntry\DeallocateEntryRequest;
+use App\Http\Requests\CashbookEntry\SplitCashbookEntryRequest;
+use App\Http\Requests\CashbookEntry\UploadSplitRequest;
+use App\Http\Requests\CashbookEntry\ShowCashbookStatusRequest;
+use App\Http\Requests\CashbookEntry\ShowLedgerOptionsRequest;
+use App\Http\Requests\CashbookEntry\CustomerSearchRequest;
+use App\Http\Requests\CashbookEntry\RunRulesRequest;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class CashbookEntryController extends Controller
 {
@@ -37,6 +49,166 @@ class CashbookEntryController extends Controller
     public function showCashbookEntries(ShowCashbookEntriesRequest $request): CashbookEntryResources
     {
         return $this->service->showCashbookEntries($request->validated());
+    }
+
+    /**
+     * WeConnectU Cashbook — running-balance transaction list for a single bank
+     * account within a community, with Opening / Closing balances.
+     *
+     * @param ShowCashbookTransactionsRequest $request
+     * @param Community                       $community
+     * @return array
+     */
+    public function showCashbookTransactions(ShowCashbookTransactionsRequest $request, Community $community): array
+    {
+        return $this->service->showCashbookTransactions($community, $request->validated());
+    }
+
+    /**
+     * WeConnectU Cashbook — bulk-create manual transaction lines for a bank account.
+     *
+     * @param CreateManualTransactionsRequest $request
+     * @param Community                       $community
+     * @return JsonResponse
+     */
+    public function createManualTransactions(CreateManualTransactionsRequest $request, Community $community): JsonResponse
+    {
+        return response()->json($this->service->createManualTransactions($community, $request->validated()), 201);
+    }
+
+    /**
+     * WeConnectU Cashbook — per-bank-account allocation status for a community.
+     *
+     * @param ShowCashbookStatusRequest $request
+     * @param Community                 $community
+     * @return array
+     */
+    public function cashbookStatus(ShowCashbookStatusRequest $request, Community $community): array
+    {
+        return $this->service->cashbookStatus($community);
+    }
+
+    /**
+     * WeConnectU Cashbook — general / reserve-fund ledger + VAT-type options.
+     *
+     * @param ShowLedgerOptionsRequest $request
+     * @param Community                $community
+     * @return array
+     */
+    public function ledgerOptions(ShowLedgerOptionsRequest $request, Community $community): array
+    {
+        return $this->service->ledgerOptions($community);
+    }
+
+    /**
+     * WeConnectU Cashbook — type-ahead customer search within a community.
+     *
+     * @param CustomerSearchRequest $request
+     * @param Community             $community
+     * @return array
+     */
+    public function customerSearch(CustomerSearchRequest $request, Community $community): array
+    {
+        return $this->service->customerSearch($community, (string) $request->input('q', ''));
+    }
+
+    /**
+     * WeConnectU Cashbook — run allocation rules across a community's cashbooks.
+     *
+     * @param RunRulesRequest $request
+     * @param Community       $community
+     * @return array
+     */
+    public function runRules(RunRulesRequest $request, Community $community): array
+    {
+        $allocated = $this->service->runRules($community, $request->input('bank_account_id'));
+
+        return [
+            'allocated' => $allocated,
+            'message'   => $allocated . ' transaction' . ($allocated === 1 ? '' : 's') . ' allocated',
+        ];
+    }
+
+    /**
+     * WeConnectU Cashbook — download the blank split-allocation upload template.
+     *
+     * @return BinaryFileResponse
+     */
+    public function downloadSplitTemplate(): BinaryFileResponse
+    {
+        return $this->service->downloadSplitTemplate();
+    }
+
+    /**
+     * WeConnectU Cashbook — allocate a single bank line to an account.
+     *
+     * @param AllocateEntryRequest $request
+     * @param Community            $community
+     * @param CashbookEntry        $cashbookEntry
+     * @return array
+     */
+    public function allocateEntry(AllocateEntryRequest $request, Community $community, CashbookEntry $cashbookEntry): array
+    {
+        $entry = $this->service->allocateEntry($cashbookEntry, $request->validated());
+
+        return [
+            'message' => 'Transaction allocated',
+            'data'    => new CashbookEntryResource($entry),
+        ];
+    }
+
+    /**
+     * WeConnectU Cashbook — remove the allocation from a single bank line.
+     *
+     * @param DeallocateEntryRequest $request
+     * @param Community              $community
+     * @param CashbookEntry          $cashbookEntry
+     * @return array
+     */
+    public function deallocateEntry(DeallocateEntryRequest $request, Community $community, CashbookEntry $cashbookEntry): array
+    {
+        $this->service->deallocateEntry($cashbookEntry);
+
+        return ['message' => 'Allocation removed'];
+    }
+
+    /**
+     * WeConnectU Cashbook — split a single bank line across several accounts.
+     *
+     * @param SplitCashbookEntryRequest $request
+     * @param Community                 $community
+     * @param CashbookEntry             $cashbookEntry
+     * @return array
+     */
+    public function splitEntry(SplitCashbookEntryRequest $request, Community $community, CashbookEntry $cashbookEntry): array
+    {
+        $data  = $request->validated();
+        $entry = $this->service->splitEntry(
+            $cashbookEntry,
+            $data['lines'],
+            (bool) ($data['save_template'] ?? false),
+            $data['template_name'] ?? null
+        );
+
+        return [
+            'message' => 'Transaction split',
+            'data'    => new CashbookEntryResource($entry),
+        ];
+    }
+
+    /**
+     * WeConnectU Cashbook — parse a split-allocation spreadsheet for the modal.
+     *
+     * @param UploadSplitRequest $request
+     * @param Community          $community
+     * @param CashbookEntry      $cashbookEntry
+     * @return array
+     */
+    public function uploadSplit(UploadSplitRequest $request, Community $community, CashbookEntry $cashbookEntry): array
+    {
+        return [
+            'lines' => $this->service->parseSplitUpload($cashbookEntry, $request->file('file')),
+        ];
     }
 
     /**

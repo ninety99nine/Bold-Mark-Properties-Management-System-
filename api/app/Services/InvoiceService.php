@@ -12,6 +12,10 @@ use App\Enums\InvoiceStatus;
 use App\Enums\BilledToType;
 use App\Enums\OccupancyType;
 use App\Enums\SystemLedger;
+use App\Enums\FinancialCategory;
+use App\Enums\JournalEntryType;
+use App\Enums\JournalLineType;
+use App\Enums\JournalSource;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Response;
@@ -34,6 +38,119 @@ class InvoiceService extends BaseService
     public function __construct(private readonly UnitBalanceService $unitBalance)
     {
         parent::__construct();
+    }
+
+    /**
+     * Post (or re-post) the balanced GL batch for a customer invoice, exactly
+     * like WeConnectU: Dr Accounts Receivable [unit] (gross, one debit per line),
+     * Cr each item income ledger (net) and Cr VAT Control (VAT). The net customer
+     * effect is −total (the unit now owes more). Items without an income ledger
+     * contra to the Suspense account (9900/001).
+     *
+     * Idempotent — reposting deletes any previous batch for the invoice first.
+     * Skipped when the invoice has no unit (nothing to bill on the customer
+     * control account).
+     *
+     * @param Invoice $invoice
+     * @return void
+     */
+    public function postInvoiceLedger(Invoice $invoice): void
+    {
+        if (! $invoice->unit_id) {
+            return;
+        }
+
+        $unit = $invoice->unit()->with('community')->first();
+        $community = $unit?->community;
+
+        if (! $unit || ! $community) {
+            return;
+        }
+
+        $orgId = $invoice->organization_id;
+        // Date the GL batch to the invoice date, else the billing period (so it
+        // lands in the correct financial year), else when it was captured.
+        $date  = $invoice->invoice_date ?? $invoice->billing_period ?? $invoice->created_at ?? Carbon::now();
+        $due   = $invoice->due_date?->toDateString();
+
+        $gl       = app(GeneralLedgerPostingService::class);
+        $ar       = $gl->controlAccount($orgId, FinancialCategory::ACCOUNTS_RECEIVABLE);
+        $suspense = Ledger::suspense($orgId);
+
+        $lines   = [];
+        $taxTotal = 0.0;
+
+        $invoice->loadMissing('items');
+
+        if ($invoice->items->isNotEmpty()) {
+            foreach ($invoice->items as $item) {
+                $gross = (float) $item->line_total;
+                $tax   = (float) $item->tax_amount;
+                $net   = round($gross - $tax, 2);
+                $taxTotal += $tax;
+
+                // Dr Accounts Receivable [unit] — the customer owes the gross line.
+                $lines[] = [
+                    'line_type'   => JournalLineType::CUSTOMER,
+                    'entry_type'  => JournalEntryType::DEBIT,
+                    'amount'      => $gross,
+                    'unit_id'     => $unit->id,
+                    'description' => $item->description ?: $invoice->invoice_number,
+                    'due_date'    => $due,
+                ];
+
+                // Cr income ledger (net); no ledger → Suspense.
+                $lines[] = [
+                    'line_type'   => JournalLineType::GENERAL,
+                    'entry_type'  => JournalEntryType::CREDIT,
+                    'amount'      => $net,
+                    'ledger_id'   => $item->ledger_id ?: $suspense?->id,
+                    'description' => $item->description ?: $invoice->invoice_number,
+                ];
+            }
+        } else {
+            $gross = (float) $invoice->amount;
+            $tax   = (float) ($invoice->vat_amount ?? 0);
+            $net   = round($gross - $tax, 2);
+            $taxTotal = $tax;
+
+            $lines[] = [
+                'line_type'   => JournalLineType::CUSTOMER,
+                'entry_type'  => JournalEntryType::DEBIT,
+                'amount'      => $gross,
+                'unit_id'     => $unit->id,
+                'description' => $invoice->invoice_number,
+                'due_date'    => $due,
+            ];
+
+            $lines[] = [
+                'line_type'   => JournalLineType::GENERAL,
+                'entry_type'  => JournalEntryType::CREDIT,
+                'amount'      => $net,
+                'ledger_id'   => $invoice->ledger_id ?: $suspense?->id,
+                'description' => $invoice->invoice_number,
+            ];
+        }
+
+        if (round($taxTotal, 2) > 0) {
+            $vat = $gl->controlAccount($orgId, FinancialCategory::VAT_CONTROL);
+            $lines[] = [
+                'line_type'   => JournalLineType::GENERAL,
+                'entry_type'  => JournalEntryType::CREDIT,
+                'amount'      => round($taxTotal, 2),
+                'ledger_id'   => $vat->id,
+                'description' => 'VAT on ' . $invoice->invoice_number,
+            ];
+        }
+
+        $gl->repostFor(
+            $community,
+            Carbon::parse($date),
+            JournalSource::INVOICE,
+            $invoice,
+            'Levy',
+            $lines,
+        );
     }
 
 
@@ -380,6 +497,7 @@ class InvoiceService extends BaseService
             'issued_by_user_id'  => $user->id,
         ]));
 
+        $this->postInvoiceLedger($invoice);
         $this->unitBalance->recalculate($invoice->unit);
 
         return $this->showCreatedResource($invoice);
@@ -494,6 +612,7 @@ class InvoiceService extends BaseService
             return $invoice;
         });
 
+        $this->postInvoiceLedger($invoice);
         $this->unitBalance->recalculate($unit);
 
         // Optionally e-mail the invoice to the billed-to recipient.
@@ -753,6 +872,7 @@ class InvoiceService extends BaseService
                             'issued_by_type'     => 'user',
                             'issued_by_user_id'  => $user->id,
                         ]);
+                        $this->postInvoiceLedger($invoice);
                         $created++;
                         $createdIds[]             = $invoice->id;
                         $affectedUnits[$unit->id] = $unit;
@@ -869,7 +989,7 @@ class InvoiceService extends BaseService
                 continue;
             }
 
-            Invoice::create([
+            $invoice = Invoice::create([
                 'unit_id'            => $unit->id,
                 'ledger_id'     => $ledger->id,
                 'billed_to_type'     => $billedToType,
@@ -884,6 +1004,7 @@ class InvoiceService extends BaseService
                 'issued_by_user_id'  => $user->id,
             ]);
 
+            $this->postInvoiceLedger($invoice);
             $this->unitBalance->recalculate($unit);
 
             $preview[] = [
@@ -936,6 +1057,11 @@ class InvoiceService extends BaseService
         }
 
         $invoice->update($updateData);
+
+        // Re-post the GL batch when a money field changed (amount / due date).
+        if (array_key_exists('amount', $updateData) || array_key_exists('due_date', $updateData)) {
+            $this->postInvoiceLedger($invoice->fresh());
+        }
 
         $this->unitBalance->recalculate($invoice->unit);
 
@@ -1121,6 +1247,8 @@ class InvoiceService extends BaseService
 
         $invoice->restore();
 
+        // Re-post the GL batch that was removed when the invoice was deleted.
+        $this->postInvoiceLedger($invoice);
         $this->unitBalance->recalculate($unit);
 
         return ['message' => 'Invoice restored successfully'];

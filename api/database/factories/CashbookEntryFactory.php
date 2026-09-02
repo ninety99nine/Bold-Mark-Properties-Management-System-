@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\CashbookEntryType;
 use App\Models\CashbookEntry;
+use App\Services\AllocationPostingService;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -12,6 +13,23 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class CashbookEntryFactory extends Factory
 {
     protected $model = CashbookEntry::class;
+
+    /**
+     * Post the entry's bank GL batch on creation (Dr/Cr Bank vs Suspense for an
+     * unallocated line), mirroring the real create path. Requires a community and
+     * a bank account with a GL ledger; child (split) rows are skipped by the
+     * posting service itself.
+     *
+     * @return static
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (CashbookEntry $entry): void {
+            if ($entry->community_id && $entry->bank_account_id) {
+                app(AllocationPostingService::class)->postEntryLedger($entry);
+            }
+        });
+    }
 
     public function definition(): array
     {

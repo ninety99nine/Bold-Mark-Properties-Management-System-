@@ -17,6 +17,26 @@ import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS, LineElement, PointElement, Filler, Tooltip, CategoryScale, LinearScale,
 } from 'chart.js'
+
+// Draws a WeConnectU-style vertical dashed crosshair through the hovered point.
+const crosshairPlugin = {
+  id: 'debtCrosshair',
+  afterDraw(chart) {
+    const active = chart.tooltip?.getActiveElements?.() ?? []
+    if (!active.length) return
+    const { ctx, chartArea } = chart
+    const x = active[0].element.x
+    ctx.save()
+    ctx.beginPath()
+    ctx.setLineDash([4, 4])
+    ctx.moveTo(x, chartArea.top)
+    ctx.lineTo(x, chartArea.bottom)
+    ctx.lineWidth = 1
+    ctx.strokeStyle = 'rgba(26, 39, 68, 0.35)'
+    ctx.stroke()
+    ctx.restore()
+  },
+}
 import api from '@/composables/useApi'
 import { useCountryStore } from '@/stores/country'
 import { useToast } from '@/composables/useToast'
@@ -26,7 +46,7 @@ import AppInput from '@/components/common/AppInput.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppDatePicker from '@/components/common/AppDatePicker.vue'
 
-ChartJS.register(LineElement, PointElement, Filler, Tooltip, CategoryScale, LinearScale)
+ChartJS.register(LineElement, PointElement, Filler, Tooltip, CategoryScale, LinearScale, crosshairPlugin)
 
 const props = defineProps({
   communityId: { type: String, required: true },
@@ -86,7 +106,17 @@ const PILLS = {
 }
 const pill = (key) => PILLS[key] ?? PILLS.planned
 
-// ── Debt trend chart (gold, no axes — matches WeConnectU) ─────────────────────
+// ── Debt trend chart (gold area, interactive — matches WeConnectU) ────────────
+// Snapshot dates power the tooltip title ("31 Jul 2026"); a scriptable gradient
+// gives the fill depth without needing a chart plugin.
+const trendDates = computed(() => (finance.value?.debt_trend?.series ?? []).map((p) => p.date))
+
+const fmtTrendDate = (iso) => {
+  if (!iso) return ''
+  const d = new Date(`${iso}T00:00:00`)
+  return d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 const trendData = computed(() => {
   const series = finance.value?.debt_trend?.series ?? []
   return {
@@ -94,25 +124,59 @@ const trendData = computed(() => {
     datasets: [{
       data: series.map((p) => p.value),
       borderColor: '#D89B4B',
-      backgroundColor: 'rgba(216, 155, 75, 0.10)',
+      backgroundColor: (ctx) => {
+        const { chart } = ctx
+        const { ctx: c, chartArea } = chart
+        if (!chartArea) return 'rgba(216, 155, 75, 0.10)'
+        const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+        g.addColorStop(0, 'rgba(216, 155, 75, 0.28)')
+        g.addColorStop(1, 'rgba(216, 155, 75, 0.02)')
+        return g
+      },
       fill: true,
       tension: 0.4,
       borderWidth: 3,
       pointRadius: 0,
-      pointHoverRadius: 4,
+      pointHoverRadius: 5,
       pointHoverBackgroundColor: '#D89B4B',
+      pointHoverBorderColor: '#ffffff',
+      pointHoverBorderWidth: 2,
     }],
   }
 })
-const trendOptions = {
+
+const trendOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
+  layout: { padding: { top: 8, bottom: 4 } },
+  interaction: { mode: 'index', intersect: false },
   plugins: {
     legend: { display: false },
-    tooltip: { callbacks: { label: (ctx) => ` ${countryStore.formatCurrency(ctx.parsed.y)}` } },
+    tooltip: {
+      backgroundColor: '#ffffff',
+      titleColor: '#1a2744',
+      bodyColor: '#1a2744',
+      borderColor: 'rgba(26, 39, 68, 0.12)',
+      borderWidth: 1,
+      padding: 10,
+      displayColors: false,
+      titleFont: { weight: '600' },
+      callbacks: {
+        title: (items) => fmtTrendDate(trendDates.value[items[0]?.dataIndex]),
+        label: (ctx) => `Debt: ${countryStore.formatCurrency(ctx.parsed.y)}`,
+      },
+    },
   },
-  scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
-}
+  scales: {
+    x: {
+      display: true,
+      grid: { display: false },
+      border: { display: false },
+      ticks: { color: '#94a3b8', font: { size: 11 } },
+    },
+    y: { display: false, beginAtZero: true },
+  },
+}))
 
 // ── Add Item (Planner & Compliance) ───────────────────────────────────────────
 const addMenuOpen = ref(false)

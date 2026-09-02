@@ -96,9 +96,30 @@ const routes = [
         component: () => import('@/pages/cashbook/CashbookPage.vue'),
       },
       {
+        path: 'cashbook/manual',
+        name: 'cashbook-manual',
+        component: () => import('@/pages/cashbook/CashbookManualPage.vue'),
+      },
+      {
+        path: 'cashbook/rules',
+        name: 'cashbook-rules',
+        component: () => import('@/pages/cashbook/CashbookRulesPage.vue'),
+      },
+      {
         path: 'cashbook/:entryId',
         name: 'cashbook-entry',
         component: () => import('@/pages/cashbook/CashbookEntryDetailPage.vue'),
+      },
+      // ── Journals ───────────────────────────────────────────────────
+      {
+        path: 'journals',
+        name: 'journals',
+        component: () => import('@/pages/journals/JournalsPage.vue'),
+      },
+      {
+        path: 'journals/:batchId',
+        name: 'journal-batch',
+        component: () => import('@/pages/journals/JournalBatchDetailPage.vue'),
       },
       // ── Compliance routes ──────────────────────────────────────────
       {
@@ -178,6 +199,31 @@ const routes = [
         component: () => import('@/pages/customer-management/DetailedCustomerLedgerPage.vue'),
       },
       {
+        path: 'suppliers/ledger',
+        name: 'detailed-supplier-ledger',
+        component: () => import('@/pages/supplier-management/DetailedSupplierLedgerPage.vue'),
+      },
+      {
+        path: 'suppliers/invoices',
+        name: 'supplier-invoices',
+        component: () => import('@/pages/supplier-management/SupplierInvoicesPage.vue'),
+      },
+      {
+        path: 'suppliers/age-analysis',
+        name: 'supplier-age-analysis',
+        component: () => import('@/pages/supplier-management/SupplierAgeAnalysisPage.vue'),
+      },
+      {
+        path: 'suppliers/manage',
+        name: 'manage-suppliers',
+        component: () => import('@/pages/suppliers/ManageSuppliersPage.vue'),
+      },
+      {
+        path: 'suppliers/manage/:supplierId',
+        name: 'supplier-detail',
+        component: () => import('@/pages/suppliers/SupplierDetailPage.vue'),
+      },
+      {
         path: 'age-analysis',
         name: 'age-analysis',
         component: () => import('@/pages/age-analysis/AgeAnalysisPage.vue'),
@@ -240,6 +286,65 @@ const routes = [
         path: 'settings/company',
         name: 'company-details',
         component: () => import('@/pages/settings/CompanyDetailsPage.vue'),
+      },
+      {
+        path: 'settings/finance/financial',
+        name: 'financial-setup',
+        component: () => import('@/pages/settings/FinancialSettingsPage.vue'),
+      },
+      {
+        path: 'settings/finance/budget',
+        name: 'budget-setup',
+        component: () => import('@/pages/settings/BudgetSetupPage.vue'),
+      },
+      {
+        path: 'settings/finance/reserve-fund-budget',
+        name: 'reserve-fund-budget',
+        component: () => import('@/pages/settings/ReserveFundBudgetPage.vue'),
+      },
+      // ── GL Reports ─────────────────────────────────────────────────
+      {
+        path: 'reports/trial-balance',
+        name: 'report-trial-balance',
+        component: () => import('@/pages/reports/TrialBalancePage.vue'),
+      },
+      {
+        path: 'reports/general-ledger',
+        name: 'report-general-ledger',
+        component: () => import('@/pages/reports/GeneralLedgerReportPage.vue'),
+      },
+      {
+        path: 'reports/income-statement',
+        name: 'report-income-statement',
+        component: () => import('@/pages/reports/IncomeStatementPage.vue'),
+      },
+      {
+        path: 'reports/reserve-fund-income-statement',
+        name: 'report-reserve-fund-income-statement',
+        component: () => import('@/pages/reports/IncomeStatementPage.vue'),
+        props: { fund: 'reserve' },
+      },
+      {
+        path: 'reports/actual-vs-budget',
+        name: 'report-actual-vs-budget',
+        component: () => import('@/pages/reports/ActualVsBudgetPage.vue'),
+        props: { fund: 'main' },
+      },
+      {
+        path: 'reports/reserve-fund-actual-vs-budget',
+        name: 'report-reserve-fund-actual-vs-budget',
+        component: () => import('@/pages/reports/ActualVsBudgetPage.vue'),
+        props: { fund: 'reserve' },
+      },
+      {
+        path: 'reports/vat-201',
+        name: 'report-vat-201',
+        component: () => import('@/pages/reports/Vat201Page.vue'),
+      },
+      {
+        path: 'reports/cash-movement',
+        name: 'report-cash-movement',
+        component: () => import('@/pages/reports/CashMovementPage.vue'),
       },
       {
         path: 'settings/:tab',

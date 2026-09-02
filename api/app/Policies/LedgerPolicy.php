@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Ledger;
 use App\Models\User;
+use App\Enums\FinancialCategory;
 
 class LedgerPolicy extends BasePolicy
 {
@@ -74,7 +75,12 @@ class LedgerPolicy extends BasePolicy
         if ($ledger->organization_id !== $user->organization_id) {
             abort(404);
         }
+        // System defaults and singleton control accounts (AP / AR / Retained
+        // Income) are protected — they can never be deleted.
         if ($ledger->is_system) {
+            return false;
+        }
+        if ($ledger->financial_category instanceof FinancialCategory && $ledger->financial_category->isSingleton()) {
             return false;
         }
         return $this->authService->hasPermission($user, 'charge.type.delete');

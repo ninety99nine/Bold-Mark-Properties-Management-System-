@@ -38,4 +38,36 @@ class BankAccountPolicy extends BasePolicy
 
         return true;
     }
+
+    /**
+     * Determine whether the user can create bank accounts.
+     */
+    public function create(User $user): bool
+    {
+        return $this->authService->hasPermission($user, 'bank_account.create');
+    }
+
+    /**
+     * Determine whether the user can update the bank account.
+     */
+    public function update(User $user, BankAccount $bankAccount): bool
+    {
+        if ($bankAccount->organization_id !== $user->organization_id) {
+            abort(404);
+        }
+
+        return $this->authService->hasPermission($user, 'bank_account.update');
+    }
+
+    /**
+     * Determine whether the user can delete the bank account.
+     */
+    public function delete(User $user, BankAccount $bankAccount): bool
+    {
+        if ($bankAccount->organization_id !== $user->organization_id) {
+            abort(404);
+        }
+
+        return $this->authService->hasPermission($user, 'bank_account.delete');
+    }
 }
