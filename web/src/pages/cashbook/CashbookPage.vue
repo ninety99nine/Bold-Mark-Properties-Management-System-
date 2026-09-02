@@ -13,6 +13,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/composables/useApi'
+import { debounce } from '@/utils/debounce'
 import { useCommunityStore } from '@/stores/community'
 import { useCountryStore } from '@/stores/country'
 import { useToast } from '@/composables/useToast'
@@ -118,6 +119,7 @@ const lastUpload     = ref(null)
 const allAllocated   = ref(true)
 const transactions   = ref([])
 
+const debouncedFetchTransactions = debounce(() => fetchTransactions(), 300)
 async function fetchTransactions() {
   if (!communityId.value) return
   loading.value = true
@@ -458,7 +460,7 @@ function dmy(iso) {
               type="text"
               placeholder="Search..."
               class="h-11 rounded-md border border-border bg-muted/40 px-3 text-sm text-foreground placeholder:text-muted-foreground w-56"
-              @keyup.enter="fetchTransactions"
+              @input="debouncedFetchTransactions"
             />
             <button
               type="button"

@@ -9,6 +9,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/composables/useApi'
+import { debounce } from '@/utils/debounce'
 import { useToast } from '@/composables/useToast'
 import AppInput from '@/components/common/AppInput.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -128,6 +129,7 @@ async function fetchArchive() {
 }
 
 function runArchiveSearch() { fetchArchive() }
+const debouncedArchiveSearch = debounce(runArchiveSearch, 300)
 
 onMounted(fetchArchive)
 
@@ -344,11 +346,8 @@ async function sendCommunication() {
             type="text"
             placeholder="Search…"
             class="h-9 w-full sm:w-64 px-3 text-sm bg-white border border-border rounded outline-none focus:border-accent transition-colors"
+            @input="debouncedArchiveSearch"
           />
-          <AppButton variant="primary" size="sm" @click="runArchiveSearch">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            Search
-          </AppButton>
         </div>
 
         <!-- Table -->

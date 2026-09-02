@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { debounce } from '@/utils/debounce'
 import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/common/AppButton.vue'
 import AppInput from '@/components/common/AppInput.vue'
@@ -330,6 +331,7 @@ function auditFormatReason(reason) {
   return AUDIT_FAILURE_DISPLAY[reason] ?? reason
 }
 
+const debouncedAuditSearch = debounce(() => loadAuditLogs(1), 300)
 async function loadAuditLogs(page = 1) {
   auditLoading.value = true
   try {
@@ -1306,7 +1308,7 @@ async function executeFlush() {
               v-model="auditEmail"
               leading-icon="search"
               placeholder="user@example.com"
-              @keyup.enter="loadAuditLogs(1)"
+              @input="debouncedAuditSearch"
             />
           </div>
           <div class="min-w-[140px]">

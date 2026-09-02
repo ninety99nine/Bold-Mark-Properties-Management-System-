@@ -11,6 +11,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { debounce }  from '@/utils/debounce'
 import AppButton           from '@/components/common/AppButton.vue'
 import AppSelect           from '@/components/common/AppSelect.vue'
 import AgeStatusIcon       from '@/components/age-analysis/AgeStatusIcon.vue'
@@ -123,6 +124,7 @@ function buildParams() {
   return p
 }
 
+const debouncedFetchData = debounce(() => fetchData(), 300)
 async function fetchData() {
   if (!communityId.value) return
   loading.value = true
@@ -325,7 +327,7 @@ watch(communityId, () => {
             type="text"
             placeholder="Search..."
             class="h-9 w-40 shrink-0 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
-            @keyup.enter="fetchData"
+            @input="debouncedFetchData"
           />
           <div class="min-w-0 flex-1"><AppSelect v-model="filterType" :options="FILTER_TYPE_OPTIONS" placeholder="Filter Type" size="sm" @change="fetchData" /></div>
           <div class="min-w-0 flex-1"><AppSelect v-model="debtStatus" :options="DEBT_STATUS_OPTIONS" placeholder="Filter Debt Status" size="sm" @change="fetchData" /></div>

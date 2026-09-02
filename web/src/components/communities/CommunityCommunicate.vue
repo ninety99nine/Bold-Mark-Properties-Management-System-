@@ -9,6 +9,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/composables/useApi'
+import { debounce } from '@/utils/debounce'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
@@ -159,6 +160,7 @@ async function loadArchive(p = 1) {
     archiveLoading.value = false
   }
 }
+const debouncedArchiveSearch = debounce(() => loadArchive(1), 300)
 
 function statusLabel(s) {
   return { read: 'Read', delivered: 'Delivered', sent: 'Sent', failed: 'Failed', queued: 'Queued' }[s] ?? s
@@ -378,8 +380,7 @@ onMounted(() => {
       </div>
       <div class="p-6 space-y-4">
         <div class="flex items-center gap-2">
-          <input v-model="archiveSearch" type="text" placeholder="Search…" class="h-9 w-full sm:w-64 px-3 text-sm bg-white border border-border rounded outline-none focus:border-accent" @keyup.enter="loadArchive(1)" />
-          <AppButton variant="primary" size="sm" class="!bg-navy" @click="loadArchive(1)">Search</AppButton>
+          <input v-model="archiveSearch" type="text" placeholder="Search…" class="h-9 w-full sm:w-64 px-3 text-sm bg-white border border-border rounded outline-none focus:border-accent" @input="debouncedArchiveSearch" />
         </div>
 
         <div class="overflow-x-auto border border-border rounded-lg">

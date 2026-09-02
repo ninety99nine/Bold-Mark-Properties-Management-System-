@@ -77,11 +77,8 @@
               type="text"
               placeholder="Search..."
               class="h-9 w-44 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
-              @keyup.enter="fetchRows"
+              @input="debouncedFetchRows"
             />
-            <AppButton variant="secondary" size="sm" @click="fetchRows">
-              <span class="inline-flex items-center gap-1.5"><IconSearch class="h-4 w-4" /> Search</span>
-            </AppButton>
             <button
               type="button"
               class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-[#3B93D6] px-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
@@ -249,6 +246,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, h, watch } from 'vue'
 import api from '@/composables/useApi'
+import { debounce } from '@/utils/debounce'
 import { useToast } from '@/composables/useToast'
 import { useCommunityStore } from '@/stores/community'
 import AppButton from '@/components/common/AppButton.vue'
@@ -263,7 +261,6 @@ const communityStore = useCommunityStore()
 const communityId = computed(() => communityStore.selectedId)
 
 const stroke = (paths, box = '0 0 24 24') => (props, { attrs }) => h('svg', { viewBox: box, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', ...attrs }, paths.map(d => h('path', { d })))
-const IconSearch = (p, { attrs }) => h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', ...attrs }, [h('circle', { cx: 11, cy: 11, r: 7 }), h('path', { d: 'm21 21-4.3-4.3' })])
 const IconDownload = stroke(['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M7 10l5 5 5-5', 'M12 15V3'])
 const IconFlag = stroke(['M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z', 'M4 22v-7'])
 const IconPhone = (p, { attrs }) => h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', ...attrs }, [h('path', { d: 'M6.62 10.79a15.5 15.5 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.57 1 1 0 0 1-.24 1.05z' })])
@@ -380,6 +377,7 @@ async function fetchRows() {
     loading.value = false
   }
 }
+const debouncedFetchRows = debounce(fetchRows, 300)
 
 async function apply() {
   if (!selected.value.length) return

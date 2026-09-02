@@ -48,12 +48,10 @@
           <input
             v-model="customerSearch"
             type="text"
+            placeholder="Search..."
             class="h-10 w-64 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
-            @keyup.enter="applyCustomerSearch"
+            @input="debouncedCustomerSearch"
           />
-          <AppButton variant="secondary" @click="applyCustomerSearch">
-            <span class="inline-flex items-center gap-2"><IconSearch class="h-4 w-4" /> Search</span>
-          </AppButton>
           <button v-if="appliedSearch" type="button" class="text-destructive" title="Clear" @click="clearCustomerSearch">
             <IconX class="h-4 w-4" />
           </button>
@@ -238,6 +236,7 @@
 import { ref, reactive, computed, onMounted, h, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/composables/useApi'
+import { debounce } from '@/utils/debounce'
 import { useToast } from '@/composables/useToast'
 import { useCommunityStore } from '@/stores/community'
 import AppButton from '@/components/common/AppButton.vue'
@@ -261,7 +260,6 @@ const IconDocument = strokeIcon(['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 
 const IconPencil   = strokeIcon(['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'])
 const IconX        = strokeIcon(['M18 6 6 18', 'M6 6l12 12'])
 const IconRefresh  = strokeIcon(['M3 12a9 9 0 1 0 3-6.7L3 8', 'M3 3v5h5'])
-const IconSearch = (props, { attrs }) => h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', ...attrs }, [h('circle', { cx: 11, cy: 11, r: 7 }), h('path', { d: 'm21 21-4.3-4.3' })])
 const IconPdf = (props, { attrs }) => h('svg', { viewBox: '0 0 32 32', ...attrs }, [
   h('path', { d: 'M8 3h11l6 6v18a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', fill: 'none', stroke: '#2f6fb0', 'stroke-width': 2 }),
   h('path', { d: 'M19 3v6h6', fill: 'none', stroke: '#2f6fb0', 'stroke-width': 2 }),
@@ -381,6 +379,7 @@ function applyCustomerSearch() {
   customerPage.value = 1
   fetchCustomers()
 }
+const debouncedCustomerSearch = debounce(applyCustomerSearch, 300)
 function clearCustomerSearch() {
   customerSearch.value = ''
   appliedSearch.value = ''

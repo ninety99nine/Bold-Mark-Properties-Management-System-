@@ -11,6 +11,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { debounce }  from '@/utils/debounce'
 import AppButton    from '@/components/common/AppButton.vue'
 import api          from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -85,6 +86,7 @@ function buildParams() {
   return p
 }
 
+const debouncedFetchData = debounce(() => fetchData(), 300)
 async function fetchData() {
   if (!communityId.value) return
   loading.value = true
@@ -286,7 +288,7 @@ watch(communityId, () => { rows.value = []; totals.value = {}; boot() })
           <label class="text-sm font-medium text-foreground">Search:</label>
           <input v-model="search" type="text"
                  class="h-9 w-56 rounded-md border border-border px-3 text-sm focus:border-navy focus:outline-none"
-                 @keyup.enter="fetchData" @input="fetchData" />
+                 @input="debouncedFetchData" />
         </div>
 
         <!-- Table -->

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '@/composables/useApi.js'
+import { debounce } from '@/utils/debounce'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge  from '@/components/common/AppBadge.vue'
 
@@ -88,6 +89,7 @@ async function loadLogs(page = 1) {
   }
 }
 
+const debouncedApplyFilters = debounce(() => applyFilters(), 300)
 function applyFilters() {
   loadLogs(1)
 }
@@ -125,7 +127,7 @@ onMounted(() => loadLogs(1))
             type="text"
             placeholder="user@example.com"
             class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
-            @keyup.enter="applyFilters"
+            @input="debouncedApplyFilters"
           />
         </div>
       </div>
