@@ -272,7 +272,9 @@ function openChild(child) {
     class="relative flex flex-col items-center bg-navy-dark text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28"
   >
     <nav class="flex-1 flex flex-col items-center gap-1 py-4 w-full px-2">
-      <!-- Global — "exit to Global" button, shown only inside a community. -->
+      <!-- Global — shown on BOTH levels: an "exit to Global" button inside a
+           community, a link to the global dashboard otherwise. Never rendered
+           in the active (gold) state. -->
       <button
         v-if="inCommunity"
         type="button"
@@ -282,6 +284,13 @@ function openChild(child) {
         <SidebarIcon name="fingerprint" :size="22" />
         <span>Global</span>
       </button>
+      <RouterLink
+        v-else to="/dashboard"
+        class="flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150 text-white/50 hover:bg-white/5 hover:text-white/80"
+      >
+        <SidebarIcon name="fingerprint" :size="22" />
+        <span>Global</span>
+      </RouterLink>
 
       <template v-for="item in navItems" :key="item.name">
         <!-- Parent with a fly-out sub-menu (e.g. Units → Units / PQs, Finance → …) -->
