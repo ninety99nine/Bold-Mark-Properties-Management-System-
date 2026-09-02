@@ -269,11 +269,10 @@ function openChild(child) {
 <template>
   <!-- ── WeConnectU-style icon rail — used for BOTH the global & community levels ── -->
   <aside
-    class="relative flex flex-col items-center text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28 transition-colors duration-300"
-    :class="inCommunity ? 'bg-navy-dark' : 'bg-[#1B3556]'"
+    class="relative flex flex-col items-center bg-navy-dark text-white min-h-screen border-r border-white/5 flex-shrink-0 w-28"
   >
     <nav class="flex-1 flex flex-col items-center gap-1 py-4 w-full px-2">
-      <!-- Global — exit button inside a community, active context indicator at the global level -->
+      <!-- Global — "exit to Global" button, shown only inside a community. -->
       <button
         v-if="inCommunity"
         type="button"
@@ -283,13 +282,6 @@ function openChild(child) {
         <SidebarIcon name="fingerprint" :size="22" />
         <span>Global</span>
       </button>
-      <RouterLink
-        v-else to="/dashboard"
-        class="flex flex-col items-center justify-center gap-1 w-full rounded-lg py-2.5 text-[10px] font-medium leading-tight transition-all duration-150 text-accent bg-accent/10"
-      >
-        <SidebarIcon name="fingerprint" :size="22" />
-        <span>Global</span>
-      </RouterLink>
 
       <template v-for="item in navItems" :key="item.name">
         <!-- Parent with a fly-out sub-menu (e.g. Units → Units / PQs, Finance → …) -->
