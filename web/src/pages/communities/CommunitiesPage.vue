@@ -48,7 +48,7 @@ async function fetchSummary() {
   summaryLoading.value = true
   try {
     const params = {}
-    if (countryStore.activeCountry) params.country = countryStore.activeCountry
+    // Show communities across all countries (no country scoping).
     const { data } = await api.get('/communities/summary', { params })
     summary.value = data
   } catch {
@@ -198,7 +198,6 @@ async function fetchCommunities(reset = false) {
   listLoading.value = true
   try {
     const params = { _per_page: 15, page: currentPage.value }
-    if (countryStore.activeCountry)     params.country          = countryStore.activeCountry
     if (statusFilter.value)             params.status           = statusFilter.value
     if (search.value.trim())            params._search          = search.value.trim()
     if (filters.value.entity_type)      params.entity_type      = filters.value.entity_type

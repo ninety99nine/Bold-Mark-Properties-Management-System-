@@ -21,6 +21,7 @@ import { useRouter } from 'vue-router'
 import { Doughnut, Line } from 'vue-chartjs'
 import AppButton from '@/components/common/AppButton.vue'
 import AddCommunityModal from '@/components/communities/AddCommunityModal.vue'
+import CommunityInfoModal from '@/components/communities/CommunityInfoModal.vue'
 import { entityTypeLabel, entityTypeBadgeClass } from '@/utils/communityEntityType'
 import api from '@/composables/useApi.js'
 import { useCountryStore } from '@/stores/country'
@@ -65,6 +66,21 @@ function onCommunityCreated(community) {
   }
 }
 
+// ── Community info modal + login (mirror the /communities page) ────────
+// Row click opens the WeConnectU-style info modal; only the login (→) button
+// enters the community.
+const showInfoModal = ref(false)
+const infoCommunity = ref(null)
+function openInfo(community) {
+  infoCommunity.value = community
+  showInfoModal.value = true
+}
+// "Login" — enter the community in a NEW TAB (WeConnectU behaviour).
+function loginToCommunity(community) {
+  const href = router.resolve({ path: `/communities/${community.id}`, query: { login: '1' } }).href
+  window.open(href, '_blank')
+}
+
 // ── State ─────────────────────────────────────────────────────────────
 const loading = ref(true)
 const summary = ref(null)
@@ -84,7 +100,6 @@ async function fetchDashboard() {
   try {
     loading.value = true
     const params = { year: selectedComplianceYear.value }
-    if (countryStore.activeCountry) params.country = countryStore.activeCountry
     const { data } = await api.get('/dashboard', { params })
     summary.value = data.summary
     communitiesOverview.value = data.communities_overview ?? []
@@ -103,7 +118,6 @@ async function fetchCompliance() {
   try {
     complianceLoading.value = true
     const params = { year: selectedComplianceYear.value }
-    if (countryStore.activeCountry) params.country = countryStore.activeCountry
     const { data } = await api.get('/dashboard', { params })
     compliance.value = data.compliance ?? null
   } catch (e) {
@@ -533,7 +547,7 @@ const taskRows = computed(() => {
         <div
           v-for="community in displayedCommunities"
           :key="community.id"
-          @click="router.push(`/communities/${community.id}?login=1`)"
+          @click="openInfo(community)"
           class="flex items-center gap-4 px-4 sm:px-5 py-4 hover:bg-muted/40 cursor-pointer transition-colors"
         >
           <!-- Code badge -->
@@ -588,12 +602,12 @@ const taskRows = computed(() => {
             </div>
           </div>
 
-          <!-- Login icon -->
-          <span class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors" title="Login">
+          <!-- Login button — enter the community (only this, not the row) -->
+          <button type="button" @click.stop="loginToCommunity(community)" class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer" title="Login">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>
             </svg>
-          </span>
+          </button>
         </div>
       </div>
 
@@ -611,6 +625,9 @@ const taskRows = computed(() => {
 
     <!-- ── Add Community modal (opened in place) ─────────────────────── -->
     <AddCommunityModal :show="showAddCommunity" @close="showAddCommunity = false" @created="onCommunityCreated" />
+
+    <!-- Community info modal (same as the /communities page) -->
+    <CommunityInfoModal :show="showInfoModal" :community="infoCommunity" @close="showInfoModal = false" />
 
   </div>
 </template>

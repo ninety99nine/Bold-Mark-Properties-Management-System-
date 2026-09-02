@@ -57,7 +57,7 @@ const { success, error: toastError } = useToast()
 const showLoginSuccess = ref(false)
 
 // ── Tab navigation ────────────────────────────────────────────────────
-const VALID_TABS = ['units', 'pq', 'compliance', 'communication', 'overview']
+const VALID_TABS = ['units', 'pq', 'compliance', 'communication', 'overview', 'report']
 const activeTab = computed(() => {
   const q = route.query.tab
   // Default section is the Dashboard (overview) — the community sidebar rail
@@ -2374,6 +2374,19 @@ const communityTabs = computed(() => {
     </div>
 
     <!-- Section content is selected by the community sidebar rail (no in-page tabs). -->
+
+    <!-- Community Report — not built yet (Coming Soon placeholder) -->
+    <div v-show="activeTab === 'report'" class="rounded-lg border bg-card shadow-sm">
+      <div class="flex flex-col items-center justify-center py-20 px-8 text-center">
+        <div class="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>
+          </svg>
+        </div>
+        <p class="text-lg font-semibold text-foreground">Community Report</p>
+        <p class="text-sm text-muted-foreground/70 mt-1">Coming soon.</p>
+      </div>
+    </div>
 
     <!-- Page heading (outside the card, WeConnectU-style) -->
     <h2 v-show="activeTab === 'units'" class="font-body font-semibold text-2xl text-foreground">Unit Details</h2>
