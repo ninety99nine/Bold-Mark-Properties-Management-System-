@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Community;
 use App\Services\CommunityLedgerService;
-use Database\Seeders\DefaultLedgersSeeder;
+use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Console\Command;
 
 class RepairCommunityLedgers extends Command
@@ -15,7 +15,7 @@ class RepairCommunityLedgers extends Command
 
     public function handle(): void
     {
-        $seeder  = new DefaultLedgersSeeder();
+        $seeder  = new ChartOfAccountsSeeder();
         $service = new CommunityLedgerService();
 
         $query = Community::with('organization');

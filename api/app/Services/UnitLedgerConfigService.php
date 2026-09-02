@@ -4,25 +4,25 @@ namespace App\Services;
 
 use Exception;
 use App\Models\Unit;
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 use Illuminate\Support\Facades\Auth;
-use App\Http\Resources\UnitChargeConfigResource;
-use App\Http\Resources\UnitChargeConfigResources;
+use App\Http\Resources\UnitLedgerConfigResource;
+use App\Http\Resources\UnitLedgerConfigResources;
 
-class UnitChargeConfigService extends BaseService
+class UnitLedgerConfigService extends BaseService
 {
     protected array $allowedRelationships = ['unit', 'ledger'];
 
     /**
-     * Return a paginated list of charge configurations for the given unit.
+     * Return a paginated list of ledger configurations for the given unit.
      *
      * @param Unit  $unit
      * @param array $data
-     * @return UnitChargeConfigResources
+     * @return UnitLedgerConfigResources
      */
-    public function showUnitChargeConfigs(Unit $unit, array $data): UnitChargeConfigResources
+    public function showUnitLedgerConfigs(Unit $unit, array $data): UnitLedgerConfigResources
     {
-        $query = UnitChargeConfig::where('unit_id', $unit->id)
+        $query = UnitLedgerConfig::where('unit_id', $unit->id)
             ->with('ledger');
 
         if (isset($data['is_active'])) {
@@ -38,19 +38,19 @@ class UnitChargeConfigService extends BaseService
     }
 
     /**
-     * Create a new per-unit recurring charge configuration.
+     * Create a new per-unit recurring ledger configuration.
      *
      * @param Unit  $unit
      * @param array $data
      * @return array
      */
-    public function createUnitChargeConfig(Unit $unit, array $data): array
+    public function createUnitLedgerConfig(Unit $unit, array $data): array
     {
         $configData = collect($data)
             ->only(['ledger_id', 'amount', 'is_active'])
             ->toArray();
 
-        $config = UnitChargeConfig::create(array_merge($configData, [
+        $config = UnitLedgerConfig::create(array_merge($configData, [
             'unit_id'   => $unit->id,
             'is_active' => $data['is_active'] ?? true,
         ]));
@@ -59,26 +59,26 @@ class UnitChargeConfigService extends BaseService
     }
 
     /**
-     * Return a single unit charge config resource.
+     * Return a single unit ledger config resource.
      *
      * @param Unit             $unit
-     * @param UnitChargeConfig $config
-     * @return UnitChargeConfigResource
+     * @param UnitLedgerConfig $config
+     * @return UnitLedgerConfigResource
      */
-    public function showUnitChargeConfig(Unit $unit, UnitChargeConfig $config): UnitChargeConfigResource
+    public function showUnitLedgerConfig(Unit $unit, UnitLedgerConfig $config): UnitLedgerConfigResource
     {
         return $this->showResource($config);
     }
 
     /**
-     * Update a unit charge configuration.
+     * Update a unit ledger configuration.
      *
      * @param Unit             $unit
-     * @param UnitChargeConfig $config
+     * @param UnitLedgerConfig $config
      * @param array            $data
      * @return array
      */
-    public function updateUnitChargeConfig(Unit $unit, UnitChargeConfig $config, array $data): array
+    public function updateUnitLedgerConfig(Unit $unit, UnitLedgerConfig $config, array $data): array
     {
         $updateData = collect($data)
             ->only(['amount', 'is_active'])
@@ -91,16 +91,16 @@ class UnitChargeConfigService extends BaseService
     }
 
     /**
-     * Bulk delete unit charge configs by an array of IDs.
+     * Bulk delete unit ledger configs by an array of IDs.
      *
      * @param Unit  $unit
      * @param array $ids
      * @return array
      * @throws Exception
      */
-    public function deleteUnitChargeConfigs(Unit $unit, array $ids): array
+    public function deleteUnitLedgerConfigs(Unit $unit, array $ids): array
     {
-        $configs = UnitChargeConfig::whereIn('id', $ids)
+        $configs = UnitLedgerConfig::whereIn('id', $ids)
             ->where('unit_id', $unit->id)
             ->get();
 
@@ -120,13 +120,13 @@ class UnitChargeConfigService extends BaseService
     }
 
     /**
-     * Delete a single unit charge config.
+     * Delete a single unit ledger config.
      *
      * @param Unit             $unit
-     * @param UnitChargeConfig $config
+     * @param UnitLedgerConfig $config
      * @return array
      */
-    public function deleteUnitChargeConfig(Unit $unit, UnitChargeConfig $config): array
+    public function deleteUnitLedgerConfig(Unit $unit, UnitLedgerConfig $config): array
     {
         $deleted = $config->delete();
 

@@ -34,6 +34,7 @@ class Ledger extends Model
         'tax_type'           => VatType::class,
         'fund'               => 'string',
         'allow_sub_accounts' => 'boolean',
+        'is_budget_item'     => 'boolean',
     ];
 
     /**
@@ -57,6 +58,7 @@ class Ledger extends Model
         'tax_type',
         'fund',
         'allow_sub_accounts',
+        'is_budget_item',
         'parent_id',
         'organization_id',
     ];
@@ -191,13 +193,13 @@ class Ledger extends Model
     }
 
     /**
-     * Get unit charge configurations for this ledger.
+     * Get unit ledger configurations for this ledger.
      *
      * @return HasMany
      */
-    public function unitChargeConfigs(): HasMany
+    public function unitLedgerConfigs(): HasMany
     {
-        return $this->hasMany(UnitChargeConfig::class);
+        return $this->hasMany(UnitLedgerConfig::class);
     }
 
     /**

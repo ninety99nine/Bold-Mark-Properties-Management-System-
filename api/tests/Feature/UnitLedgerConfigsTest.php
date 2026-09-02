@@ -3,109 +3,109 @@
 use App\Models\Ledger;
 use App\Models\Community;
 use App\Models\Unit;
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Unauthenticated access
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns 401 on all charge config routes when unauthenticated', function (string $method, string $route, array $params = []) {
+it('returns 401 on all ledger config routes when unauthenticated', function (string $method, string $route, array $params = []) {
     $this->{$method . 'Json'}(route($route, $params))->assertUnauthorized();
 })->with([
-    ['get',    'api.v1.show.unit.charge.configs',   ['community' => 'e', 'unit' => 'u']],
-    ['post',   'api.v1.create.unit.charge.config',  ['community' => 'e', 'unit' => 'u']],
-    ['delete', 'api.v1.delete.unit.charge.configs', ['community' => 'e', 'unit' => 'u']],
-    ['get',    'api.v1.show.unit.charge.config',    ['community' => 'e', 'unit' => 'u', 'chargeConfig' => 'c']],
-    ['put',    'api.v1.update.unit.charge.config',  ['community' => 'e', 'unit' => 'u', 'chargeConfig' => 'c']],
-    ['delete', 'api.v1.delete.unit.charge.config',  ['community' => 'e', 'unit' => 'u', 'chargeConfig' => 'c']],
+    ['get',    'api.v1.show.unit.ledger.configs',   ['community' => 'e', 'unit' => 'u']],
+    ['post',   'api.v1.create.unit.ledger.config',  ['community' => 'e', 'unit' => 'u']],
+    ['delete', 'api.v1.delete.unit.ledger.configs', ['community' => 'e', 'unit' => 'u']],
+    ['get',    'api.v1.show.unit.ledger.config',    ['community' => 'e', 'unit' => 'u', 'ledgerConfig' => 'c']],
+    ['put',    'api.v1.update.unit.ledger.config',  ['community' => 'e', 'unit' => 'u', 'ledgerConfig' => 'c']],
+    ['delete', 'api.v1.delete.unit.ledger.config',  ['community' => 'e', 'unit' => 'u', 'ledgerConfig' => 'c']],
 ]);
 
 // ──────────────────────────────────────────────────────────────────────────────
-// GET /communities/{community}/units/{unit}/charge-configs (index)
+// GET /communities/{community}/units/{unit}/ledger-configs (index)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns a list of charge configs for a unit', function () {
+it('returns a list of ledger configs for a unit', function () {
     $user        = adminUser();
     $community      = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit        = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger1 = Ledger::factory()->create(['organization_id' => $user->organization_id]);
     $ledger2 = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
-    UnitChargeConfig::factory()->create(['unit_id' => $unit->id, 'ledger_id' => $ledger1->id]);
-    UnitChargeConfig::factory()->create(['unit_id' => $unit->id, 'ledger_id' => $ledger2->id]);
+    UnitLedgerConfig::factory()->create(['unit_id' => $unit->id, 'ledger_id' => $ledger1->id]);
+    UnitLedgerConfig::factory()->create(['unit_id' => $unit->id, 'ledger_id' => $ledger2->id]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.configs', [$community, $unit]))
+        ->getJson(route('api.v1.show.unit.ledger.configs', [$community, $unit]))
         ->assertOk()
         ->assertJsonStructure(['data', 'meta']);
 
     expect($response->json('meta.total'))->toBe(2);
 });
 
-it('returns 404 when listing charge configs for another occupant unit', function () {
+it('returns 404 when listing ledger configs for another occupant unit', function () {
     $user        = adminUser();
     $otherOccupant = createOrganization();
     $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
     $otherUnit   = Unit::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $otherOccupant->id]);
 
     $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.configs', [$otherCommunity, $otherUnit]))
+        ->getJson(route('api.v1.show.unit.ledger.configs', [$otherCommunity, $otherUnit]))
         ->assertNotFound();
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// GET /charge-configs (index) — _relationships (eager loading)
+// GET /ledger-configs (index) — _relationships (eager loading)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns unit relationship on charge configs index when requested', function () {
+it('returns unit relationship on ledger configs index when requested', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
-    UnitChargeConfig::factory()->create([
+    UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.configs', [$community, $unit]) . '?_relationships=unit')
+        ->getJson(route('api.v1.show.unit.ledger.configs', [$community, $unit]) . '?_relationships=unit')
         ->assertOk();
 
     expect($response->json('data.0.unit'))->toHaveKey('id');
 });
 
-it('returns ledger relationship on charge configs index when requested', function () {
+it('returns ledger relationship on ledger configs index when requested', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
-    UnitChargeConfig::factory()->create([
+    UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.configs', [$community, $unit]) . '?_relationships=ledger')
+        ->getJson(route('api.v1.show.unit.ledger.configs', [$community, $unit]) . '?_relationships=ledger')
         ->assertOk();
 
     expect($response->json('data.0.ledger'))->toHaveKey('id');
 });
 
-it('returns unit and ledger relationships together on charge configs index', function () {
+it('returns unit and ledger relationships together on ledger configs index', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
-    UnitChargeConfig::factory()->create([
+    UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.configs', [$community, $unit]) . '?_relationships=unit,ledger')
+        ->getJson(route('api.v1.show.unit.ledger.configs', [$community, $unit]) . '?_relationships=unit,ledger')
         ->assertOk();
 
     expect($response->json('data.0.unit'))->toHaveKey('id');
@@ -113,24 +113,24 @@ it('returns unit and ledger relationships together on charge configs index', fun
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// POST /communities/{community}/units/{unit}/charge-configs (create) — validation
+// POST /communities/{community}/units/{unit}/ledger-configs (create) — validation
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('creates a charge config for a unit', function () {
+it('creates a ledger config for a unit', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->recurring()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => $ledger->id,
             'amount'         => 450.00,
             'is_active'      => true,
         ])
         ->assertCreated();
 
-    $this->assertDatabaseHas('unit_charge_configs', [
+    $this->assertDatabaseHas('unit_ledger_configs', [
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
@@ -142,7 +142,7 @@ it('returns 422 when ledger_id is missing', function () {
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'amount' => 450,
         ])
         ->assertUnprocessable()
@@ -155,7 +155,7 @@ it('returns 422 when ledger_id is not a valid uuid', function () {
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => 'not-a-uuid',
             'amount'         => 450,
         ])
@@ -169,7 +169,7 @@ it('returns 422 when ledger_id does not exist', function () {
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => fake()->uuid(),
             'amount'         => 450,
         ])
@@ -184,7 +184,7 @@ it('returns 422 when amount is missing', function () {
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => $ledger->id,
         ])
         ->assertUnprocessable()
@@ -198,7 +198,7 @@ it('returns 422 when amount is negative', function () {
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => $ledger->id,
             'amount'         => -1,
         ])
@@ -206,28 +206,28 @@ it('returns 422 when amount is negative', function () {
         ->assertJsonValidationErrors(['amount']);
 });
 
-it('allows amount of zero on charge config create', function () {
+it('allows amount of zero on ledger config create', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => $ledger->id,
             'amount'         => 0,
         ])
         ->assertCreated();
 });
 
-it('allows is_active to be omitted on charge config create', function () {
+it('allows is_active to be omitted on ledger config create', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]), [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]), [
             'ledger_id' => $ledger->id,
             'amount'         => 150,
         ])
@@ -235,17 +235,17 @@ it('allows is_active to be omitted on charge config create', function () {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// POST /charge-configs — _relationships on create response
+// POST /ledger-configs — _relationships on create response
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns unit relationship in charge config create response when requested', function () {
+it('returns unit relationship in ledger config create response when requested', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]) . '?_relationships=unit', [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]) . '?_relationships=unit', [
             'ledger_id' => $ledger->id,
             'amount'         => 200,
         ])
@@ -254,14 +254,14 @@ it('returns unit relationship in charge config create response when requested', 
     expect($response->json('data.unit'))->toHaveKey('id');
 });
 
-it('returns ledger relationship in charge config create response when requested', function () {
+it('returns ledger relationship in ledger config create response when requested', function () {
     $user       = adminUser();
     $community     = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit       = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger = Ledger::factory()->create(['organization_id' => $user->organization_id]);
 
     $response = $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.unit.charge.config', [$community, $unit]) . '?_relationships=ledger', [
+        ->postJson(route('api.v1.create.unit.ledger.config', [$community, $unit]) . '?_relationships=ledger', [
             'ledger_id' => $ledger->id,
             'amount'         => 200,
         ])
@@ -271,75 +271,75 @@ it('returns ledger relationship in charge config create response when requested'
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// GET /communities/{community}/units/{unit}/charge-configs/{chargeConfig} (show)
+// GET /communities/{community}/units/{unit}/ledger-configs/{ledgerConfig} (show)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns a single charge config', function () {
+it('returns a single ledger config', function () {
     $user         = adminUser();
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.config', [$community, $unit, $chargeConfig]))
+        ->getJson(route('api.v1.show.unit.ledger.config', [$community, $unit, $ledgerConfig]))
         ->assertOk()
-        ->assertJsonPath('data.id', $chargeConfig->id);
+        ->assertJsonPath('data.id', $ledgerConfig->id);
 });
 
-it('returns 404 when showing a charge config from another occupant', function () {
+it('returns 404 when showing a ledger config from another occupant', function () {
     $user        = adminUser();
     $otherOccupant = createOrganization();
     $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
     $otherUnit   = Unit::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $otherOccupant->id]);
     $otherType   = Ledger::factory()->create(['organization_id' => $otherOccupant->id]);
-    $otherConfig = UnitChargeConfig::factory()->create([
+    $otherConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $otherUnit->id,
         'ledger_id' => $otherType->id,
     ]);
 
     $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.config', [$otherCommunity, $otherUnit, $otherConfig]))
+        ->getJson(route('api.v1.show.unit.ledger.config', [$otherCommunity, $otherUnit, $otherConfig]))
         ->assertNotFound();
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// GET /charge-configs/{chargeConfig} — _relationships
+// GET /ledger-configs/{ledgerConfig} — _relationships
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('returns unit relationship on charge config show when requested', function () {
+it('returns unit relationship on ledger config show when requested', function () {
     $user         = adminUser();
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.config', [$community, $unit, $chargeConfig]) . '?_relationships=unit')
+        ->getJson(route('api.v1.show.unit.ledger.config', [$community, $unit, $ledgerConfig]) . '?_relationships=unit')
         ->assertOk();
 
     expect($response->json('data.unit'))->toHaveKey('id');
     expect($response->json('data.unit.id'))->toBe($unit->id);
 });
 
-it('returns ledger relationship on charge config show when requested', function () {
+it('returns ledger relationship on ledger config show when requested', function () {
     $user         = adminUser();
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $response = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.unit.charge.config', [$community, $unit, $chargeConfig]) . '?_relationships=ledger')
+        ->getJson(route('api.v1.show.unit.ledger.config', [$community, $unit, $ledgerConfig]) . '?_relationships=ledger')
         ->assertOk();
 
     expect($response->json('data.ledger'))->toHaveKey('id');
@@ -347,15 +347,15 @@ it('returns ledger relationship on charge config show when requested', function 
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// PUT /communities/{community}/units/{unit}/charge-configs/{chargeConfig} (update)
+// PUT /communities/{community}/units/{unit}/ledger-configs/{ledgerConfig} (update)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('updates a charge config amount and active status', function () {
+it('updates a ledger config amount and active status', function () {
     $user         = adminUser();
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
         'amount'         => 150.00,
@@ -363,14 +363,14 @@ it('updates a charge config amount and active status', function () {
     ]);
 
     $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.unit.charge.config', [$community, $unit, $chargeConfig]), [
+        ->putJson(route('api.v1.update.unit.ledger.config', [$community, $unit, $ledgerConfig]), [
             'amount'    => 250.00,
             'is_active' => false,
         ])
         ->assertOk();
 
-    $this->assertDatabaseHas('unit_charge_configs', [
-        'id'        => $chargeConfig->id,
+    $this->assertDatabaseHas('unit_ledger_configs', [
+        'id'        => $ledgerConfig->id,
         'is_active' => false,
     ]);
 });
@@ -380,13 +380,13 @@ it('returns 422 when update ledger_id is not a valid uuid', function () {
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.unit.charge.config', [$community, $unit, $chargeConfig]), [
+        ->putJson(route('api.v1.update.unit.ledger.config', [$community, $unit, $ledgerConfig]), [
             'ledger_id' => 'not-a-uuid',
         ])
         ->assertUnprocessable()
@@ -398,63 +398,63 @@ it('returns 422 when update amount is negative', function () {
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.unit.charge.config', [$community, $unit, $chargeConfig]), [
+        ->putJson(route('api.v1.update.unit.ledger.config', [$community, $unit, $ledgerConfig]), [
             'amount' => -50,
         ])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['amount']);
 });
 
-it('returns 404 when updating a charge config from another occupant', function () {
+it('returns 404 when updating a ledger config from another occupant', function () {
     $user        = adminUser();
     $otherOccupant = createOrganization();
     $otherCommunity = Community::factory()->create(['organization_id' => $otherOccupant->id]);
     $otherUnit   = Unit::factory()->create(['community_id' => $otherCommunity->id, 'organization_id' => $otherOccupant->id]);
     $otherType   = Ledger::factory()->create(['organization_id' => $otherOccupant->id]);
-    $otherConfig = UnitChargeConfig::factory()->create([
+    $otherConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $otherUnit->id,
         'ledger_id' => $otherType->id,
     ]);
 
     $this->actingAs($user, 'api')
-        ->putJson(route('api.v1.update.unit.charge.config', [$otherCommunity, $otherUnit, $otherConfig]), [
+        ->putJson(route('api.v1.update.unit.ledger.config', [$otherCommunity, $otherUnit, $otherConfig]), [
             'amount' => 999,
         ])
         ->assertNotFound();
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// DELETE /communities/{community}/units/{unit}/charge-configs/{chargeConfig} (delete)
+// DELETE /communities/{community}/units/{unit}/ledger-configs/{ledgerConfig} (delete)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('deletes a single charge config', function () {
+it('deletes a single ledger config', function () {
     $user         = adminUser();
     $community       = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit         = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
     $ledger   = Ledger::factory()->create(['organization_id' => $user->organization_id]);
-    $chargeConfig = UnitChargeConfig::factory()->create([
+    $ledgerConfig = UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
     ]);
 
     $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.unit.charge.config', [$community, $unit, $chargeConfig]))
+        ->deleteJson(route('api.v1.delete.unit.ledger.config', [$community, $unit, $ledgerConfig]))
         ->assertOk();
 
-    $this->assertDatabaseMissing('unit_charge_configs', ['id' => $chargeConfig->id]);
+    $this->assertDatabaseMissing('unit_ledger_configs', ['id' => $ledgerConfig->id]);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// DELETE /communities/{community}/units/{unit}/charge-configs (bulk delete) — validation
+// DELETE /communities/{community}/units/{unit}/ledger-configs (bulk delete) — validation
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('bulk deletes own-occupant charge configs', function () {
+it('bulk deletes own-occupant ledger configs', function () {
     $user   = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
@@ -463,46 +463,46 @@ it('bulk deletes own-occupant charge configs', function () {
         Ledger::factory()->create(['organization_id' => $user->organization_id]),
         Ledger::factory()->create(['organization_id' => $user->organization_id]),
         Ledger::factory()->create(['organization_id' => $user->organization_id]),
-    ])->map(fn($ct) => UnitChargeConfig::factory()->create(['unit_id' => $unit->id, 'ledger_id' => $ct->id]));
+    ])->map(fn($ct) => UnitLedgerConfig::factory()->create(['unit_id' => $unit->id, 'ledger_id' => $ct->id]));
 
     $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.unit.charge.configs', [$community, $unit]), [
-            'charge_config_ids' => $configs->pluck('id')->all(),
+        ->deleteJson(route('api.v1.delete.unit.ledger.configs', [$community, $unit]), [
+            'ledger_config_ids' => $configs->pluck('id')->all(),
         ])
         ->assertOk();
 
-    $configs->each(fn ($c) => $this->assertDatabaseMissing('unit_charge_configs', ['id' => $c->id]));
+    $configs->each(fn ($c) => $this->assertDatabaseMissing('unit_ledger_configs', ['id' => $c->id]));
 });
 
-it('returns 422 when bulk delete charge_config_ids is missing', function () {
+it('returns 422 when bulk delete ledger_config_ids is missing', function () {
     $user   = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.unit.charge.configs', [$community, $unit]), [])
+        ->deleteJson(route('api.v1.delete.unit.ledger.configs', [$community, $unit]), [])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['charge_config_ids']);
+        ->assertJsonValidationErrors(['ledger_config_ids']);
 });
 
-it('returns 422 when bulk delete charge_config_ids is an empty array', function () {
+it('returns 422 when bulk delete ledger_config_ids is an empty array', function () {
     $user   = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.unit.charge.configs', [$community, $unit]), ['charge_config_ids' => []])
+        ->deleteJson(route('api.v1.delete.unit.ledger.configs', [$community, $unit]), ['ledger_config_ids' => []])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['charge_config_ids']);
+        ->assertJsonValidationErrors(['ledger_config_ids']);
 });
 
-it('returns 422 when bulk delete charge_config_ids contains a non-uuid value', function () {
+it('returns 422 when bulk delete ledger_config_ids contains a non-uuid value', function () {
     $user   = adminUser();
     $community = Community::factory()->create(['organization_id' => $user->organization_id]);
     $unit   = Unit::factory()->create(['community_id' => $community->id, 'organization_id' => $user->organization_id]);
 
     $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.unit.charge.configs', [$community, $unit]), ['charge_config_ids' => ['not-a-uuid']])
+        ->deleteJson(route('api.v1.delete.unit.ledger.configs', [$community, $unit]), ['ledger_config_ids' => ['not-a-uuid']])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['charge_config_ids.0']);
+        ->assertJsonValidationErrors(['ledger_config_ids.0']);
 });

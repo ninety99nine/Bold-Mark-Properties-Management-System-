@@ -201,6 +201,7 @@ async function sendCommunication() {
               v-model="form.communityIds"
               heading="Communities"
               :options="communityOptions"
+              searchable
               placeholder="Nothing selected"
               class="flex-1"
             />

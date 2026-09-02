@@ -46,16 +46,14 @@ it('seeds the reserve fund chart (RFI/RFE) with fund=reserve', function (): void
     expect(Ledger::where('organization_id', $org->id)->where('code', '1000/000')->value('fund'))->toBe('main');
 });
 
-it('applies other_income overrides on interest & other income lines', function (): void {
+it('classifies every income sub-account as Sales (WeConnectU-exact)', function (): void {
     $org = createOrganization();
     (new ChartOfAccountsSeeder())->seedForOrganization($org->id);
 
-    foreach (['1000/003', '1000/004', '1000/014'] as $code) {
+    foreach (['1000/001', '1000/003', '1000/004', '1000/014', '1000/016'] as $code) {
         expect(Ledger::where('organization_id', $org->id)->where('code', $code)->value('financial_category'))
-            ->toBe(FinancialCategory::OTHER_INCOME);
+            ->toBe(FinancialCategory::SALES);
     }
-    expect(Ledger::where('organization_id', $org->id)->where('code', '1000/001')->value('financial_category'))
-        ->toBe(FinancialCategory::SALES);
 });
 
 it('is idempotent across repeated seeding', function (): void {
@@ -110,6 +108,6 @@ it('returns the next free sub-account code under a main code', function (): void
     $org = createOrganization();
     (new ChartOfAccountsSeeder())->seedForOrganization($org->id);
 
-    // 2000/000 group seeds up to 2000/024, so the next free sub code is 2000/025.
-    expect(Ledger::nextSubAccountCode($org->id, '2000/000'))->toBe('2000/025');
+    // 2000/000 group seeds up to 2000/026, so the next free sub code is 2000/027.
+    expect(Ledger::nextSubAccountCode($org->id, '2000/000'))->toBe('2000/027');
 });

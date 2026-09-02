@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('unit_charge_configs', function (Blueprint $table) {
+        Schema::create('unit_ledger_configs', function (Blueprint $table) {
 
             $table->uuid('id')->primary();
 
@@ -36,6 +36,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('unit_charge_configs');
+        Schema::dropIfExists('unit_ledger_configs');
     }
 };

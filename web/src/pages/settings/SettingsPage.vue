@@ -603,7 +603,7 @@ const FLUSH_TARGETS = [
   {
     id: 'units',
     label: 'Units',
-    description: 'All units, charge configurations, and activity history',
+    description: 'All units, ledger configurations, and activity history',
     forces: ['owners', 'occupants', 'invoices', 'cashbook_entries'],
     hidden: true,
   },

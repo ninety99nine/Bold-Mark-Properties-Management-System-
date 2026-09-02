@@ -24,7 +24,7 @@ class ShowBankAccountsRequest extends FormRequest
     {
         return [
             'community_id' => ['sometimes', 'uuid', 'exists:communities,id'],
-            'is_active'    => ['sometimes', 'boolean'],
+            'is_active'    => ['sometimes', 'nullable', 'boolean'],
         ];
     }
 }

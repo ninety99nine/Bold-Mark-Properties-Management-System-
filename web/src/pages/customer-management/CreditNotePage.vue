@@ -17,6 +17,7 @@ import { useToast } from '@/composables/useToast'
 import { useCommunityStore } from '@/stores/community'
 import { useAuthStore } from '@/stores/auth'
 import AppSelect        from '@/components/common/AppSelect.vue'
+import AppAsyncSelect    from '@/components/common/AppAsyncSelect.vue'
 import AppAccountSelect  from '@/components/common/AppAccountSelect.vue'
 import AppInput         from '@/components/common/AppInput.vue'
 import AppButton        from '@/components/common/AppButton.vue'
@@ -78,13 +79,29 @@ const submitting = ref(false)
 const errors     = ref({})
 
 // ── Options ─────────────────────────────────────────────────────────────
-const customerOptions = computed(() =>
-  units.value.map((u) => {
-    const name = u.owner?.full_name || u.current_occupant?.full_name || 'No owner'
-    const code = u.customer_code || u.unit_number
-    return { value: u.id, label: `${code} — ${name} · Unit ${u.unit_number}` }
+const unitOption = (u) => {
+  const name = u.owner?.full_name || u.current_occupant?.full_name || 'No owner'
+  const code = u.customer_code || u.unit_number
+  return { value: u.id, label: `${code} — ${name} · Unit ${u.unit_number}` }
+}
+
+const customerOptions = computed(() => units.value.map(unitOption))
+
+// API-backed search for the customer picker (debounced inside AppAsyncSelect).
+// Fetched units are merged into `units` so the selected customer's e-mail / unit
+// details resolve even when picked from a search hit outside the initial list.
+async function searchUnits(query) {
+  const communityId = community.selectedId
+  if (!communityId) return []
+  const { data } = await api.get(`/communities/${communityId}/units`, {
+    params: { _search: query, _per_page: 50, _sort: 'unit_number:asc' },
   })
-)
+  const found = data?.data ?? []
+  const byId = new Map(units.value.map((u) => [u.id, u]))
+  for (const u of found) byId.set(u.id, u)
+  units.value = [...byId.values()]
+  return found.map(unitOption)
+}
 
 // Chart-of-accounts options for the Account picker: "code - name" grouped by
 // category. When a chart of accounts exists we show only the coded accounts,
@@ -399,14 +416,16 @@ function resetForm() {
     <div v-else class="rounded-lg border border-border bg-white p-6 space-y-8">
       <!-- Customer / date / reason / reference -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-5">
-        <AppSelect
-          v-model="form.unit_id"
-          label="Customer"
-          :options="customerOptions"
-          placeholder="Nothing selected"
-          required
-          :error="errors.unit_id"
-        />
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-fg">Customer<span class="text-danger ml-0.5">*</span></label>
+          <AppAsyncSelect
+            v-model="form.unit_id"
+            :options="customerOptions"
+            :fetcher="searchUnits"
+            placeholder="Nothing selected"
+            :error="errors.unit_id"
+          />
+        </div>
         <AppDatePicker v-model="form.credit_note_date" label="Date" required />
         <AppInput v-model="form.reason" label="Credit note reason" placeholder="" />
       </div>

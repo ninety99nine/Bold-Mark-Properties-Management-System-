@@ -17,6 +17,7 @@ import AppButton       from '@/components/common/AppButton.vue'
 import AppSelect       from '@/components/common/AppSelect.vue'
 import AppInput        from '@/components/common/AppInput.vue'
 import AppAccountSelect from '@/components/common/AppAccountSelect.vue'
+import AppAsyncSelect   from '@/components/common/AppAsyncSelect.vue'
 import AppDatePicker   from '@/components/common/AppDatePicker.vue'
 
 const community = useCommunityStore()
@@ -81,9 +82,18 @@ function primaryAccount(inv) {
 const suppliers = ref([])
 const ledgers   = ref([])
 
-const supplierOptions = computed(() =>
-  suppliers.value.map((s) => ({ value: s.id, label: `${s.supplier_code} - ${s.name}` })),
-)
+const supplierOption = (s) => ({ value: s.id, label: `${s.supplier_code} - ${s.name}` })
+
+const supplierOptions = computed(() => suppliers.value.map(supplierOption))
+
+// API-backed search for the supplier picker (debounced inside AppAsyncSelect).
+async function searchSuppliers(query) {
+  if (!communityId.value) return []
+  const { data } = await api.get('/suppliers', {
+    params: { community_id: communityId.value, search: query, _per_page: 50 },
+  })
+  return rowsFrom({ data }).map(supplierOption)
+}
 
 const ledgerOptions = computed(() => {
   const coded = ledgers.value.filter((l) => l.code)
@@ -343,7 +353,16 @@ watch([tab, month], loadInvoices)
           </div>
 
           <!-- Supplier -->
-          <AppSelect v-model="form.supplier_id" label="Supplier" :options="supplierOptions" placeholder="Start typing to search" />
+          <div class="flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-foreground">Supplier</label>
+            <AppAsyncSelect
+              v-model="form.supplier_id"
+              :options="supplierOptions"
+              :fetcher="searchSuppliers"
+              placeholder="Nothing selected"
+              search-placeholder="Start typing to search…"
+            />
+          </div>
 
           <!-- Date + Source Doc Number -->
           <div class="grid grid-cols-1 gap-5 md:grid-cols-2">

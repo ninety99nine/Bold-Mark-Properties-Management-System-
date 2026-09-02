@@ -37,6 +37,7 @@ class LedgerResource extends JsonResource
             'fund'                     => $this->fund,
             'parent_id'                => $this->parent_id,
             'allow_sub_accounts'       => (bool) $this->allow_sub_accounts,
+            'is_budget_item'           => (bool) $this->is_budget_item,
 
             'created_at'               => $this->created_at?->toDateTimeString(),
             'updated_at'               => $this->updated_at?->toDateTimeString(),

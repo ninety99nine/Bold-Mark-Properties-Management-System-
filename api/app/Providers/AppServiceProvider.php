@@ -15,7 +15,7 @@ use App\Models\Owner;
 use App\Models\RiskRule;
 use App\Models\Organization;
 use App\Models\Unit;
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 use App\Models\Occupant;
 use App\Models\User;
 use App\Policies\BankAccountPolicy;
@@ -30,7 +30,7 @@ use App\Policies\InvoicePolicy;
 use App\Policies\OwnerPolicy;
 use App\Policies\RiskRulePolicy;
 use App\Policies\OrganizationPolicy;
-use App\Policies\UnitChargeConfigPolicy;
+use App\Policies\UnitLedgerConfigPolicy;
 use App\Policies\UnitPolicy;
 use App\Policies\OccupantPolicy;
 use App\Policies\UserPolicy;
@@ -120,7 +120,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Unit::class, UnitPolicy::class);
         Gate::policy(Owner::class, OwnerPolicy::class);
         Gate::policy(Occupant::class, OccupantPolicy::class);
-        Gate::policy(UnitChargeConfig::class, UnitChargeConfigPolicy::class);
+        Gate::policy(UnitLedgerConfig::class, UnitLedgerConfigPolicy::class);
         Gate::policy(Invoice::class, InvoicePolicy::class);
         Gate::policy(\App\Models\CreditNote::class, \App\Policies\CreditNotePolicy::class);
         Gate::policy(BankAccount::class, BankAccountPolicy::class);
@@ -152,7 +152,7 @@ class AppServiceProvider extends ServiceProvider
         Route::model('customerGroup', CustomerGroup::class);
         Route::model('occupant', Occupant::class);
         Route::model('ledger', Ledger::class);
-        Route::model('chargeConfig', UnitChargeConfig::class);
+        Route::model('ledgerConfig', UnitLedgerConfig::class);
         // Resolves {invoice} — includes soft-deleted so the detail page can show deleted invoices
         Route::bind('invoice', function (string $value) {
             return Invoice::withTrashed()->findOrFail($value);

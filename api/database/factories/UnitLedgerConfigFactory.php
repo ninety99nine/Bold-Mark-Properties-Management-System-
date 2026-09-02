@@ -2,15 +2,15 @@
 
 namespace Database\Factories;
 
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\UnitChargeConfig>
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\UnitLedgerConfig>
  */
-class UnitChargeConfigFactory extends Factory
+class UnitLedgerConfigFactory extends Factory
 {
-    protected $model = UnitChargeConfig::class;
+    protected $model = UnitLedgerConfig::class;
 
     public function definition(): array
     {

@@ -654,7 +654,7 @@ class UnitService extends BaseService
         // Re-query so the balance subqueries are applied (Route Model Binding loads
         // the bare model without them, which would always return balance = 0).
         $loaded = Unit::where('units.id', $unit->id)
-            ->with(['owner', 'owners', 'currentOccupant', 'occupants', 'chargeConfigs.ledger', 'community', 'collectionNotes'])
+            ->with(['owner', 'owners', 'currentOccupant', 'occupants', 'ledgerConfigs.ledger', 'community', 'collectionNotes'])
             ->addSelect([
                 'units.*',
                 'outstanding_amount' => Invoice::selectRaw(

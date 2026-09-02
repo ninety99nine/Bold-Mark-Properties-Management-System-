@@ -3,10 +3,10 @@
 namespace App\Policies;
 
 use App\Models\Unit;
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 use App\Models\User;
 
-class UnitChargeConfigPolicy extends BasePolicy
+class UnitLedgerConfigPolicy extends BasePolicy
 {
     /**
      * Super-admins bypass all policy checks.
@@ -21,7 +21,7 @@ class UnitChargeConfigPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can view any charge configs for the given unit.
+     * Determine whether the user can view any ledger configs for the given unit.
      */
     public function viewAny(User $user, Unit $unit): bool
     {
@@ -32,9 +32,9 @@ class UnitChargeConfigPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can view the charge config.
+     * Determine whether the user can view the ledger config.
      */
-    public function view(User $user, Unit $unit, UnitChargeConfig $config): bool
+    public function view(User $user, Unit $unit, UnitLedgerConfig $config): bool
     {
         if ($unit->organization_id !== $user->organization_id) {
             abort(404);
@@ -43,7 +43,7 @@ class UnitChargeConfigPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can create a charge config for the given unit.
+     * Determine whether the user can create a ledger config for the given unit.
      */
     public function create(User $user, Unit $unit): bool
     {
@@ -54,9 +54,9 @@ class UnitChargeConfigPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can update the charge config.
+     * Determine whether the user can update the ledger config.
      */
-    public function update(User $user, Unit $unit, UnitChargeConfig $config): bool
+    public function update(User $user, Unit $unit, UnitLedgerConfig $config): bool
     {
         if ($unit->organization_id !== $user->organization_id) {
             abort(404);
@@ -65,7 +65,7 @@ class UnitChargeConfigPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can bulk-delete charge configs for the given unit.
+     * Determine whether the user can bulk-delete ledger configs for the given unit.
      */
     public function deleteAny(User $user, Unit $unit): bool
     {
@@ -76,9 +76,9 @@ class UnitChargeConfigPolicy extends BasePolicy
     }
 
     /**
-     * Determine whether the user can delete the charge config.
+     * Determine whether the user can delete the ledger config.
      */
-    public function delete(User $user, Unit $unit, UnitChargeConfig $config): bool
+    public function delete(User $user, Unit $unit, UnitLedgerConfig $config): bool
     {
         if ($unit->organization_id !== $user->organization_id) {
             abort(404);

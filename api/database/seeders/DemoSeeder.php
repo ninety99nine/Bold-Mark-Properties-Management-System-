@@ -8,6 +8,8 @@ use App\Models\CashbookEntry;
 use App\Models\ComplianceTemplate;
 use App\Models\ComplianceTemplateItem;
 use App\Models\Community;
+use App\Models\CreditNote;
+use App\Models\UnitCollectionNote;
 use App\Models\CommunityBillingSetup;
 use App\Models\CommunityMember;
 use App\Models\CustomerGroup;
@@ -47,11 +49,29 @@ class DemoSeeder extends Seeder
     protected string $organizationId;
     protected array  $ledgers  = [];
     protected int    $invoiceCounter = 0;
+    protected int    $creditNoteCounter = 0;
     protected int    $receiptIndex   = 0;
     protected ?int   $managerUserId  = null;
     protected int    $communitySeq   = 0;
 
-    /** 9 billing periods: July 2025 → March 2026 (billing day 25) */
+    /** Cache of the primary (current) bank account id per community. */
+    protected array  $currentBankByCommunity = [];
+
+    /**
+     * The seed's "today" — every relative date (payment dates, arrears ageing,
+     * credit-note dates) is anchored here so the demo always looks current as at
+     * this point in time.
+     */
+    protected const TODAY = '2026-09-02';
+
+    /**
+     * 15 monthly billing periods: July 2025 → September 2026 (billing day 25,
+     * due the 1st of the following month). Running billing right up to the
+     * current month means the current Financial Year window is populated, so the
+     * Age Analysis / Detailed Ledger / dashboards all show live movement — and
+     * the trailing months are what the payment archetypes leave unpaid to build
+     * a realistic arrears spread (see ARCHETYPES).
+     */
     protected const PERIODS = [
         ['period' => '2025-07-01', 'sent_at' => '2025-07-25 08:00:00', 'due_date' => '2025-08-01'],
         ['period' => '2025-08-01', 'sent_at' => '2025-08-25 08:00:00', 'due_date' => '2025-09-01'],
@@ -62,6 +82,49 @@ class DemoSeeder extends Seeder
         ['period' => '2026-01-01', 'sent_at' => '2026-01-25 08:00:00', 'due_date' => '2026-02-01'],
         ['period' => '2026-02-01', 'sent_at' => '2026-02-25 08:00:00', 'due_date' => '2026-03-04'],
         ['period' => '2026-03-01', 'sent_at' => '2026-03-25 08:00:00', 'due_date' => '2026-04-01'],
+        ['period' => '2026-04-01', 'sent_at' => '2026-04-25 08:00:00', 'due_date' => '2026-05-01'],
+        ['period' => '2026-05-01', 'sent_at' => '2026-05-25 08:00:00', 'due_date' => '2026-06-01'],
+        ['period' => '2026-06-01', 'sent_at' => '2026-06-25 08:00:00', 'due_date' => '2026-07-01'],
+        ['period' => '2026-07-01', 'sent_at' => '2026-07-25 08:00:00', 'due_date' => '2026-08-01'],
+        ['period' => '2026-08-01', 'sent_at' => '2026-08-25 08:00:00', 'due_date' => '2026-09-01'],
+        ['period' => '2026-09-01', 'sent_at' => '2026-09-01 08:00:00', 'due_date' => '2026-10-01'],
+    ];
+
+    /**
+     * WeConnectU-style customer payment archetypes. Assigned deterministically to
+     * the first units of every community (then everyone else pays up), so each
+     * community always shows the full Age Analysis spread — a customer at every
+     * status — while the majority owe nothing. All monetary movement is real GL:
+     * unpaid trailing months age into the buckets, paid months post a receipt
+     * that credits the customer, so the books tie out at the customer level.
+     *
+     * `unpaid` = number of most-recent monthly levies left unpaid (aged as at
+     * TODAY): 2→30-day, 3→60-day, 4→90-day, 6→120+, 10→deep 120+.
+     *
+     * @var array<string, array{unpaid:int, status:string, partial:bool, credit_note:bool}>
+     */
+    protected const ARCHETYPES = [
+        'good'        => ['unpaid' => 0,  'status' => 'none',                'partial' => false, 'credit_note' => false],
+        'credit'      => ['unpaid' => 0,  'status' => 'none',                'partial' => false, 'credit_note' => true],
+        'notice1'     => ['unpaid' => 2,  'status' => 'first_notice',        'partial' => false, 'credit_note' => false],
+        'notice2'     => ['unpaid' => 3,  'status' => 'second_notice',       'partial' => false, 'credit_note' => false],
+        'final'       => ['unpaid' => 4,  'status' => 'final_notice',        'partial' => false, 'credit_note' => false],
+        'demand'      => ['unpaid' => 6,  'status' => 'letter_of_demand',    'partial' => false, 'credit_note' => false],
+        'handed_over' => ['unpaid' => 10, 'status' => 'handed_over',         'partial' => false, 'credit_note' => false],
+        'arrangement' => ['unpaid' => 4,  'status' => 'payment_arrangement', 'partial' => true,  'credit_note' => false],
+    ];
+
+    /**
+     * Archetype assigned to each unit by its position in the community, cycling
+     * through every debtor case for the first units then paid-up ('good') for the
+     * rest. Guarantees a full status spread even on smaller communities.
+     *
+     * @var array<int, string>
+     */
+    protected const ARCHETYPE_ROTATION = [
+        'handed_over', 'demand', 'final', 'notice2', 'notice1',
+        'arrangement', 'credit', 'notice1', 'final', 'notice2',
+        'demand', 'credit',
     ];
 
     protected const RECEIPTS = [
@@ -73,36 +136,20 @@ class DemoSeeder extends Seeder
     ];
 
     /**
-     * Maps shorthand codes used in community logic to ledger names in DB.
-     * System types are matched by 'type' field; presets by 'name'.
+     * Maps the shorthand codes used in demo billing logic to the standard
+     * WeConnectU chart-of-accounts codes (seeded by ChartOfAccountsSeeder).
+     * Ledgers are resolved by code.
      */
-    protected const LEDGER_NAME_MAP = [
-        'LEVY'                 => 'Admin Levy',
-        'RESERVE_LEVY'         => 'Reserve Levy',
-        'CSOS_LEVY'            => 'CSOS Levy',
-        'RENT'                 => 'Rent',
-        'SPECIAL_LEVY'         => 'Special Levy',
-        'WATER_RECOVERY'       => 'Water Recovery',
-        'ELECTRICITY_RECOVERY' => 'Electricity Recovery',
-        'GAS_RECOVERY'         => 'Gas Recovery',
-        'SEWERAGE_RECOVERY'    => 'Sewerage Recovery',
-        'REFUSE_RECOVERY'      => 'Refuse Recovery',
-        'LATE_INTEREST'        => 'Late Payment Interest',
-        'LATE_PENALTY'         => 'Late Payment Penalty',
-        'INSURANCE_EXCESS'     => 'Insurance Excess',
-        'KEY_DEPOSIT'          => 'Key Deposit',
-        'DAMAGE_DEPOSIT'       => 'Damage Deposit',
-        'PARKING_RENTAL'       => 'Parking Rental',
-        'STORAGE_RENTAL'       => 'Storage Rental',
-        'MOVING_IN'            => 'Moving-In Fee',
-        'MOVING_OUT'           => 'Moving-Out Fee',
-        'ACCESS_CARD'          => 'Access Card Fee',
-        'GYM_ACCESS'           => 'Gym Access',
-        'POOL_ACCESS'          => 'Pool Access',
-        'GARDEN_MAINT'         => 'Garden Maintenance',
-        'PET_LEVY'             => 'Pet Levy',
-        'SECURITY_CONTRIB'     => 'Security Contribution',
-        'LEGAL_RECOVERY'       => 'Legal Recovery',
+    protected const LEDGER_CODE_MAP = [
+        'LEVY'                 => '1000/001', // Levies
+        'RESERVE_LEVY'         => 'RFI/001',  // Reserve Fund Levy (reserve fund)
+        'RENT'                 => '1000/005', // Rental Income
+        'SPECIAL_LEVY'         => '1000/002', // Special Levy
+        'WATER_RECOVERY'       => '1000/011', // Water Recovered
+        'ELECTRICITY_RECOVERY' => '1000/013', // Electricity Recovered
+        'SEWERAGE_RECOVERY'    => '1000/012', // Sewerage Recovered
+        'LATE_INTEREST'        => '1000/003', // Interest Received Arrears
+        'LATE_PENALTY'         => '1000/010', // Penalty Income
     ];
 
     /* ------------------------------------------------------------------ */
@@ -119,20 +166,14 @@ class DemoSeeder extends Seeder
         $this->seedRolesAndPermissions();
         $this->seedSuperAdmin();
         $this->seedOrganization();
-        $this->seedDefaultLedgers();
 
         // Seed the full WeConnectU chart of accounts (with GL classification) for
-        // every organisation so the double-entry control accounts exist — Accounts
-        // Receivable (7000/001), Accounts Payable (6000/003), VAT Control
-        // (6000/001), Suspense (9900/001), Retained Income (5000/001). The GL
-        // posting engine resolves control accounts by financial category, and the
-        // gl:backfill at the end of this seed needs them. Idempotent.
+        // every organisation. This is the single source of the chart — billing
+        // posts against the standard income accounts (1000/001 Levies, 1000/005
+        // Rental Income, RFI/001 Reserve Fund Levy, utility recoveries, etc.). The
+        // GL posting engine resolves control accounts by financial category, and
+        // the gl:backfill at the end of this seed needs them. Idempotent.
         $this->call(ChartOfAccountsSeeder::class);
-
-        // The default billing ledgers (charge types like "Admin Levy") are created
-        // without a GL code/classification; classify them as income accounts so
-        // they appear on the Trial Balance / Income Statement and the books tie out.
-        $this->classifyBillingLedgers();
 
         $this->seedAllUsers();
         $this->seedExternalUsers();
@@ -159,6 +200,11 @@ class DemoSeeder extends Seeder
         // batches (Phase 1/2 afterCreating) are simply skipped.
         $this->command?->info('Posting General Ledger for seeded documents...');
         Artisan::call('gl:backfill', [], $this->command?->getOutput());
+
+        // Re-derive the cached unit balances from the now-posted ledger (the
+        // in-loop recalc ran before the backfill, so balances would be stale).
+        $this->command?->info('Recalculating unit balances from the General Ledger...');
+        Artisan::call('units:recalculate-balances', ['--organization' => $this->organizationId], $this->command?->getOutput());
 
         $this->command?->info('Demo seed complete.');
     }
@@ -356,43 +402,6 @@ class DemoSeeder extends Seeder
     /*  DEFAULT LEDGERS                                                */
     /* ------------------------------------------------------------------ */
 
-    private function seedDefaultLedgers(): void
-    {
-        $this->command?->info('Seeding default ledgers...');
-        foreach (Organization::all() as $organization) {
-            CommunityLedgerService::seedDefaultsForOrganization($organization->id);
-        }
-    }
-
-    /**
-     * Give any code-less billing ledger a proper income-account classification
-     * (code 1000/1nn, Sales / Income Statement, main fund, under the 1000/000
-     * INCOME main account) so GL reports include it and the Trial Balance ties out.
-     */
-    private function classifyBillingLedgers(): void
-    {
-        foreach (Organization::all() as $organization) {
-            $main = Ledger::where('organization_id', $organization->id)->where('code', '1000/000')->first();
-            $seq  = 100;
-
-            Ledger::where('organization_id', $organization->id)
-                ->whereNull('code')
-                ->orderBy('name')
-                ->get()
-                ->each(function (Ledger $ledger) use (&$seq, $main) {
-                    $seq++;
-                    $ledger->update([
-                        'code'               => '1000/' . $seq,
-                        'category'           => '1000/000 - INCOME',
-                        'account_type'       => 'income_statement',
-                        'financial_category' => \App\Enums\FinancialCategory::SALES->value,
-                        'fund'               => 'main',
-                        'parent_id'          => $main?->id,
-                    ]);
-                });
-        }
-    }
-
     /* ------------------------------------------------------------------ */
     /*  USERS (internal + 4th admin)                                        */
     /* ------------------------------------------------------------------ */
@@ -520,10 +529,9 @@ class DemoSeeder extends Seeder
         $this->command?->info('Seeding journal groups...');
         $this->call(JournalGroupSeeder::class);
 
-        // Spread collection statuses / debit-order / transfer flags so the Age
-        // Analysis status markers show the full WeConnectU range.
-        $this->command?->info('Seeding collection statuses...');
-        $this->call(DemoCollectionStatusSeeder::class);
+        // Collection status / debit-order / transfer flags are set per unit by the
+        // payment archetype (applyCollectionProfile) during seeding, so the Age
+        // Analysis markers already match each customer's real arrears.
 
         // Status-change history for the Status Batches / Automatic Status Changes pages.
         $this->command?->info('Seeding status history...');
@@ -532,14 +540,12 @@ class DemoSeeder extends Seeder
 
     private function loadLedgers(): void
     {
-        $nameToCode = array_flip(self::LEDGER_NAME_MAP);
-        Ledger::where('organization_id', $this->organizationId)->get()
-            ->each(function ($ct) use ($nameToCode) {
-                $code = $nameToCode[$ct->name] ?? null;
-                if ($code) {
-                    $this->ledgers[$code] = $ct;
-                }
-            });
+        $byCode = Ledger::where('organization_id', $this->organizationId)->get()->keyBy('code');
+        foreach (self::LEDGER_CODE_MAP as $shorthand => $code) {
+            if ($ledger = $byCode->get($code)) {
+                $this->ledgers[$shorthand] = $ledger;
+            }
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -679,17 +685,11 @@ class DemoSeeder extends Seeder
 
     private function enableCommunityLedgers(Community $community, string $type): void
     {
-        // Every demo community is a levy-billed ownership scheme (the 5 supported
-        // entity types), so they all share the levy ledger set.
-        $activeCodes = ['LEVY','WATER_RECOVERY','ELECTRICITY_RECOVERY','SEWERAGE_RECOVERY',
-                        'REFUSE_RECOVERY','PARKING_RENTAL','GYM_ACCESS','POOL_ACCESS',
-                        'PET_LEVY','GARDEN_MAINT','SECURITY_CONTRIB','SPECIAL_LEVY',
-                        'LATE_INTEREST','LATE_PENALTY','ACCESS_CARD'];
-
-        foreach ($this->ledgers as $code => $ct) {
+        // Enable the standard WeConnectU income accounts billing resolves against.
+        foreach ($this->ledgers as $code => $ledger) {
             CommunityLedger::updateOrCreate(
-                ['community_id' => $community->id, 'ledger_id' => $ct->id],
-                ['is_active' => in_array($code, $activeCodes, true)]
+                ['community_id' => $community->id, 'ledger_id' => $ledger->id],
+                ['is_active' => true]
             );
         }
     }
@@ -700,6 +700,8 @@ class DemoSeeder extends Seeder
 
     private function seedUnits(Community $community, array $def): void
     {
+        $unitIndex = 0;
+
         foreach ($def['units'] as $unitDef) {
             $unit  = $this->createUnit($community, $unitDef);
             $owner = $this->createOwner($unit, $unitDef['owner']);
@@ -714,9 +716,30 @@ class DemoSeeder extends Seeder
                 $currentOccupant = $this->seedOccupants($unit, $unitDef);
             }
 
-            $this->seedInvoicesAndPayments($community, $unit, $owner, $currentOccupant, $unitDef, $def);
+            // A WeConnectU-style payment archetype drives which levies stay
+            // unpaid (→ Age Analysis arrears + collection status) and which post
+            // a receipt that credits the customer (→ books balance per customer).
+            $archetype = $this->archetypeFor($unitIndex);
+
+            $this->seedInvoicesAndPayments($community, $unit, $owner, $currentOccupant, $unitDef, $def, $archetype);
+            $this->applyCollectionProfile($unit, $owner, $archetype, $unitIndex);
             $this->seedUnitActivities($unit, $owner, $currentOccupant, $def['type']);
+
+            $unitIndex++;
         }
+    }
+
+    /**
+     * Resolve the payment archetype for a unit by its position in the community
+     * (rotation of debtor cases first, then paid-up), skipping cases that make no
+     * sense for an unbilled unit.
+     *
+     * @param int $unitIndex
+     * @return string
+     */
+    private function archetypeFor(int $unitIndex): string
+    {
+        return self::ARCHETYPE_ROTATION[$unitIndex] ?? 'good';
     }
 
     private function createUnit(Community $community, array $def): Unit
@@ -828,27 +851,28 @@ class DemoSeeder extends Seeder
 
     private function seedInvoicesAndPayments(
         Community $community, Unit $unit, Owner $owner,
-        ?Occupant $currentOccupant, array $unitDef, array $communityDef
+        ?Occupant $currentOccupant, array $unitDef, array $communityDef, string $archetype
     ): void {
-        $startPeriod  = $communityDef['start_period'];
-        $periods      = array_slice(self::PERIODS, $startPeriod);
-        $isDebtor     = $unitDef['debtor'] ?? false;
-        $debtorFrom   = $unitDef['debtor_from'] ?? 6;
-        $communityType   = $communityDef['type'];
+        $startPeriod   = $communityDef['start_period'];
+        $periods       = array_slice(self::PERIODS, $startPeriod);
+        $communityType = $communityDef['type'];
 
         $primaryCodes = $this->primaryCodes($communityType, $unit->occupancy_type->value);
         $extraCode    = $unitDef['extra_ct'] ?? null;
 
-        $invoiceCount = 0;
-        $maxInvoices  = 10;
+        $config       = self::ARCHETYPES[$archetype] ?? self::ARCHETYPES['good'];
+        $totalPeriods = count(self::PERIODS);
+        // Levies with an absolute period index at/after this stay unpaid -> arrears.
+        $unpaidFromAbs = $totalPeriods - (int) $config['unpaid'];
+
+        $levyLedger = null;
+        $levyAmount = 0.0;
 
         foreach ($primaryCodes as $code) {
             $ct = $this->ledgers[$code] ?? null;
             if (! $ct) continue;
 
             foreach ($periods as $periodIndex => $periodDef) {
-                if ($invoiceCount >= $maxInvoices) break 2;
-
                 $absolutePeriodIndex = $startPeriod + $periodIndex;
                 $amount = $this->resolveAmount($code, $unit, $owner, $currentOccupant, $community);
                 if ($amount <= 0) continue;
@@ -857,25 +881,33 @@ class DemoSeeder extends Seeder
                     $this->resolveRecipient($code, $unit, $owner, $currentOccupant);
                 if (! $billedToId) continue;
 
-                $status  = $this->resolveStatus($absolutePeriodIndex, $isDebtor, $debtorFrom);
-                $invoice = $this->createInvoice($unit, $ct, $billedToType, $billedToId, $amount, $periodDef, $status, $community);
-
-                $this->createEmailEvents($invoice, $status, $recipientEmail);
-
-                if ($status === 'paid') {
-                    $this->createCashbookEntry($invoice, $unit, $community, $recipientName, $ct);
+                // Remember the owner levy for partial catch-up + credit notes.
+                if ($billedToType === 'owner') {
+                    $levyLedger = $ct;
+                    $levyAmount = $amount;
                 }
 
-                $invoiceCount++;
+                // Arrears only accrue on the owner's levy account (what Age
+                // Analysis shows); occupant rent is always settled.
+                $ownerBilled = $billedToType === 'owner';
+                $paid        = ! $ownerBilled || $absolutePeriodIndex < $unpaidFromAbs;
+                $status      = $this->periodStatus($paid, $periodDef);
+
+                $invoice = $this->createInvoice($unit, $ct, $billedToType, $billedToId, $amount, $periodDef, $status, $community);
+                $this->createEmailEvents($invoice, $status, $recipientEmail);
+
+                if ($paid) {
+                    $this->createCashbookEntry($invoice, $unit, $community, $recipientName, $ct, $periodDef);
+                }
             }
         }
 
-        if ($extraCode && $invoiceCount < $maxInvoices) {
+        // Recovery/ancillary charge (parking, gym, ...): billed for the last two
+        // periods and always settled.
+        if ($extraCode) {
             $extraCt = $this->ledgers[$extraCode] ?? null;
             if ($extraCt) {
-                $extraPeriods = array_slice($periods, -min(2, $maxInvoices - $invoiceCount));
-                foreach ($extraPeriods as $periodDef) {
-                    if ($invoiceCount >= $maxInvoices) break;
+                foreach (array_slice($periods, -2) as $periodDef) {
                     $amount = $this->resolveExtraAmount($extraCode);
                     [$billedToType, $billedToId, $recipientEmail, $recipientName] =
                         $this->resolveRecipient($extraCode, $unit, $owner, $currentOccupant);
@@ -883,11 +915,226 @@ class DemoSeeder extends Seeder
 
                     $invoice = $this->createInvoice($unit, $extraCt, $billedToType, $billedToId, $amount, $periodDef, 'paid', $community);
                     $this->createEmailEvents($invoice, 'paid', $recipientEmail);
-                    $this->createCashbookEntry($invoice, $unit, $community, $recipientName, $extraCt);
-                    $invoiceCount++;
+                    $this->createCashbookEntry($invoice, $unit, $community, $recipientName, $extraCt, $periodDef);
                 }
             }
         }
+
+        // Payment arrangement: one catch-up installment lands recently, so the
+        // account is partway settled (a believable "arranged to pay" story).
+        if (! empty($config['partial']) && $levyLedger && $levyAmount > 0) {
+            $this->createArrangementPayment($unit, $community, $owner, $levyLedger, $levyAmount);
+        }
+
+        // Credit-balance customer: a levy over-charge is corrected with a credit
+        // note, taking the (otherwise settled) account into credit.
+        if (! empty($config['credit_note']) && $levyLedger && $levyAmount > 0) {
+            $this->createCreditNote($unit, $owner, $community, $levyLedger, $levyAmount);
+        }
+    }
+
+    /**
+     * Resolve the invoice status for a billing period: paid, overdue (past its
+     * due date and unpaid), or unpaid (issued but not yet due).
+     *
+     * @param bool $paid
+     * @param array $periodDef
+     * @return string
+     */
+    private function periodStatus(bool $paid, array $periodDef): string
+    {
+        if ($paid) {
+            return 'paid';
+        }
+
+        return Carbon::parse($periodDef['due_date'])->gt(Carbon::parse(self::TODAY))
+            ? 'unpaid'
+            : 'overdue';
+    }
+
+    /**
+     * The community's primary (current) bank account id, cached per community.
+     * Every seeded receipt is banked here so cashbook -> GL posts a real
+     * Dr Bank / Cr Accounts Receivable entry (crediting the customer).
+     *
+     * @param Community $community
+     * @return string
+     */
+    private function currentBankAccountId(Community $community): string
+    {
+        return $this->currentBankByCommunity[$community->id] ??= (string) BankAccount::where('community_id', $community->id)
+            ->where('type', BankAccountType::CURRENT->value)
+            ->orderBy('created_at')
+            ->value('id');
+    }
+
+    /**
+     * Set the unit's collection status / debit-order / transfer flags from its
+     * payment archetype, and seed the matching collection-note history — so the
+     * Age Analysis status markers and the customer's notes always tell the same
+     * story as the real arrears.
+     *
+     * @param Unit $unit
+     * @param Owner $owner
+     * @param string $archetype
+     * @param int $unitIndex
+     * @return void
+     */
+    private function applyCollectionProfile(Unit $unit, Owner $owner, string $archetype, int $unitIndex): void
+    {
+        $config = self::ARCHETYPES[$archetype] ?? self::ARCHETYPES['good'];
+
+        $unit->collection_status = $config['status'];
+        // Debit order: only paid-up members run on debit order.
+        $unit->debit_order = $archetype === 'good' && ($unitIndex % 4 === 1);
+        // Deep-arrears accounts mid-transfer (sale in progress to recover debt).
+        $unit->transfer_active = in_array($archetype, ['handed_over', 'demand'], true) && ($unitIndex % 2 === 0);
+        $unit->save();
+
+        $this->seedCollectionNotes($unit, $owner, $archetype);
+    }
+
+    /**
+     * Seed WeConnectU-style collection notes that match the customer's payment
+     * archetype (reminders, notices, letter of demand, hand-over, arrangement,
+     * credit-note correction). System notes are read-only; manager notes editable.
+     *
+     * @param Unit $unit
+     * @param Owner $owner
+     * @param string $archetype
+     * @return void
+     */
+    private function seedCollectionNotes(Unit $unit, Owner $owner, string $archetype): void
+    {
+        $name = $owner->full_name;
+
+        // [text, isSystem, daysAgo]
+        $notes = match ($archetype) {
+            'notice1' => [
+                ['1st reminder e-mailed for the outstanding levy. Owner acknowledged and promised payment by month-end.', false, 20],
+            ],
+            'notice2' => [
+                ['1st reminder e-mailed - no response received.', true, 45],
+                ['2nd notice sent. Called ' . $name . ' - left a voicemail, awaiting call-back.', false, 15],
+            ],
+            'final' => [
+                ['1st and 2nd notices sent over the past two months.', true, 60],
+                ['Final notice issued. ' . $name . ' requested a week to settle in full.', false, 10],
+            ],
+            'demand' => [
+                ['Escalating notices sent since the arrears began; no consistent payment received.', true, 90],
+                ['Letter of demand delivered by e-mail and registered post.', false, 12],
+            ],
+            'handed_over' => [
+                ['Multiple notices and a letter of demand issued with no resolution.', true, 120],
+                ['Account handed over to PrimeLaw Attorneys for collection. File reference logged.', false, 8],
+            ],
+            'arrangement' => [
+                ['Owner contacted the office regarding the arrears and requested time to pay.', false, 40],
+                ['Payment arrangement agreed: monthly installments over the outstanding balance. First installment received.', false, 14],
+            ],
+            'credit' => [
+                ['Levy over-charge identified on the account; credit note raised to correct the balance.', true, 12],
+            ],
+            default => [],
+        };
+
+        foreach ($notes as [$text, $isSystem, $daysAgo]) {
+            $when = Carbon::parse(self::TODAY)->subDays($daysAgo)->setTime(rand(8, 16), rand(0, 59));
+
+            $note = UnitCollectionNote::create([
+                'note'            => $text,
+                'is_system'       => $isSystem,
+                'created_by_name' => $isSystem ? 'System' : 'Demo Manager',
+                'unit_id'         => $unit->id,
+                'organization_id' => $this->organizationId,
+            ]);
+
+            // Backdate the note so the history reads chronologically.
+            $note->timestamps = false;
+            $note->forceFill(['created_at' => $when, 'updated_at' => $when])->save();
+        }
+    }
+
+    /**
+     * Bank a recent "arrangement installment" receipt that credits the customer,
+     * so a payment-arrangement account shows a partial catch-up on its ledger.
+     *
+     * @param Unit $unit
+     * @param Community $community
+     * @param Owner $owner
+     * @param mixed $levyLedger
+     * @param float $levyAmount
+     * @return void
+     */
+    private function createArrangementPayment(Unit $unit, Community $community, Owner $owner, $levyLedger, float $levyAmount): void
+    {
+        $when      = Carbon::parse(self::TODAY)->subDays(rand(5, 18));
+        $nameParts = explode(' ', strtoupper($owner->full_name));
+        $surname   = end($nameParts);
+
+        CashbookEntry::create([
+            'description'            => "EFT - {$surname} ARRANGEMENT INSTALLMENT",
+            'amount'                 => round($levyAmount, 2),
+            'type'                   => 'credit',
+            'date'                   => $when->toDateString(),
+            'notes'                  => 'Payment arrangement installment',
+            'proof_of_payment_path'  => $this->storeReceipt(),
+            'community_id'           => $community->id,
+            'organization_id'        => $this->organizationId,
+            'ledger_id'              => $levyLedger->id,
+            'unit_id'                => $unit->id,
+            'bank_account_id'        => $this->currentBankAccountId($community),
+            'allocation_ledger_type' => 'customer',
+            'parent_entry_id'        => null,
+        ]);
+    }
+
+    /**
+     * Raise a demo credit note (levy over-charge correction) against a customer,
+     * with a single line on the levy income ledger. The gl:backfill posts it
+     * (Dr income / Cr Accounts Receivable), taking the account into credit and
+     * making the credit note appear on the Detailed Customer Ledger.
+     *
+     * @param Unit $unit
+     * @param Owner $owner
+     * @param Community $community
+     * @param mixed $levyLedger
+     * @param float $levyAmount
+     * @return void
+     */
+    private function createCreditNote(Unit $unit, Owner $owner, Community $community, $levyLedger, float $levyAmount): void
+    {
+        $this->creditNoteCounter++;
+        $date   = Carbon::parse(self::TODAY)->subDays(rand(10, 25));
+        $number = 'CN-' . $date->format('Y') . '-' . str_pad((string) $this->creditNoteCounter, 4, '0', STR_PAD_LEFT);
+        $amount = round($levyAmount, 2);
+
+        $creditNote = CreditNote::create([
+            'credit_note_number' => $number,
+            'billed_to_type'     => 'owner',
+            'billed_to_id'       => $owner->id,
+            'reason'             => 'Levy over-charge correction',
+            'amount'             => $amount,
+            'subtotal'           => $amount,
+            'vat_amount'         => 0,
+            'credit_note_date'   => $date->toDateString(),
+            'sent_at'            => $date->toDateTimeString(),
+            'issued_by_type'     => 'system',
+            'unit_id'            => $unit->id,
+            'organization_id'    => $this->organizationId,
+        ]);
+
+        $creditNote->items()->create([
+            'description' => 'Levy over-charge correction',
+            'quantity'    => 1,
+            'amount'      => $amount,
+            'tax_rate'    => 0,
+            'tax_amount'  => 0,
+            'line_total'  => $amount,
+            'sort_order'  => 0,
+            'ledger_id'   => $levyLedger->id,
+        ]);
     }
 
     private function primaryCodes(string $communityType, string $occupancy): array
@@ -916,12 +1163,10 @@ class DemoSeeder extends Seeder
     private function resolveExtraAmount(string $code): float
     {
         return match ($code) {
-            'PARKING_RENTAL'       => 450.00,
-            'GYM_ACCESS'           => 300.00,
-            'POOL_ACCESS'          => 250.00,
             'WATER_RECOVERY'       => 380.00,
             'ELECTRICITY_RECOVERY' => 620.00,
-            'STORAGE_RENTAL'       => 350.00,
+            'SEWERAGE_RECOVERY'    => 220.00,
+            'SPECIAL_LEVY'         => 1500.00,
             default                => 200.00,
         };
     }
@@ -948,14 +1193,6 @@ class DemoSeeder extends Seeder
             return ['occupant', $occupant->id, $occupant->email, $occupant->full_name];
         }
         return ['owner', $owner->id, $owner->email, $owner->full_name];
-    }
-
-    private function resolveStatus(int $absolutePeriodIndex, bool $isDebtor, int $debtorFrom): string
-    {
-        if ($isDebtor && $absolutePeriodIndex >= $debtorFrom) {
-            return 'overdue';
-        }
-        return 'paid';
     }
 
     private function createInvoice(
@@ -1033,15 +1270,14 @@ class DemoSeeder extends Seeder
     /*  CASHBOOK ENTRIES                                                    */
     /* ------------------------------------------------------------------ */
 
-    private function createCashbookEntry(Invoice $invoice, Unit $unit, Community $community, string $payerName, $ledger): void
+    private function createCashbookEntry(Invoice $invoice, Unit $unit, Community $community, string $payerName, $ledger, array $periodDef): void
     {
-        $sentAt      = Carbon::parse($invoice->sent_at);
-        $openedAt    = $sentAt->copy()->addHours(rand(3, 6));
-        $paymentDate = $openedAt->copy()->addDays(rand(1, 5));
-
-        $today = Carbon::parse('2026-04-20');
+        // Settle a few days after the levy is issued (the 25th), but never in the
+        // future relative to the seed's "today".
+        $paymentDate = Carbon::parse($periodDef['sent_at'])->addDays(rand(2, 8));
+        $today       = Carbon::parse(self::TODAY);
         if ($paymentDate->gt($today)) {
-            $paymentDate = $today->copy()->subDays(rand(0, 3));
+            $paymentDate = $today->copy()->subDays(rand(0, 2));
         }
 
         $nameParts = explode(' ', strtoupper($payerName));
@@ -1064,6 +1300,8 @@ class DemoSeeder extends Seeder
             'ledger_id'        => $ledger->id,
             'unit_id'               => $unit->id,
             'invoice_id'            => $invoice->id,
+            'bank_account_id'        => $this->currentBankAccountId($community),
+            'allocation_ledger_type' => 'customer',
             'parent_entry_id'       => null,
         ]);
     }
@@ -1243,14 +1481,14 @@ class DemoSeeder extends Seeder
             ['number'=>'MCR-A02','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Otsile Gabaake','o.gabaake@gmail.com','+267 71 101 1002','BW780515-1002','Plot 4421, Block 3, Gaborone')],
             ['number'=>'MCR-A03','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Refilwe Setlhare','r.setlhare@hotmail.com','+267 72 101 1003','BW690820-1003','Plot 7821, Naledi, Gaborone')],
             ['number'=>'MCR-A04','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Mpho Tlhomeso','mpho.tlhomeso@gmail.com','+267 71 101 1004','BW751130-1004','Plot 5521, Tlokweng, Gaborone')],
-            ['number'=>'MCR-A05','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'PARKING_RENTAL','owner'=>$this->o('Goitseone Segaetsho','g.segaetsho@yahoo.com','+267 72 101 1005','BW830205-1005','Plot 9901, Phase 2, Gaborone')],
+            ['number'=>'MCR-A05','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'WATER_RECOVERY','owner'=>$this->o('Goitseone Segaetsho','g.segaetsho@yahoo.com','+267 72 101 1005','BW830205-1005','Plot 9901, Phase 2, Gaborone')],
             ['number'=>'MCR-A06','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Bonolo Molefhe','bonolo.molefhe@gmail.com','+267 71 101 1006','BW880910-1006','Plot 2231, Broadhurst, Gaborone')],
             ['number'=>'MCR-A07','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Lesego Gaolekwe','l.gaolekwe@gmail.com','+267 72 101 1007','BW770601-1007','Plot 3341, Bontleng, Gaborone')],
             ['number'=>'MCR-A08','occupancy'=>'owner_occupied','debtor'=>true,'debtor_from'=>6,'owner'=>$this->o('Tumelo Kelesitse','t.kelesitse@email.bw','+267 71 101 1008','BW791219-1008','Plot 8801, Molapo West, Gaborone')],
             ['number'=>'MCR-A09','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Bogosi Mothibe','b.mothibe@gmail.com','+267 72 101 1009','BW850317-1009','Plot 6621, Glen Valley, Gaborone')],
             ['number'=>'MCR-A10','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Onkgopotse Kgosiemang','onk.kgosiemang@gmail.com','+267 71 101 1010','BW910722-1010','Plot 1441, Extension 14, Gaborone')],
             ['number'=>'MCR-B01','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Sethebe Modise','s.modise@hotmail.com','+267 72 101 1011','BW670301-1011','Plot 7111, Lentsweletau Road, Gaborone')],
-            ['number'=>'MCR-B02','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'GYM_ACCESS','owner'=>$this->o('Itumeleng Mooketsi','i.mooketsi@gmail.com','+267 71 101 1012','BW800415-1012','Plot 4441, Woodhall, Gaborone')],
+            ['number'=>'MCR-B02','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'ELECTRICITY_RECOVERY','owner'=>$this->o('Itumeleng Mooketsi','i.mooketsi@gmail.com','+267 71 101 1012','BW800415-1012','Plot 4441, Woodhall, Gaborone')],
             ['number'=>'MCR-B03','occupancy'=>'occupant_occupied','debtor'=>false,'rent_amount'=>8500,
              'owner'=>$this->o('Gaopalelwe Ntsepe','g.ntsepe@email.bw','+267 72 101 1013','BW730625-1013','Plot 8821, Kgale Siding, Gaborone'),
              'organizations'=>[$this->t('Kagiso Mmolotsi','kagiso.mm@gmail.com','+267 71 201 2001','BW920412-2001','2024-05-01','2025-04-30','2025-04-15',6500,'Left in good standing'),
@@ -1314,10 +1552,10 @@ class DemoSeeder extends Seeder
             ['number'=>'PGE-02','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Gaositwe Phetwe','g.phetwe@email.bw','+267 71 102 1002','BW750924-1102','Plot 2542, Phakalane, Gaborone')],
             ['number'=>'PGE-03','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Motlalepula Keaboka','m.keaboka@hotmail.com','+267 72 102 1003','BW830101-1103','Plot 2543, Phakalane, Gaborone')],
             ['number'=>'PGE-04','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Kelapile Rankotso','k.rankotso@gmail.com','+267 71 102 1004','BW690718-1104','Plot 2544, Phakalane, Gaborone')],
-            ['number'=>'PGE-05','occupancy'=>'owner_occupied','debtor'=>true,'debtor_from'=>5,'extra_ct'=>'POOL_ACCESS','owner'=>$this->o('David Patel','d.patel@gmail.com','+267 72 102 1005','ZA691015-1105','Plot 2545, Phakalane, Gaborone')],
+            ['number'=>'PGE-05','occupancy'=>'owner_occupied','debtor'=>true,'debtor_from'=>5,'extra_ct'=>'SPECIAL_LEVY','owner'=>$this->o('David Patel','d.patel@gmail.com','+267 72 102 1005','ZA691015-1105','Plot 2545, Phakalane, Gaborone')],
             ['number'=>'PGE-06','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Dimakatso Sefhako','d.sefhako@yahoo.com','+267 71 102 1006','BW870302-1106','Plot 2546, Phakalane, Gaborone')],
             ['number'=>'PGE-07','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Segopotso Kelatlhegile','s.kelat@email.bw','+267 72 102 1007','BW940811-1107','Plot 2547, Phakalane, Gaborone')],
-            ['number'=>'PGE-08','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'GYM_ACCESS','owner'=>$this->o('Banno Ramotshabi','b.ramotshabi@gmail.com','+267 71 102 1008','BW780506-1108','Plot 2548, Phakalane, Gaborone')],
+            ['number'=>'PGE-08','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'ELECTRICITY_RECOVERY','owner'=>$this->o('Banno Ramotshabi','b.ramotshabi@gmail.com','+267 71 102 1008','BW780506-1108','Plot 2548, Phakalane, Gaborone')],
             ['number'=>'PGE-09','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Thapelo Keboneilwe','t.kebon@gmail.com','+267 72 102 1009','BW860113-1109','Plot 2549, Phakalane, Gaborone')],
             ['number'=>'PGE-10','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Mmoloki Gaobonwe','m.gaob@email.bw','+267 71 102 1010','BW720428-1110','Plot 2550, Phakalane, Gaborone')],
             ['number'=>'PGE-11','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Otlile Kgosidintsi','o.kgosi@gmail.com','+267 72 102 1011','BW910317-1111','Plot 2551, Phakalane, Gaborone')],
@@ -1691,7 +1929,7 @@ class DemoSeeder extends Seeder
             ['number'=>'MML-A02','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Lerato Mokoena','l.mokoena@gmail.com','+27 72 301 1002','8803125100089','42 Atterbury Road, Faerie Glen, Pretoria')],
             ['number'=>'MML-A03','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Johan Botha','j.botha@gmail.com','+27 82 301 1003','7506155800081','88 Lynnwood Road, Hatfield, Pretoria')],
             ['number'=>'MML-A04','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Zanele Mthembu','z.mthembu@yahoo.com','+27 72 301 1004','9001085100087','23 Garsfontein Road, Pretoria, 0042')],
-            ['number'=>'MML-A05','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'PARKING_RENTAL','owner'=>$this->o('Rajesh Naidoo','r.naidoo@gmail.com','+27 83 301 1005','7808125800085','7 Rigel Avenue, Erasmusrand, Pretoria')],
+            ['number'=>'MML-A05','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'WATER_RECOVERY','owner'=>$this->o('Rajesh Naidoo','r.naidoo@gmail.com','+27 83 301 1005','7808125800085','7 Rigel Avenue, Erasmusrand, Pretoria')],
             ['number'=>'MML-A06','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Thabo Molefe','t.molefe@hotmail.com','+27 76 301 1006','8205015800089','101 Justice Mahomed Street, Pretoria CBD')],
             ['number'=>'MML-A07','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Nomvula Zulu','n.zulu@gmail.com','+27 82 301 1007','9104125100083','19 Duncan Street, Hatfield, Pretoria')],
             ['number'=>'MML-A08','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Pieter du Plessis','p.duplessis@gmail.com','+27 72 301 1008','7701225800087','31 Dely Road, Hazelwood, Pretoria')],
@@ -1699,7 +1937,7 @@ class DemoSeeder extends Seeder
             ['number'=>'MML-A10','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Priya Pillay','p.pillay@gmail.com','+27 82 301 1010','8512085100085','9 Middel Street, Nieuw Muckleneuk, Pretoria')],
             ['number'=>'MML-A11','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Mandla Khumalo','m.khumalo@gmail.com','+27 76 301 1011','7904015800083','64 Park Street, Arcadia, Pretoria')],
             ['number'=>'MML-A12','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Katlego Maseko','k.maseko@hotmail.com','+27 72 301 1012','9206155800089','33 Festival Street, Hatfield, Pretoria')],
-            ['number'=>'MML-A13','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'GYM_ACCESS','owner'=>$this->o('Willem Steyn','w.steyn@gmail.com','+27 82 301 1013','7107125800081','14 Pretorius Street, Pretoria CBD')],
+            ['number'=>'MML-A13','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'ELECTRICITY_RECOVERY','owner'=>$this->o('Willem Steyn','w.steyn@gmail.com','+27 82 301 1013','7107125800081','14 Pretorius Street, Pretoria CBD')],
             ['number'=>'MML-A14','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Sibongile Buthelezi','s.buthelezi@gmail.com','+27 83 301 1014','8808205100087','72 Waterkloof Road, Waterkloof, Pretoria')],
             ['number'=>'MML-A15','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Vikram Govender','v.govender@gmail.com','+27 72 301 1015','8003075800085','21 Celliers Street, Sunnyside, Pretoria')],
             ['number'=>'MML-B01','occupancy'=>'occupant_occupied','debtor'=>false,'rent_amount'=>15000,
@@ -1778,7 +2016,7 @@ class DemoSeeder extends Seeder
             ['number'=>'WCV-A05','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Devan Naidoo','d.naidoo@gmail.com','+27 83 311 1005','8209015800085','37 Country Lane, Waterfall, Midrand')],
             ['number'=>'WCV-A06','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Lungelo Ntuli','l.ntuli@gmail.com','+27 72 311 1006','8411025800083','62 Woodmead Drive, Woodmead, Sandton')],
             ['number'=>'WCV-A07','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Lizelle Viljoen','l.viljoen@gmail.com','+27 82 311 1007','8103115100089','15 Allandale Road, Midrand')],
-            ['number'=>'WCV-A08','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'POOL_ACCESS','owner'=>$this->o('Sbusiso Ngcobo','s.ngcobo@gmail.com','+27 76 311 1008','8706015800081','28 Lever Road, Halfway House, Midrand')],
+            ['number'=>'WCV-A08','occupancy'=>'owner_occupied','debtor'=>false,'extra_ct'=>'SPECIAL_LEVY','owner'=>$this->o('Sbusiso Ngcobo','s.ngcobo@gmail.com','+27 76 311 1008','8706015800081','28 Lever Road, Halfway House, Midrand')],
             ['number'=>'WCV-A09','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Kamogelo Maseko','kam.maseko@gmail.com','+27 83 311 1009','9108185800087','43 Grand Central Avenue, Midrand')],
             ['number'=>'WCV-A10','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Yashica Pillay','y.pillay@gmail.com','+27 72 311 1010','8509085100085','6 Sunninghill Village, Sunninghill')],
             ['number'=>'WCV-A11','occupancy'=>'owner_occupied','debtor'=>false,'owner'=>$this->o('Siyanda Dube','s.dube@gmail.com','+27 82 311 1011','8802015800083','70 Waterfall Avenue, Jukskei View')],

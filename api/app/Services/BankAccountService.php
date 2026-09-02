@@ -32,9 +32,15 @@ class BankAccountService extends BaseService
             $query->where('community_id', $data['community_id']);
         }
 
+        // is_active semantics:
+        //   omitted            → default to active accounts only
+        //   present but empty  → no filter (return all, active + inactive)
+        //   explicit true/false → filter by that flag
         if (array_key_exists('is_active', $data)) {
-            $isActive = filter_var($data['is_active'], FILTER_VALIDATE_BOOLEAN);
-            $query->where('is_active', $isActive);
+            if ($data['is_active'] !== null && $data['is_active'] !== '') {
+                $isActive = filter_var($data['is_active'], FILTER_VALIDATE_BOOLEAN);
+                $query->where('is_active', $isActive);
+            }
         } else {
             $query->where('is_active', true);
         }
@@ -156,6 +162,12 @@ class BankAccountService extends BaseService
         $orgId = $bankAccount->organization_id;
         $code  = Ledger::nextCode($orgId, '8000');
 
+        // Nest under the 8000/000 - BANK main account so it groups on the GL page.
+        $main = Ledger::query()
+            ->where('organization_id', $orgId)
+            ->where('code', '8000/000')
+            ->first();
+
         $ledger = Ledger::create([
             'code'               => $code,
             'category'           => '8000/000 - BANK',
@@ -163,6 +175,8 @@ class BankAccountService extends BaseService
             'account_type'       => 'balance_sheet',
             'financial_category' => FinancialCategory::BANK,
             'fund'               => 'main',
+            'allow_sub_accounts' => false,
+            'parent_id'          => $main?->id,
             'is_system'          => true,
             'is_active'          => true,
             'organization_id'    => $orgId,

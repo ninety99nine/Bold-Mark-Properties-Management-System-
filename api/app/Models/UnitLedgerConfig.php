@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class UnitChargeConfig extends Model
+class UnitLedgerConfig extends Model
 {
     use HasFactory, HasUuids;
 
@@ -34,7 +34,7 @@ class UnitChargeConfig extends Model
     ];
 
     /**
-     * Get the unit this charge config belongs to.
+     * Get the unit this ledger config belongs to.
      *
      * @return BelongsTo
      */

@@ -269,8 +269,15 @@ it('returns matching customers with the allocation-modal shape', function () {
 it('returns general, reserve-fund and vat-type options', function () {
     $user        = adminUser();
     [$community] = allocationCommunity($user);
-    // A custom general ledger; RFI/001 already exists in the seeded chart.
-    Ledger::factory()->create(['organization_id' => $user->organization_id, 'code' => '1000/050', 'name' => 'Special Levy']);
+    // A custom general ledger (a postable sub-account under 1000/000 INCOME);
+    // RFI/001 already exists in the seeded chart.
+    $incomeMain = Ledger::where('organization_id', $user->organization_id)->where('code', '1000/000')->first();
+    Ledger::factory()->create([
+        'organization_id' => $user->organization_id,
+        'code'            => '1000/050',
+        'name'            => 'Special Levy',
+        'parent_id'       => $incomeMain->id,
+    ]);
 
     $response = $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.community.cashbook.ledger.options', ['community' => $community->id]))

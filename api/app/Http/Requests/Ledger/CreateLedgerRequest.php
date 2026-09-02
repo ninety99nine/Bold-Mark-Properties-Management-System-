@@ -24,7 +24,7 @@ class CreateLedgerRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * Two shapes are supported: the legacy Charge Type create (no `type` field,
+     * Two shapes are supported: the legacy Ledger create (no `type` field,
      * uses applies_to / is_recurring) and the WeConnectU General Ledger create
      * (`type` = main | sub, with GL classification fields).
      *
@@ -54,7 +54,7 @@ class CreateLedgerRequest extends FormRequest
             ];
         }
 
-        // Legacy Charge Type create.
+        // Legacy Ledger create.
         return [
             'name'         => ['required', 'string', 'max:255'],
             'description'  => ['nullable', 'string', 'max:500'],

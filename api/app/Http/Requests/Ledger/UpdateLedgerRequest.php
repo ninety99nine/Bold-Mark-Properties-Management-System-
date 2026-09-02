@@ -30,6 +30,7 @@ class UpdateLedgerRequest extends FormRequest
             'financial_category' => ['sometimes', 'nullable', Rule::in(FinancialCategory::values())],
             'tax_type'           => ['sometimes', 'nullable', Rule::in(VatType::values())],
             'allow_sub_accounts' => ['sometimes', 'boolean'],
+            'is_budget_item'     => ['sometimes', 'boolean'],
         ];
     }
 

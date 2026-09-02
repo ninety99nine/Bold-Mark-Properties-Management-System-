@@ -252,10 +252,10 @@ class ProductionSeeder extends Seeder
 
     private function seedDefaultLedgers(): void
     {
-        $this->command?->info('Seeding default ledgers...');
+        $this->command?->info('Seeding chart of accounts...');
 
         foreach (Organization::all() as $org) {
-            CommunityLedgerService::seedDefaultsForOrganization($org->id);
+            (new \Database\Seeders\ChartOfAccountsSeeder())->seedForOrganization($org->id);
         }
     }
 

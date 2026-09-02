@@ -68,7 +68,7 @@ class UnitResource extends JsonResource
             'owners'          => OwnerResource::collection($this->whenLoaded('owners')),
             'current_occupant'  => OccupantResource::make($this->whenLoaded('currentOccupant')),
             'occupants'    => OccupantResource::collection($this->whenLoaded('occupants')),
-            'charge_configs'  => UnitChargeConfigResource::collection($this->whenLoaded('chargeConfigs')),
+            'ledger_configs'  => UnitLedgerConfigResource::collection($this->whenLoaded('ledgerConfigs')),
             'collection_notes' => UnitCollectionNoteResource::collection($this->whenLoaded('collectionNotes')),
         ];
     }

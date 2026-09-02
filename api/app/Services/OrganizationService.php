@@ -15,7 +15,7 @@ use App\Models\Owner;
 use App\Models\Occupant;
 use App\Models\Unit;
 use App\Models\UnitActivity;
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 use App\Models\User;
 use App\Models\UserCommunity;
 use App\Models\UserLoginLog;
@@ -177,7 +177,7 @@ class OrganizationService extends BaseService
                 ComplianceChecklistItem::whereIn('id', $itemIds)->delete();
                 ComplianceChecklist::whereIn('id', $checklistIds)->delete();
 
-                UnitChargeConfig::whereIn('unit_id', $unitIds)->delete();
+                UnitLedgerConfig::whereIn('unit_id', $unitIds)->delete();
                 UnitActivity::whereIn('unit_id', $unitIds)->delete();
                 Unit::whereIn('id', $unitIds)->delete();
 
@@ -188,7 +188,7 @@ class OrganizationService extends BaseService
             // 6. Units (standalone — skipped if already deleted via communities)
             if (in_array('units', $targets)) {
                 $unitIds = Unit::where('organization_id', $orgId)->pluck('id');
-                UnitChargeConfig::whereIn('unit_id', $unitIds)->delete();
+                UnitLedgerConfig::whereIn('unit_id', $unitIds)->delete();
                 UnitActivity::whereIn('unit_id', $unitIds)->delete();
                 $counts['units'] = Unit::where('organization_id', $orgId)->delete();
             }

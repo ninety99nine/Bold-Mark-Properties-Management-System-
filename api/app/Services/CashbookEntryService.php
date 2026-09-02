@@ -12,6 +12,7 @@ use App\Models\Owner;
 use App\Models\Supplier;
 use App\Models\Unit;
 use App\Enums\CashbookEntryType;
+use App\Enums\FinancialCategory;
 use App\Enums\InvoiceStatus;
 use App\Enums\JournalLineType;
 use App\Enums\VatType;
@@ -1025,8 +1026,17 @@ class CashbookEntryService extends BaseService
     {
         $user = Auth::user();
 
+        // WeConnectU's ledger picker lists only real postable accounts: the
+        // sub-accounts (never the group headers), and never bank accounts. Bank
+        // accounts are the cashbook itself, not an allocation target. Reserve-fund
+        // sub-accounts are split out below.
         $ledgers = Ledger::where('organization_id', $user->organization_id)
             ->where('is_active', true)
+            ->whereNotNull('parent_id')
+            ->where(function ($q) {
+                $q->whereNull('financial_category')
+                  ->orWhere('financial_category', '!=', FinancialCategory::BANK->value);
+            })
             ->orderBy('sort_order')
             ->orderBy('code')
             ->get();

@@ -85,13 +85,25 @@ async function loadPeriods() {
     if (current) selectedPeriodKey.value = current.year
   } catch { /* ignore */ }
 }
+const customerOption = (o) => ({
+  value: o.unit.id,
+  label: `${o.code || ''}${o.code ? ' - ' : ''}${o.full_name} (Unit No ${o.unit.unit_number})`,
+})
+
 async function loadCustomers() {
   try {
-    const { data } = await api.get(`/communities/${communityId.value}/customers`, { params: { _per_page: 1000, _relationships: 'unit' } })
-    customerOptions.value = (data.data ?? [])
-      .filter(o => o.unit?.id)
-      .map(o => ({ value: o.unit.id, label: `${o.code || ''}${o.code ? ' - ' : ''}${o.full_name} (Unit No ${o.unit.unit_number})` }))
+    const { data } = await api.get(`/communities/${communityId.value}/customers`, { params: { _per_page: 50, _relationships: 'unit' } })
+    customerOptions.value = (data.data ?? []).filter(o => o.unit?.id).map(customerOption)
   } catch { customerOptions.value = [] }
+}
+
+// API-backed search for the customer picker (debounced inside AppMultiSelect).
+async function searchCustomers(query) {
+  if (!communityId.value) return []
+  const { data } = await api.get(`/communities/${communityId.value}/customers`, {
+    params: { _search: query, _per_page: 50, _relationships: 'unit' },
+  })
+  return (data.data ?? []).filter(o => o.unit?.id).map(customerOption)
 }
 async function loadGroups() {
   try {
@@ -246,7 +258,7 @@ watch(communityId, () => { ledgers.value = []; hasRun.value = false; boot() })
 
             <div class="grid grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-3">
               <label class="text-sm text-muted-foreground">Customer:</label>
-              <AppMultiSelect v-model="customerIds" heading="Customers" :options="customerOptions" placeholder="Nothing selected" :disabled="allCustomers" />
+              <AppMultiSelect v-model="customerIds" heading="Customers" :options="customerOptions" :fetcher="searchCustomers" placeholder="Nothing selected" :disabled="allCustomers" />
               <label class="flex items-center gap-1.5 text-sm text-foreground"><input v-model="allCustomers" type="checkbox" class="h-4 w-4 rounded border-border accent-navy" /> All</label>
             </div>
             <div class="grid grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-3">

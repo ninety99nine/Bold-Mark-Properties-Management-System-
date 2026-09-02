@@ -541,7 +541,7 @@ it('lists in-arrears units in top_owner_arrears, sorted by arrears desc', functi
 // ║ GET /v1/communities/{community}/units/{unit}  —  show                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-it('returns a single unit with owner, currentOccupant, chargeConfigs and community eager-loaded', function () {
+it('returns a single unit with owner, currentOccupant, ledgerConfigs and community eager-loaded', function () {
     $user   = adminUser();
     $community = makeCommunity($user);
     $unit   = makeUnit($community, ['unit_number' => 'A1', 'occupancy_type' => 'occupant_occupied']);

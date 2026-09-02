@@ -1,15 +1,15 @@
 <?php
 
-namespace App\Http\Requests\UnitChargeConfig;
+namespace App\Http\Requests\UnitLedgerConfig;
 
-use App\Models\UnitChargeConfig;
+use App\Models\UnitLedgerConfig;
 use Illuminate\Foundation\Http\FormRequest;
 
-class CreateUnitChargeConfigRequest extends FormRequest
+class CreateUnitLedgerConfigRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('create', [UnitChargeConfig::class, $this->route('unit')]);
+        return $this->user()->can('create', [UnitLedgerConfig::class, $this->route('unit')]);
     }
 
     public function rules(): array

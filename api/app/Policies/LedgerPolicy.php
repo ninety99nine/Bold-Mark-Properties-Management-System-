@@ -55,7 +55,7 @@ class LedgerPolicy extends BasePolicy
         if ($ledger->organization_id !== $user->organization_id) {
             abort(404);
         }
-        return $this->authService->hasPermission($user, 'charge.type.update');
+        return $this->authService->hasPermission($user, 'ledger.update');
     }
 
     /**
@@ -63,7 +63,7 @@ class LedgerPolicy extends BasePolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $this->authService->hasPermission($user, 'charge.type.delete');
+        return $this->authService->hasPermission($user, 'ledger.delete');
     }
 
     /**
@@ -83,6 +83,6 @@ class LedgerPolicy extends BasePolicy
         if ($ledger->financial_category instanceof FinancialCategory && $ledger->financial_category->isSingleton()) {
             return false;
         }
-        return $this->authService->hasPermission($user, 'charge.type.delete');
+        return $this->authService->hasPermission($user, 'ledger.delete');
     }
 }

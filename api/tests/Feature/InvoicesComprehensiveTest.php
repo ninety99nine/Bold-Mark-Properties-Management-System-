@@ -992,7 +992,7 @@ it('invoice summary is scoped to the authenticated occupant', function () {
 // Run billing — full flow (dry_run=false)
 // ──────────────────────────────────────────────────────────────────────────────
 
-it('run billing creates invoices for active units with recurring charge configs', function () {
+it('run billing creates invoices for active units with recurring ledger configs', function () {
     \Illuminate\Support\Facades\Queue::fake();
 
     $user   = adminUser();
@@ -1008,7 +1008,7 @@ it('run billing creates invoices for active units with recurring charge configs'
     ]);
     $owner = Owner::factory()->create(['unit_id' => $unit->id, 'organization_id' => $user->organization_id]);
 
-    \App\Models\UnitChargeConfig::factory()->create([
+    \App\Models\UnitLedgerConfig::factory()->create([
         'unit_id'        => $unit->id,
         'ledger_id' => $ledger->id,
         'amount'         => 3000,

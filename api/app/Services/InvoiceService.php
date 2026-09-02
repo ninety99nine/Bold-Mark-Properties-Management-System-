@@ -684,7 +684,7 @@ class InvoiceService extends BaseService
             ->with([
                 'owner',
                 'currentOccupant',
-                'activeChargeConfigs.ledger',
+                'activeLedgerConfigs.ledger',
                 'community.activeLedgers',
             ])
             ->get();
@@ -693,18 +693,17 @@ class InvoiceService extends BaseService
         $created     = 0;
         $createdIds  = [];
 
-        // Get system ledgers for this community (from community's active ledgers)
+        // Resolve the recurring billing ledgers by their WeConnectU chart code
+        // (from the community's active ledgers).
         $communityLedgers  = $community->activeLedgers;
-        $levyLedger     = $communityLedgers->firstWhere('type', SystemLedger::ADMIN_LEVY->value);
-        $reserveLevyType    = $communityLedgers->firstWhere('type', SystemLedger::RESERVE_LEVY->value);
-        $csosLevyType       = $communityLedgers->firstWhere('type', SystemLedger::CSOS_LEVY->value);
-        $rentLedger     = $communityLedgers->firstWhere('type', SystemLedger::RENT->value);
+        $levyLedger        = $communityLedgers->firstWhere('code', SystemLedger::ADMIN_LEVY->code());
+        $reserveLevyType   = $communityLedgers->firstWhere('code', SystemLedger::RESERVE_LEVY->code());
+        $rentLedger        = $communityLedgers->firstWhere('code', SystemLedger::RENT->code());
 
         // Pre-compute PQ totals for the billing run to avoid N+1 queries
         $totalPq         = $units->whereNotNull('pq')->sum('pq');
         $adminBudget     = (float) ($community->admin_fund_amount ?? 0);
         $reserveBudget   = (float) ($community->reserve_fund_amount ?? 0);
-        $csosPerUnit     = (float) ($community->csos_levy_amount ?? 0);
 
         foreach ($units as $unit) {
             $invoicesToCreate = [];
@@ -749,19 +748,6 @@ class InvoiceService extends BaseService
                 }
             }
 
-            // 1c. CSOS levy invoice → owner, flat per-unit amount set on the community
-            if ($csosLevyType && $unit->owner && $csosPerUnit > 0) {
-                $invoicesToCreate[] = [
-                    'ledger'    => $csosLevyType,
-                    'billed_to_type' => BilledToType::OWNER->value,
-                    'billed_to_id'   => $unit->owner->id,
-                    'recipient_name' => $unit->owner->full_name,
-                    'amount'         => $csosPerUnit,
-                    'unit'           => $unit,
-                    'label'          => 'CSOS Levy',
-                ];
-            }
-
             // 2. Rent invoice → to active occupant if occupant_occupied and rent ledger is active
             $occupancyType = $unit->occupancy_type instanceof OccupancyType
                 ? $unit->occupancy_type->value
@@ -784,8 +770,8 @@ class InvoiceService extends BaseService
                 ];
             }
 
-            // 3. Per-unit recurring charge configs (parking, gym, pet levy, etc.)
-            foreach ($unit->activeChargeConfigs as $config) {
+            // 3. Per-unit recurring ledger configs (parking, gym, pet levy, etc.)
+            foreach ($unit->activeLedgerConfigs as $config) {
                 $ledger = $config->ledger;
 
                 if (!$ledger || !$ledger->is_active || !$ledger->is_recurring) {

@@ -287,23 +287,23 @@ class Unit extends Model
     }
 
     /**
-     * Get per-unit recurring charge configurations.
+     * Get per-unit recurring ledger configurations.
      *
      * @return HasMany
      */
-    public function chargeConfigs(): HasMany
+    public function ledgerConfigs(): HasMany
     {
-        return $this->hasMany(UnitChargeConfig::class);
+        return $this->hasMany(UnitLedgerConfig::class);
     }
 
     /**
-     * Get active charge configurations for this unit.
+     * Get active ledger configurations for this unit.
      *
      * @return HasMany
      */
-    public function activeChargeConfigs(): HasMany
+    public function activeLedgerConfigs(): HasMany
     {
-        return $this->hasMany(UnitChargeConfig::class)->where('is_active', true);
+        return $this->hasMany(UnitLedgerConfig::class)->where('is_active', true);
     }
 
     /**

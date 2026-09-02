@@ -56,7 +56,7 @@ it('returns ledgers grouped by main account with nested sub-accounts', function 
     $user = adminUser();
 
     $resp = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.charge.types', ['grouped' => 1]))
+        ->getJson(route('api.v1.show.ledgers', ['grouped' => 1]))
         ->assertOk()
         ->assertJsonStructure(['data' => [['id', 'code', 'name', 'sub_accounts']]]);
 
@@ -70,7 +70,7 @@ it('filters ledgers by fund', function () {
     $user = adminUser();
 
     $resp = $this->actingAs($user, 'api')
-        ->getJson(route('api.v1.show.charge.types', ['fund' => 'reserve']))
+        ->getJson(route('api.v1.show.ledgers', ['fund' => 'reserve']))
         ->assertOk();
 
     $codes = collect($resp->json('data'))->pluck('code');
@@ -86,7 +86,7 @@ it('creates a main account with auto X000/000 code', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
+        ->postJson(route('api.v1.create.ledger'), [
             'type'               => 'main',
             'prefix'             => '3000',
             'name'               => 'SUNDRY EXPENSES',
@@ -119,7 +119,7 @@ it('creates a sub-account with the next auto code under its parent', function ()
     $expected = Ledger::nextSubAccountCode($user->organization_id, '2000/000');
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
+        ->postJson(route('api.v1.create.ledger'), [
             'type'      => 'sub',
             'parent_id' => $main->id,
             'name'      => 'Audit Fees',
@@ -135,7 +135,7 @@ it('requires a prefix for a main account', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
+        ->postJson(route('api.v1.create.ledger'), [
             'type' => 'main',
             'name' => 'No prefix',
         ])
@@ -147,7 +147,7 @@ it('requires a parent for a sub-account', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
+        ->postJson(route('api.v1.create.ledger'), [
             'type' => 'sub',
             'name' => 'No parent',
         ])
@@ -165,7 +165,7 @@ it('rejects a second ledger in a singleton category', function () {
     $user = adminUser();
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
+        ->postJson(route('api.v1.create.ledger'), [
             'type'               => 'main',
             'prefix'             => '7100',
             'name'               => 'Another AR',
@@ -183,7 +183,7 @@ it('blocks deleting a singleton control account', function () {
         ->firstOrFail();
 
     $this->actingAs($user, 'api')
-        ->deleteJson(route('api.v1.delete.charge.type', $control))
+        ->deleteJson(route('api.v1.delete.ledger', $control))
         ->assertStatus(403);
 });
 
@@ -200,7 +200,7 @@ it('creates a reserve fund sub-account with an RFI auto code', function () {
         ->firstOrFail();
 
     $this->actingAs($user, 'api')
-        ->postJson(route('api.v1.create.charge.type'), [
+        ->postJson(route('api.v1.create.ledger'), [
             'type'      => 'sub',
             'parent_id' => $rfi->id,
             'name'      => 'Interest Received',

@@ -170,7 +170,7 @@ class LedgerService extends BaseService
         $user  = Auth::user();
         $orgId = $user->organization_id;
 
-        // Legacy Charge Type create (no GL `type` field, uses applies_to/is_recurring).
+        // Legacy Ledger create (no GL `type` field, uses applies_to/is_recurring).
         if (empty($data['type'])) {
             $ledger = Ledger::create(array_merge(
                 collect($data)->only(['name', 'description', 'applies_to', 'is_recurring', 'is_active', 'sort_order'])->toArray(),
@@ -309,14 +309,15 @@ class LedgerService extends BaseService
     public function updateLedger(Ledger $ledger, array $data): array
     {
         if ($this->isProtected($ledger)) {
-            // System / control accounts: only allow safe cosmetic fields
+            // System / control accounts: only allow safe cosmetic fields (plus the
+            // Budget Item flag, which is togglable on every account like WeConnectU).
             $updateData = collect($data)
-                ->only(['name', 'description', 'sort_order'])
+                ->only(['name', 'description', 'sort_order', 'is_budget_item'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray();
         } else {
             $updateData = collect($data)
-                ->only(['name', 'description', 'account_type', 'financial_category', 'tax_type', 'allow_sub_accounts', 'is_active', 'sort_order'])
+                ->only(['name', 'description', 'account_type', 'financial_category', 'tax_type', 'allow_sub_accounts', 'is_budget_item', 'is_active', 'sort_order'])
                 ->filter(fn($v) => !is_null($v))
                 ->toArray();
         }

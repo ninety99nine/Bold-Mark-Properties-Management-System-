@@ -206,8 +206,10 @@ it('backfills ledgers for pre-existing bank accounts idempotently', function () 
     $a->forceFill(['ledger_id' => null])->save();
     $b->forceFill(['ledger_id' => null])->save();
 
-    // Only the seeded chart of accounts exists; no bank ledgers yet.
-    $bankLedgers = fn () => Ledger::where('financial_category', \App\Enums\FinancialCategory::BANK)->count();
+    // Only the seeded chart of accounts exists (incl. the 8000/000 - BANK main);
+    // count only bank sub-accounts, not the group header.
+    $bankLedgers = fn () => Ledger::where('financial_category', \App\Enums\FinancialCategory::BANK)
+        ->whereNotNull('parent_id')->count();
 
     $this->artisan('gl:backfill-bank-ledgers')->assertSuccessful();
 
@@ -272,6 +274,48 @@ it('returns 404 for a cross-organization bank account', function () {
     $this->actingAs($user, 'api')
         ->getJson(route('api.v1.show.bank.account', $foreign))
         ->assertNotFound();
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /v1/bank-accounts — list / filters
+// ──────────────────────────────────────────────────────────────────────────────
+
+it('lists only active cashbooks by default', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    BankAccount::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'is_active' => true]);
+    BankAccount::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'is_active' => false]);
+
+    $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.bank.accounts', ['community_id' => $community->id]))
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+});
+
+it('returns all cashbooks (active and inactive) when is_active is empty', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    BankAccount::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'is_active' => true]);
+    BankAccount::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'is_active' => false]);
+
+    // The Financial Setup page sends is_active='' to mean "show all".
+    $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.bank.accounts', ['community_id' => $community->id, 'is_active' => '']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data');
+});
+
+it('filters cashbooks by an explicit is_active flag', function () {
+    $user      = adminUser();
+    $community = Community::factory()->create(['organization_id' => $user->organization_id]);
+    BankAccount::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'is_active' => true]);
+    BankAccount::factory()->create(['organization_id' => $user->organization_id, 'community_id' => $community->id, 'is_active' => false]);
+
+    $this->actingAs($user, 'api')
+        ->getJson(route('api.v1.show.bank.accounts', ['community_id' => $community->id, 'is_active' => '0']))
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.is_active', false);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────

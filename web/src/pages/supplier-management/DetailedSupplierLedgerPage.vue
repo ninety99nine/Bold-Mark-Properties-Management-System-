@@ -77,12 +77,25 @@ async function loadPeriods() {
     if (current) selectedPeriodKey.value = current.year
   } catch { /* ignore */ }
 }
+const supplierOption = (s) => ({
+  value: s.id,
+  label: s.label || `${s.supplier_code || ''}${s.supplier_code ? ' - ' : ''}${s.name}`,
+})
+
 async function loadSuppliers() {
   try {
-    const { data } = await api.get('/suppliers', { params: { community_id: communityId.value, _per_page: 1000 } })
-    supplierOptions.value = (data.data ?? [])
-      .map(s => ({ value: s.id, label: s.label || `${s.supplier_code || ''}${s.supplier_code ? ' - ' : ''}${s.name}` }))
+    const { data } = await api.get('/suppliers', { params: { community_id: communityId.value, _per_page: 50 } })
+    supplierOptions.value = (data.data ?? []).map(supplierOption)
   } catch { supplierOptions.value = [] }
+}
+
+// API-backed search for the supplier picker (debounced inside AppMultiSelect).
+async function searchSuppliers(query) {
+  if (!communityId.value) return []
+  const { data } = await api.get('/suppliers', {
+    params: { community_id: communityId.value, search: query, _per_page: 50 },
+  })
+  return (data.data ?? []).map(supplierOption)
 }
 async function loadGroups() {
   try {
@@ -203,7 +216,7 @@ watch(communityId, () => { ledgers.value = []; hasRun.value = false; boot() })
 
           <div class="grid grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-3">
             <label class="text-sm text-muted-foreground">Supplier:</label>
-            <AppMultiSelect v-model="supplierIds" heading="Suppliers" :options="supplierOptions" placeholder="Nothing selected" :disabled="allSuppliers" />
+            <AppMultiSelect v-model="supplierIds" heading="Suppliers" :options="supplierOptions" :fetcher="searchSuppliers" placeholder="Nothing selected" :disabled="allSuppliers" />
             <label class="flex items-center gap-1.5 text-sm text-foreground"><input v-model="allSuppliers" type="checkbox" class="h-4 w-4 rounded border-border accent-navy" /> All</label>
           </div>
           <div class="grid grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-3">

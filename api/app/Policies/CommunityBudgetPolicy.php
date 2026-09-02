@@ -40,6 +40,6 @@ class CommunityBudgetPolicy extends BasePolicy
      */
     public function manage(User $user, Community $community): bool
     {
-        return $this->authService->hasPermission($user, 'charge.type.update');
+        return $this->authService->hasPermission($user, 'ledger.update');
     }
 }

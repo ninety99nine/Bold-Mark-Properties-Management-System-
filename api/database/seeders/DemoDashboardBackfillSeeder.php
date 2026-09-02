@@ -18,16 +18,19 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Supplemental demo seed — fills the dashboard gaps the base DemoSeeder leaves:
+ * Supplemental demo seed — fills the one dashboard gap the base DemoSeeder still
+ * leaves: per-community compliance checklists + items (the base seeder only makes
+ * compliance *templates*, so the Compliance doughnut and tracker were empty).
  *
- *   A. Compliance checklists + items per community (base seeder only makes
- *      templates, so the Compliance doughnut and tracker were empty).
- *   B. Accumulating monthly arrears for existing debtor units so the Debt
- *      trend rises month-over-month and the age-analysis buckets fill.
- *   C. Current-month payment entries so "Collected This Month" is non-zero.
+ * NOTE: the arrears / current-collection / collection-status backfill this seeder
+ * used to run is now OWNED by DemoSeeder itself — it bills every month up to the
+ * present through the General Ledger and assigns each customer a payment archetype
+ * (with matching collection status + notes). Re-running those steps here would
+ * DOUBLE-COUNT arrears and OVERRIDE the archetype statuses, so they were removed;
+ * only the compliance backfill remains. See [[project_demo_data]].
  *
- * Idempotent: each part checks for its own marker before writing, so it can be
- * run repeatedly without duplicating data.
+ * Idempotent: the compliance step checks for its own marker before writing, so it
+ * can be run repeatedly without duplicating data.
  *
  * Usage: php artisan db:seed --class=DemoDashboardBackfillSeeder
  */
@@ -44,19 +47,8 @@ class DemoDashboardBackfillSeeder extends Seeder
         $admin = User::where('organization_id', $organization->id)->first();
 
         $this->seedCompliance($admin);
-        $this->seedAccumulatingArrears();
-        $this->seedCurrentMonthCollections();
 
-        $this->command->info('Recalculating unit balances...');
-        app(UnitBalanceService::class);
-        \Artisan::call('units:recalculate-balances');
-
-        // Re-derive collection statuses now that arrears have accumulated, so the
-        // Age Analysis markers reflect each debtor's final arrears depth.
-        $this->command->info('Re-aligning collection statuses with accumulated arrears...');
-        $this->call(DemoCollectionStatusSeeder::class);
-
-        $this->command->info('Dashboard backfill complete.');
+        $this->command->info('Dashboard backfill complete (compliance checklists).');
     }
 
     /* ------------------------------------------------------------------ */
