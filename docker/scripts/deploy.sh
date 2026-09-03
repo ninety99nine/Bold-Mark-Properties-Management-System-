@@ -80,34 +80,27 @@ USED_PCT=$(df --output=pcent / 2>/dev/null | tr -dc '0-9' || echo 0)
 if [ "${USED_PCT:-0}" -ge 90 ]; then
   echo "  ⚠ Disk ${USED_PCT}% full — diagnosing + reclaiming regenerable data"
 
-  echo "  ── docker system df ──"
-  docker system df 2>/dev/null || true
-  echo "  ── biggest dirs under /var/lib (docker images/containerd/volumes) ──"
-  sudo du -xhd1 /var/lib 2>/dev/null | sort -h | tail -8 || true
+  DOCKER_ROOT=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)
+  VOLS="$DOCKER_ROOT/volumes"
 
-  APP_CID=$(docker ps -qf 'name=app' | head -1 || true)
-  if [ -n "$APP_CID" ]; then
-    SDATA=$(docker inspect "$APP_CID" --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/storage/app"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
-    LDATA=$(docker inspect "$APP_CID" --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/storage/logs"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
+  echo "  ── per-volume disk usage ──"
+  sudo du -shx "$VOLS"/*/_data 2>/dev/null | sort -h | tail -10 || true
 
-    if [ -n "$SDATA" ] && [ -d "$SDATA" ]; then
-      echo "  ── storage volume ($SDATA) largest public/ dirs ──"
-      sudo du -shx "$SDATA"/public/* 2>/dev/null | sort -h | tail -8 || true
-      # proof-of-payment demo images are rewritten on every reseed — safe to drop.
-      sudo rm -rf "$SDATA"/public/proof_of_payment/* "$SDATA"/public/proof_of_payments/* 2>/dev/null || true
-      ok "Cleared regenerable proof-of-payment demo files"
-    fi
-    if [ -n "$LDATA" ] && [ -d "$LDATA" ]; then
-      sudo find "$LDATA" -type f -name '*.log' -exec truncate -s 0 {} + 2>/dev/null || true
-      ok "Truncated Laravel logs"
-    fi
-  else
-    echo "  (no running app container found to resolve storage paths)"
-  fi
+  # Clear regenerable proof-of-payment DEMO images wherever they live (rewritten
+  # on every reseed). Direct filesystem walk — no container/volume-name guessing.
+  sudo find "$VOLS" -type d \( -name proof_of_payment -o -name proof_of_payments \) 2>/dev/null | while read -r d; do
+    sz=$(sudo du -sh "$d" 2>/dev/null | cut -f1)
+    sudo find "$d" -mindepth 1 -delete 2>/dev/null || true
+    echo "  cleared proof-of-payment dir ($sz): $d"
+  done
+
+  # Truncate Laravel logs (regenerated).
+  sudo find "$VOLS" -type f -name 'laravel*.log' -exec truncate -s 0 {} + 2>/dev/null || true
+  sudo find "$VOLS" -type f -path '*storage/logs/*.log' -exec truncate -s 0 {} + 2>/dev/null || true
 
   docker volume prune -f >/dev/null 2>&1 || true
   echo "  ── after reclaim ──"
-  docker system df 2>/dev/null || true
+  df -h / | tail -1 || true
 fi
 
 df -h / | tail -1 || true
