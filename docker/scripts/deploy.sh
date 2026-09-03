@@ -70,6 +70,37 @@ df -h / | tail -1 || true
 docker image prune -af    >/dev/null 2>&1 || true
 docker builder prune -af  >/dev/null 2>&1 || true
 docker container prune -f >/dev/null 2>&1 || true
+
+# If STILL critically full, the space is in named VOLUMES (image prune can't
+# touch those). Reclaim REGENERABLE data only — never the live MySQL data:
+#   • proof-of-payment demo images — rewritten on every reseed
+#   • Laravel logs — truncated (regenerated)
+#   • orphaned volumes — `docker volume prune` skips any volume in use
+# We operate on the volumes' host paths (via sudo) rather than a helper
+# container, so this works even at 100% full (no image to pull first).
+USED_PCT=$(df --output=pcent / 2>/dev/null | tr -dc '0-9' || echo 0)
+if [ "${USED_PCT:-0}" -ge 90 ]; then
+  echo "  ⚠ Disk ${USED_PCT}% full after image prune — reclaiming regenerable volume data"
+  DOCKER_ROOT=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)
+  STORAGE_VOL=$(docker volume ls -q 2>/dev/null | grep -E '(^|_)app_storage$' | head -1 || true)
+  LOGS_VOL=$(docker volume ls -q 2>/dev/null | grep -E '(^|_)app_logs$' | head -1 || true)
+
+  if [ -n "$STORAGE_VOL" ] && [ -d "$DOCKER_ROOT/volumes/$STORAGE_VOL/_data" ]; then
+    SDATA="$DOCKER_ROOT/volumes/$STORAGE_VOL/_data"
+    echo "  storage volume ($STORAGE_VOL) — largest public/ dirs:"
+    sudo du -sh "$SDATA"/public/* 2>/dev/null | sort -h | tail -8 || true
+    sudo rm -rf "$SDATA"/public/proof_of_payment/* "$SDATA"/public/proof_of_payments/* 2>/dev/null || true
+    ok "Cleared regenerable proof-of-payment demo files"
+  fi
+
+  if [ -n "$LOGS_VOL" ] && [ -d "$DOCKER_ROOT/volumes/$LOGS_VOL/_data" ]; then
+    sudo find "$DOCKER_ROOT/volumes/$LOGS_VOL/_data" -type f -name '*.log' -exec truncate -s 0 {} + 2>/dev/null || true
+    ok "Truncated Laravel logs"
+  fi
+
+  docker volume prune -f >/dev/null 2>&1 || true
+fi
+
 df -h / | tail -1 || true
 ok "Disk reclaimed"
 
