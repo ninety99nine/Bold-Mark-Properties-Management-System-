@@ -57,6 +57,22 @@ cat <<EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 
+# ── Pre-flight: reclaim disk BEFORE pulling ──────────────────────────
+# The small box fills up between deploys — old per-SHA app/nginx images pile
+# up and reseeds write proof-of-payment files. When the disk is full,
+# `compose pull` below dies with "no space left on device" while containerd
+# extracts a layer, and the end-of-run cleanup never gets to run (chicken and
+# egg). So prune unused images + build cache + stopped containers up front.
+# Running containers keep their images referenced, so this only drops the
+# genuinely-unused (previous-SHA) layers — freeing room for the new pull.
+step "[pre] Reclaiming disk before pull..."
+df -h / | tail -1 || true
+docker image prune -af    >/dev/null 2>&1 || true
+docker builder prune -af  >/dev/null 2>&1 || true
+docker container prune -f >/dev/null 2>&1 || true
+df -h / | tail -1 || true
+ok "Disk reclaimed"
+
 # ── 0/6: Authenticate to ECR (via instance-profile role) + pull images ─
 step "[0/6] Logging in to ECR and pulling images..."
 aws ecr get-login-password --region "$AWS_REGION" \
