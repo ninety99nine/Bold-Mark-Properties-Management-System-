@@ -243,6 +243,7 @@ class DetailedLedgerService extends BaseService
                     'invoice_number' => $j['invoice_number'] ?? null,
                     'allocated_by'   => $j['allocated_by'] ?? null,
                     'allocated_at'   => $j['allocated_at'] ?? null,
+                    'allocated_on'   => $j['allocated_on'] ?? null,
                 ];
             }
         } else {
@@ -265,6 +266,7 @@ class DetailedLedgerService extends BaseService
                         'invoice_number' => $j['invoice_number'] ?? null,
                         'allocated_by'   => $j['allocated_by'] ?? null,
                         'allocated_at'   => $j['allocated_at'] ?? null,
+                        'allocated_on'   => $j['allocated_on'] ?? null,
                     ];
                 }
                 $grouped[$key]['debit']  += $j['debit'];
@@ -290,6 +292,7 @@ class DetailedLedgerService extends BaseService
             'invoice_number' => null,
             'allocated_by'   => null,
             'allocated_at'   => null,
+            'allocated_on'   => null,
         ]];
 
         foreach ($events as $e) {
@@ -308,6 +311,7 @@ class DetailedLedgerService extends BaseService
                 'invoice_number' => $e['invoice_number'] ?? null,
                 'allocated_by'   => $e['allocated_by'] ?? null,
                 'allocated_at'   => $e['allocated_at'] ?? null,
+                'allocated_on'   => $e['allocated_on'] ?? null,
             ];
         }
 
@@ -333,9 +337,11 @@ class DetailedLedgerService extends BaseService
     /**
      * Insert WeConnectU "Balance-paid / Balance Paid" marker rows. When a receipt
      * (credit) settles the account — the running balance crosses from owing (> 0)
-     * to paid-up / in-credit (≤ 0) — WeConnectU drops a zero-value marker row on
-     * that date. (BM is balance-forward, so the marker is dated on the settling
-     * receipt itself, not WeConnectU's separate allocation-run date.)
+     * to paid-up / in-credit (≤ 0) — WeConnectU drops a zero-value marker row
+     * dated on the ALLOCATION date (when the receipt was matched to the account),
+     * which is typically a day or two after the receipt's own transaction date.
+     * We take that date from the settling receipt's `allocated_on`, falling back
+     * to the receipt date when the entry has no recorded allocation timestamp.
      *
      * @param array $rows
      * @return array
@@ -355,7 +361,7 @@ class DetailedLedgerService extends BaseService
 
             if ($settledNow) {
                 $out[] = [
-                    'date'           => $row['date'],
+                    'date'           => $row['allocated_on'] ?: $row['date'],
                     'source'         => 'Balance-paid',
                     'description'    => 'Balance Paid',
                     'remarks'        => '',
@@ -366,6 +372,7 @@ class DetailedLedgerService extends BaseService
                     'invoice_number' => null,
                     'allocated_by'   => null,
                     'allocated_at'   => null,
+                    'allocated_on'   => null,
                 ];
             }
         }

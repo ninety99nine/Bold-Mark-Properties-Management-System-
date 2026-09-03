@@ -98,8 +98,11 @@ class JournalPostingService
                 $invoiceNumber = $isInvoice ? ($invoiceNumbers[$batch->source_id] ?? null) : null;
 
                 // Cashbook allocation: bank Source label + "allocated by / at" tooltip.
+                // allocated_on (the allocation DATE) is what WeConnectU dates its
+                // "Balance Paid" marker on — distinct from the receipt's own date.
                 $allocatedBy = null;
                 $allocatedAt = null;
+                $allocatedOn = null;
                 if ($batch->source_type === CashbookEntry::class) {
                     $entry = $cashbookEntries->get($batch->source_id);
                     if ($entry) {
@@ -109,6 +112,7 @@ class JournalPostingService
                         }
                         $allocatedBy = $entry->allocated_by_name;
                         $allocatedAt = optional($entry->allocated_at)->format('d/m/Y H:i:s');
+                        $allocatedOn = optional($entry->allocated_at)->toDateString();
                     }
                 }
 
@@ -123,6 +127,7 @@ class JournalPostingService
                     'invoice_number' => $invoiceNumber,
                     'allocated_by'   => $allocatedBy,
                     'allocated_at'   => $allocatedAt,
+                    'allocated_on'   => $allocatedOn,
                     'debit'          => $isDebit ? (float) $l->amount : 0.0,
                     'credit'         => ! $isDebit ? (float) $l->amount : 0.0,
                 ];

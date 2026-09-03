@@ -137,6 +137,7 @@ it('shows the cashbook bank source, an allocation tooltip and a Balance Paid mar
         'bank_name'       => 'Standard Bank',
         'account_number'  => '282475699',
     ]);
+    // Receipt banked on the 15th but only allocated (matched) on the 20th.
     $entry = \App\Models\CashbookEntry::factory()->create([
         'organization_id' => $user->organization_id, 'community_id' => $community->id,
         'bank_account_id' => $bank->id, 'unit_id' => null, 'invoice_id' => null,
@@ -146,24 +147,28 @@ it('shows the cashbook bank source, an allocation tooltip and a Balance Paid mar
         'ledger_type' => 'customer', 'unit_id' => $unit->id,
     ]);
     // Stamp the allocation metadata WeConnectU surfaces in the info tooltip.
-    $entry->forceFill(['allocated_by_name' => 'Justin, K.', 'allocated_at' => '2026-07-15 09:06:39'])->save();
+    $entry->forceFill(['allocated_by_name' => 'Justin, K.', 'allocated_at' => '2026-07-20 09:06:39'])->save();
 
     $rows = $this->actingAs($user, 'api')
         ->getJson(ledgerRoute($community, ['date_from' => '2026-07-01', 'date_to' => '2026-09-30']))
         ->assertOk()
         ->json('ledgers.0.rows');
 
-    // Cashbook receipt row: bank "STANDARD BANK: 282475699" Source + tooltip fields.
+    // Cashbook receipt row: bank "STANDARD BANK: 282475699" Source + tooltip fields,
+    // dated on the receipt's own transaction date (the 15th).
     $cashRow = collect($rows)->firstWhere('source', 'STANDARD BANK: 282475699');
     expect($cashRow)->not->toBeNull()
+        ->and($cashRow['date'])->toBe('2026-07-15')
         ->and($cashRow['allocated_by'])->toBe('Justin, K.')
-        ->and($cashRow['allocated_at'])->toBe('15/07/2026 09:06:39')
+        ->and($cashRow['allocated_at'])->toBe('20/07/2026 09:06:39')
         ->and((float) $cashRow['credit'])->toBe(500.00);
 
-    // WeConnectU "Balance-paid / Balance Paid" marker once the receipt settles it.
+    // WeConnectU "Balance-paid / Balance Paid" marker, dated on the ALLOCATION
+    // date (the 20th) — not the receipt date — exactly like WeConnectU.
     $marker = collect($rows)->firstWhere('source', 'Balance-paid');
     expect($marker)->not->toBeNull()
         ->and($marker['description'])->toBe('Balance Paid')
+        ->and($marker['date'])->toBe('2026-07-20')
         ->and((float) $marker['balance'])->toBe(0.00);
 });
 
